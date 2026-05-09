@@ -612,7 +612,7 @@ ${kbContext?"Use the Priority Knowledge Base above as your primary source.":"Use
 
 Respond ONLY in this JSON (no markdown, no backticks):
 {"title":"","summary":"","routing":"","bestTiming":"","cities":[{"city":"","country":"","nights":0,"why":"","highlights":["","",""],"estimatedCost":0,"hotelRate":0,"flightCost":0,"transferCost":0,"activityCost":0,"arrivalGap":"","departureGap":""}],"totalEstimate":0,"aiInsights":[""],"warnings":[""]}`;
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:prompt}]})});
+      const resp=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:prompt}]})});
       const data=await resp.json();
       const text=data.content?.filter((b:any)=>b.type==="text")?.map((b:any)=>b.text)?.join("")||"";
       const match=text.match(/\{[\s\S]*\}/);
@@ -636,7 +636,7 @@ KNOWN PARAMETERS: Nights: ${nights}, Adults: ${adults}, Children: ${children}
 
 Respond ONLY in this JSON (no markdown, no backticks):
 {"title":"","summary":"","routing":"","bestTiming":"","briefInterpretation":"one sentence explaining how you interpreted the brief","cities":[{"city":"","country":"","nights":0,"why":"","highlights":["","",""],"estimatedCost":0,"hotelRate":0,"flightCost":0,"transferCost":0,"activityCost":0,"arrivalGap":"","departureGap":""}],"totalEstimate":0,"aiInsights":[""],"warnings":[""]}`;
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:prompt}]})});
+      const resp=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:prompt}]})});
       const data=await resp.json();
       const text=data.content?.filter((b:any)=>b.type==="text")?.map((b:any)=>b.text)?.join("")||"";
       const match=text.match(/\{[\s\S]*\}/);
@@ -670,7 +670,7 @@ Respond ONLY in this JSON (no markdown, no backticks):
       const isQuestion=/visa|weather|pack|when|best time|malaria|safe|flight time|how long|currency/i.test(msg);
 
       if(isQuestion){
-        const resp=await fetch("https://api.anthropic.com/v1/messages",{
+        const resp=await fetch("/api/claude",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
@@ -690,7 +690,7 @@ Respond ONLY in this JSON (no markdown, no backticks):
         // ── ITINERARY MODIFICATION ──────────────────────────────
         const currentItinerary=JSON.stringify(itinerary);
 
-        const resp=await fetch("https://api.anthropic.com/v1/messages",{
+        const resp=await fetch("/api/claude",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
@@ -778,7 +778,7 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
     if(!chatInput.trim())return;
     const msg=chatInput.trim();setChatInput("");setChatMsgs(m=>[...m,{role:"user",text:msg}]);setChatLoading(true);
     try{
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`You are a luxury safari specialist at The Safari Edition. Be warm, knowledgeable, concise. Question: ${msg}`}]})});
+      const resp=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:`You are a luxury safari specialist at The Safari Edition. Be warm, knowledgeable, concise. Question: ${msg}`}]})});
       const data=await resp.json();
       setChatMsgs(m=>[...m,{role:"assistant",text:data.content?.[0]?.text||"Happy to help."}]);
     }catch{
