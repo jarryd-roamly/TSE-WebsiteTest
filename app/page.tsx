@@ -1,6 +1,70 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from "react";
 
+// ─── SUPABASE CLIENT ──────────────────────────────────────────
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+async function supabaseFetch(path: string) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`Supabase error: ${res.status}`);
+  return res.json();
+}
+
+// Map a Supabase supplier row to the Hotel shape the UI expects
+function mapSupplier(s: any) {
+  // Derive region from country
+  const countryToRegion: Record<string, string> = {
+    'South Africa': 'southern-africa',
+    'Botswana': 'southern-africa',
+    'Zimbabwe': 'southern-africa',
+    'Zambia': 'southern-africa',
+    'Namibia': 'southern-africa',
+    'Kenya': 'east-africa',
+    'Tanzania': 'east-africa',
+    'Uganda': 'east-africa',
+    'Rwanda': 'east-africa',
+    'Mozambique': 'indian-ocean',
+    'Seychelles': 'indian-ocean',
+    'Maldives': 'indian-ocean',
+    'Mauritius': 'indian-ocean',
+  };
+  const region = countryToRegion[s.country] || 'southern-africa';
+  const netRate = s.net_rate_per_night || 25000;
+  const displayRate = s.display_rate_per_night || Math.round(netRate * 1.15);
+  const otaRate = s.ota_rate_per_night || null;
+  // marginScore for sorting — higher display/net ratio = better margin
+  const marginScore = displayRate > 0 ? Math.round((displayRate - netRate) / displayRate * 100) : 20;
+  return {
+    id: s.id,
+    name: s.name,
+    location: `${s.region || s.destination || ''}, ${s.country}`.replace(/^, /, ''),
+    region,
+    country: s.country,
+    destination: s.destination || s.region || '',
+    stars: 5,
+    trustScore: s.trust_score || 85,
+    netRate,
+    otaRate,
+    marginScore,
+    image: s.image_url || `https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80`,
+    funFact: s.description ? s.description.slice(0, 120) : null,
+    malariaFree: s.malaria_status === 'malaria-free',
+    tags: s.tags || [],
+    upgrades: {
+      rooms: [{label: 'Standard Suite', extra: 0, tier: 0}, {label: 'Premium Suite', extra: Math.round(netRate * 0.4), tier: 1}],
+      basis: [{label: 'All-inclusive', extra: 0, tier: 0}],
+      flexibility: [{label: 'Standard', extra: 0, tier: 0}, {label: 'Flexible', extra: Math.round(netRate * 0.08), tier: 1}],
+    },
+  };
+}
+
 // ─── AVAILABILITY SYSTEM ──────────────────────────────────────────────────────
 interface AvailOption{label:string;available:boolean;capacity_remaining?:number;rate_zar:number;display_rate_zar:number;meal_basis?:string;addons?:{label:string;extra_zar:number}[];external_ref?:string;}
 interface AvailResult{supplier_id:string;check_in:string;available:boolean;options:AvailOption[];source:string;response_ms:number;}
@@ -138,17 +202,20 @@ const FLIGHTS = [
 const MARGINS={flights:1.08,hotels:1.15,transfers:1.20,activities:1.18,intl:1.08};
 const SECTION_LABELS:Record<string,string>={rooms:"Room type",basis:"Meal basis",flexibility:"Cancellation",classes:"Cabin class",baggage:"Baggage",vehicles:"Vehicle",extras:"Add-ons",options:"Option"};
 
-const HOTELS = [
-  {id:1,name:"Singita Sabi Sand",location:"Sabi Sand Game Reserve, SA",region:"southern-africa",country:"South Africa",stars:5,trustScore:99,netRate:56000,otaRate:76000,marginScore:27,image:"https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80",funFact:"Singita means 'place of miracles' — highest leopard density in Africa.",upgrades:{rooms:[{label:"Luxury Suite",extra:0,tier:0},{label:"Private Villa",extra:89000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible (+14 days)",extra:4200,tier:1}]}},
-  {id:2,name:"Royal Malewane",location:"Greater Kruger, Limpopo",region:"southern-africa",country:"South Africa",stars:5,trustScore:97,netRate:48000,otaRate:67000,marginScore:28,image:"https://images.unsplash.com/photo-1500491460312-c32fc2dbc751?w=800&q=80",funFact:"Two of the world's top-rated safari rangers call Royal Malewane home.",upgrades:{rooms:[{label:"Suite",extra:0,tier:0},{label:"Africa House",extra:120000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3800,tier:1}]}},
-  {id:3,name:"AndBeyond Phinda",location:"KwaZulu-Natal, SA",region:"southern-africa",country:"South Africa",stars:5,trustScore:95,netRate:32000,otaRate:44000,marginScore:27,image:"https://images.unsplash.com/photo-1518548419970-58e3b4079ab2?w=800&q=80",funFact:"Phinda spans 7 ecosystems including Africa's rarest sand forest.",upgrades:{rooms:[{label:"Forest Suite",extra:0,tier:0},{label:"Rock Lodge",extra:65000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:2800,tier:1}]}},
-  {id:4,name:"Mara Plains Camp",location:"Olare Motorogi Conservancy, Kenya",region:"east-africa",country:"Kenya",stars:5,trustScore:96,netRate:42000,otaRate:58000,marginScore:28,image:"https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80",funFact:"Only 8 tents — the Mara at its most intimate. Peak migration July–October.",upgrades:{rooms:[{label:"Classic Tent",extra:0,tier:0},{label:"Family Tent",extra:18000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3200,tier:1}]}},
-  {id:5,name:"Madikwe Safari Lodge",location:"Madikwe Game Reserve, SA",region:"southern-africa",country:"South Africa",stars:5,trustScore:93,netRate:28000,otaRate:38500,marginScore:27,image:"https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80",funFact:"Madikwe is SA's fourth-largest reserve — malaria-free, 3 hours from Johannesburg.",upgrades:{rooms:[{label:"Classic Suite",extra:0,tier:0},{label:"Private Suite",extra:12000,tier:1},{label:"Presidential Villa",extra:48000,tier:2}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:2200,tier:1}]}},
-  {id:6,name:"Ngorongoro Crater Lodge",location:"Ngorongoro Crater, Tanzania",region:"east-africa",country:"Tanzania",stars:5,trustScore:94,netRate:38000,otaRate:54000,marginScore:30,image:"https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80",funFact:"The Ngorongoro Crater is the world's largest intact volcanic caldera — 25,000 animals.",upgrades:{rooms:[{label:"Forest Suite",extra:0,tier:0},{label:"Tree Suite",extra:22000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3400,tier:1}]}},
-  {id:7,name:"The Victoria Falls Hotel",location:"Victoria Falls, Zimbabwe",region:"southern-africa",country:"Zimbabwe",stars:5,trustScore:91,netRate:18000,otaRate:26000,marginScore:31,image:"https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80",funFact:"The spray from Victoria Falls can be seen 50km away on a clear day.",upgrades:{rooms:[{label:"Stanley Room",extra:0,tier:0},{label:"Terrace Suite",extra:9500,tier:1},{label:"Presidential",extra:32000,tier:2}],basis:[{label:"Room Only",extra:0,tier:0},{label:"Bed & Breakfast",extra:1200,tier:1},{label:"Half Board",extra:2600,tier:2}],flexibility:[{label:"Non-refundable (save 12%)",extra:-2160,tier:0},{label:"Free cancellation",extra:0,tier:1}]}},
-  {id:8,name:"Azura Bazaruto",location:"Bazaruto Archipelago, Mozambique",region:"indian-ocean",country:"Mozambique",stars:5,trustScore:92,netRate:22000,otaRate:32000,marginScore:31,image:"https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80",funFact:"Bazaruto is home to the last viable population of dugongs in the Indian Ocean.",upgrades:{rooms:[{label:"Beach Villa",extra:0,tier:0},{label:"Ocean Villa",extra:14000,tier:1},{label:"Private Island Villa",extra:58000,tier:2}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:2400,tier:1}]}},
+// ─── FALLBACK HOTELS (used if Supabase unavailable) ──────────
+const HOTELS_FALLBACK = [
+  {id:1,name:"Singita Sabi Sand",location:"Sabi Sand Game Reserve, South Africa",region:"southern-africa",country:"South Africa",destination:"Sabi Sand",stars:5,trustScore:99,netRate:56000,otaRate:76000,marginScore:27,malariaFree:false,tags:[],image:"https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80",funFact:"Singita means 'place of miracles' — highest leopard density in Africa.",upgrades:{rooms:[{label:"Luxury Suite",extra:0,tier:0},{label:"Private Villa",extra:89000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible (+14 days)",extra:4200,tier:1}]}},
+  {id:2,name:"Royal Malewane",location:"Greater Kruger, South Africa",region:"southern-africa",country:"South Africa",destination:"Kruger",stars:5,trustScore:97,netRate:48000,otaRate:67000,marginScore:28,malariaFree:false,tags:[],image:"https://images.unsplash.com/photo-1500491460312-c32fc2dbc751?w=800&q=80",funFact:"Two of the world's top-rated safari rangers call Royal Malewane home.",upgrades:{rooms:[{label:"Suite",extra:0,tier:0},{label:"Africa House",extra:120000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3800,tier:1}]}},
+  {id:3,name:"Wilderness Mombo",location:"Okavango Delta, Botswana",region:"southern-africa",country:"Botswana",destination:"Okavango",stars:5,trustScore:98,netRate:62000,otaRate:88000,marginScore:30,malariaFree:false,tags:[],image:"https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80",funFact:"Mombo is known as the place of plenty — the highest predator density in the Delta.",upgrades:{rooms:[{label:"Luxury Tent",extra:0,tier:0},{label:"Family Tent",extra:18000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3200,tier:1}]}},
+  {id:4,name:"Matetsi Victoria Falls",location:"Victoria Falls, Zimbabwe",region:"southern-africa",country:"Zimbabwe",destination:"Victoria Falls",stars:5,trustScore:96,netRate:38000,otaRate:54000,marginScore:30,malariaFree:false,tags:[],image:"https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80",funFact:"Private 26km stretch of the Zambezi — no other camps in sight.",upgrades:{rooms:[{label:"River Suite",extra:0,tier:0},{label:"Private Villa",extra:45000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3200,tier:1}]}},
+  {id:5,name:"Madikwe Safari Lodge",location:"Madikwe Game Reserve, South Africa",region:"southern-africa",country:"South Africa",destination:"Madikwe",stars:5,trustScore:93,netRate:28000,otaRate:38500,marginScore:27,malariaFree:true,tags:["malaria-free","family-friendly"],image:"https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80",funFact:"Madikwe is SA's fourth-largest reserve — malaria-free, 3 hours from Johannesburg.",upgrades:{rooms:[{label:"Classic Suite",extra:0,tier:0},{label:"Private Suite",extra:12000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:2200,tier:1}]}},
+  {id:6,name:"Mara Plains Camp",location:"Olare Motorogi Conservancy, Kenya",region:"east-africa",country:"Kenya",destination:"Masai Mara",stars:5,trustScore:96,netRate:42000,otaRate:58000,marginScore:28,malariaFree:false,tags:[],image:"https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80",funFact:"Only 8 tents — the Mara at its most intimate. Peak migration July–October.",upgrades:{rooms:[{label:"Classic Tent",extra:0,tier:0},{label:"Family Tent",extra:18000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3200,tier:1}]}},
+  {id:7,name:"Ngorongoro Crater Lodge",location:"Ngorongoro Crater, Tanzania",region:"east-africa",country:"Tanzania",destination:"Ngorongoro",stars:5,trustScore:94,netRate:38000,otaRate:54000,marginScore:30,malariaFree:false,tags:[],image:"https://images.unsplash.com/photo-1518548419970-58e3b4079ab2?w=800&q=80",funFact:"The world's largest intact volcanic caldera — 25,000 animals.",upgrades:{rooms:[{label:"Forest Suite",extra:0,tier:0},{label:"Tree Suite",extra:22000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:3400,tier:1}]}},
+  {id:8,name:"Azura Bazaruto",location:"Bazaruto Archipelago, Mozambique",region:"indian-ocean",country:"Mozambique",destination:"Bazaruto",stars:5,trustScore:92,netRate:22000,otaRate:32000,marginScore:31,malariaFree:false,tags:[],image:"https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80",funFact:"Bazaruto is home to the last viable population of dugongs in the Indian Ocean.",upgrades:{rooms:[{label:"Beach Villa",extra:0,tier:0},{label:"Ocean Villa",extra:14000,tier:1}],basis:[{label:"All-inclusive",extra:0,tier:0}],flexibility:[{label:"Standard",extra:0,tier:0},{label:"Flexible",extra:2400,tier:1}]}},
 ];
-const HOTELS_BY_MARGIN=[...HOTELS].sort((a,b)=>b.marginScore-a.marginScore);
+// HOTELS and HOTELS_BY_MARGIN are set dynamically — see useEffect in main component
+let HOTELS = [...HOTELS_FALLBACK];
+let HOTELS_BY_MARGIN = [...HOTELS].sort((a,b)=>b.marginScore-a.marginScore);
 
 const INTER_TRANSFERS=[
   {id:"road-sa",label:"Road transfer",icon:"🚗",desc:"Private vehicle between SA properties",applicableRegions:[["southern-africa","southern-africa"]],netRate:1800,otaRate:2600,duration:"2–4 hrs",note:"Comfortable private SUV with refreshments en route."},
@@ -355,7 +422,27 @@ export default function SafariEdition(){
   const chatEndRef=useRef<HTMLDivElement>(null);
   const inspireChatEndRef=useRef<HTMLDivElement>(null);
 
-  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[chatMsgs]);
+  const [suppliersLoaded,setSuppliersLoaded]=useState(false);
+
+  // ─── FETCH SUPPLIERS FROM SUPABASE ───────────────────────────
+  useEffect(()=>{
+    supabaseFetch('suppliers?select=*&is_active=eq.true&order=trust_score.desc&limit=100')
+      .then((rows:any[])=>{
+        if(!rows||rows.length===0)return;
+        const mapped=rows
+          .filter((r:any)=>r.country&&r.name&&r.net_rate_per_night)
+          .map(mapSupplier);
+        if(mapped.length>0){
+          HOTELS=mapped;
+          HOTELS_BY_MARGIN=[...mapped].sort((a:any,b:any)=>b.marginScore-a.marginScore);
+          setSuppliersLoaded(true);
+        }
+      })
+      .catch(()=>{
+        // Silently fall back to hardcoded HOTELS_FALLBACK
+        setSuppliersLoaded(true);
+      });
+  },[]);
   useEffect(()=>{if(inspireChatMsgs.length>1)inspireChatEndRef.current?.scrollIntoView({behavior:"smooth"});},[inspireChatMsgs]);
   useEffect(()=>{setPropertyStays(stays=>{if(stays.length===1)return [{...stays[0],nights}];return stays;});},[nights]);
 
@@ -1417,7 +1504,6 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
                   <div style={{padding:"13px 15px"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                       <div><div style={{fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif",color:T.text}}>{fl.airline}</div><div style={{fontSize:12,color:T.textMid}}>{builderIntlOrigin} → JNB · {fl.duration}</div></div>
-                      <div style={{textAlign:"right"}}><div style={{fontSize:19,fontWeight:700,color:"#60a5fa",fontFamily:"'Playfair Display',serif"}}>{fmt(display)}</div><div style={{fontSize:10,color:T.textDim}}>{totalPax} pax</div></div>
                     </div>
                     <div style={{display:"flex",gap:8}}>
                       <button onClick={()=>setIntlFlightIdx(i=>Math.max(0,i-1))} disabled={intlFlightIdx===0} style={{flex:1,padding:"9px",borderRadius:9,border:`0.5px solid ${T.border}`,background:T.bg3,color:T.textMid,cursor:intlFlightIdx===0?"not-allowed":"pointer",opacity:intlFlightIdx===0?0.35:1,fontFamily:"inherit",fontSize:12}}>← Prev</button>
@@ -1518,10 +1604,6 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
                       <div style={{padding:"12px 14px 14px"}}>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                           <div><div style={{fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif",color:T.text}}>{hotel.name}</div><div style={{fontSize:12,color:T.textMid,marginTop:1}}>{hotel.location}</div></div>
-                          <div style={{textAlign:"right"}}>
-                            <div style={{fontSize:18,fontWeight:700,color:"#4ade80",fontFamily:"'Playfair Display',serif"}}>{fmt(display)}</div>
-                            <div style={{fontSize:10,color:T.textDim}}>{stay.nights}n total</div>
-                          </div>
                         </div>
                         {hotel.funFact&&<div className="fun-fact">✦ {hotel.funFact}</div>}
 
@@ -1536,7 +1618,7 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
                           return(
                             <div style={{marginTop:10}}>
                               {isChecking&&<div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"rgba(255,255,255,0.04)",borderRadius:8,fontSize:11,color:T.textDim}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",border:"1.5px solid rgba(74,222,128,0.3)",borderTopColor:"#4ade80",animation:"spin 0.75s linear infinite"}}/>Confirming availability…</div>}
-                              {isAvail&&bestOption&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"rgba(74,222,128,0.06)",border:"0.5px solid rgba(74,222,128,0.2)",borderRadius:8}}><div><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}><div style={{width:6,height:6,borderRadius:"50%",background:"#4ade80"}}/><span style={{fontSize:11,color:"#4ade80",fontWeight:600}}>Available</span></div><div style={{fontSize:11,color:T.textMid}}>{bestOption.label}</div></div><div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:700,color:"#4ade80"}}>{fmt(bestOption.display_rate_zar||Math.round(bestOption.rate_zar*1.15))}</div><div style={{fontSize:10,color:T.textDim}}>per night</div></div></div>}
+                              {isAvail&&bestOption&&<div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"rgba(74,222,128,0.06)",border:"0.5px solid rgba(74,222,128,0.2)",borderRadius:8}}><div style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",flexShrink:0}}/><span style={{fontSize:11,color:"#4ade80",fontWeight:600}}>Available · {bestOption.label}</span></div>}
                               {r&&!r.available&&alt&&<div style={{background:"rgba(212,175,55,0.06)",border:`0.5px solid ${T.borderGold}`,borderRadius:10,padding:"12px 14px"}}><div style={{fontSize:11,color:T.gold,fontWeight:600,marginBottom:6}}>Not available {checkinDate} — but we found a slot</div><div style={{fontSize:12,color:T.textMid,marginBottom:10}}><strong style={{color:T.text}}>{hotel.name}</strong> available from <strong style={{color:T.gold}}>{alt.date}</strong> ({alt.delta>0?`+${alt.delta}`:`${alt.delta}`} days)</div><div style={{display:"flex",gap:8}}><button onClick={()=>acceptAltDate(stayIdx,alt.date,alt.delta)} className="btn-gold" style={{flex:2,padding:"9px 14px",fontSize:12}}>Shift to {alt.date} →</button><button onClick={()=>updateStayHotel(stayIdx,1)} className="btn-ghost" style={{flex:1,padding:"9px",fontSize:11}}>Next lodge</button></div></div>}
                               {r&&!r.available&&alt===null&&<div style={{padding:"8px 12px",background:"rgba(255,255,255,0.03)",border:`0.5px solid ${T.border}`,borderRadius:8,fontSize:11,color:T.textDim}}>No availability ±3 days — swipe to another property</div>}
                               {r&&<button onClick={()=>refreshStayAvailability(stayIdx)} style={{marginTop:6,background:"none",border:"none",color:T.textDim,fontSize:10,cursor:"pointer",fontFamily:"inherit",padding:0,textDecoration:"underline"}}>↻ Refresh</button>}
@@ -1592,8 +1674,8 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
               </div>
               <div style={{borderTop:`0.5px solid ${T.borderGold}`,paddingTop:14}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                  <div><div style={{fontSize:13,fontWeight:700,color:T.text}}>Total package</div><div style={{fontSize:11,color:T.textDim,marginTop:2}}>Incl. all flights, lodges, transfers & 5% payment fee</div></div>
-                  <span style={{fontSize:26,fontWeight:700,color:T.gold,fontFamily:"'Playfair Display',serif"}}>{fmt(Math.round(totalZAR*1.05))}</span>
+                  <div><div style={{fontSize:13,fontWeight:700,color:T.text}}>Total package</div><div style={{fontSize:11,color:T.textDim,marginTop:2}}>All flights, lodges & transfers included</div></div>
+                  <span style={{fontSize:26,fontWeight:700,color:T.gold,fontFamily:"'Playfair Display',serif"}}>{fmt(totalZAR)}</span>
                 </div>
               </div>
               <button id="confirm-payment-btn" className="btn-gold" style={{width:"100%",padding:"15px",fontSize:15,marginTop:16}} onClick={async()=>{
