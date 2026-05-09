@@ -19,10 +19,10 @@ async function supabaseFetch(path: string) {
 
 // Map a Supabase supplier row to the Hotel shape the UI expects
 function mapSupplier(s: any) {
-  // Derive region from country
   const countryToRegion: Record<string, string> = {
     'South Africa': 'southern-africa',
     'Botswana': 'southern-africa',
+    'South Africa / Botswana': 'southern-africa',
     'Zimbabwe': 'southern-africa',
     'Zambia': 'southern-africa',
     'Namibia': 'southern-africa',
@@ -36,32 +36,84 @@ function mapSupplier(s: any) {
     'Mauritius': 'indian-ocean',
   };
   const region = countryToRegion[s.country] || 'southern-africa';
-  const netRate = s.net_rate_per_night || 25000;
-  const displayRate = s.display_rate_per_night || Math.round(netRate * 1.15);
-  const otaRate = s.ota_rate_per_night || null;
-  // marginScore for sorting — higher display/net ratio = better margin
+  const netRate = Number(s.net_rate_per_night) || 25000;
+  const displayRate = Number(s.display_rate_per_night) || Math.round(netRate * 1.15);
+  const otaRate = s.ota_rate_per_night ? Number(s.ota_rate_per_night) : null;
   const marginScore = displayRate > 0 ? Math.round((displayRate - netRate) / displayRate * 100) : 20;
   return {
     id: s.id,
     name: s.name,
-    location: `${s.region || s.destination || ''}, ${s.country}`.replace(/^, /, ''),
+    // location shown in UI: use region column for specificity (e.g. "Sabi Sand Game Reserve, South Africa")
+    location: s.region ? `${s.region}, ${s.country}` : `${s.destination || ''}, ${s.country}`.replace(/^, /, ''),
+    // destination used for AI matching — exactly as stored in DB
+    destination: s.destination || '',
+    // region column (e.g. "Sabi Sand Game Reserve") used for sub-destination matching
+    subRegion: s.region || '',
     region,
-    country: s.country,
-    destination: s.destination || s.region || '',
+    country: s.country || '',
     stars: 5,
     trustScore: s.trust_score || 85,
     netRate,
     otaRate,
     marginScore,
-    image: s.image_url || `https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80`,
+    image: `https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80`,
     funFact: s.description ? s.description.slice(0, 120) : null,
     malariaFree: s.malaria_status === 'malaria-free',
     tags: s.tags || [],
     upgrades: {
-      rooms: [{label: 'Standard Suite', extra: 0, tier: 0}, {label: 'Premium Suite', extra: Math.round(netRate * 0.4), tier: 1}],
-      basis: [{label: 'All-inclusive', extra: 0, tier: 0}],
-      flexibility: [{label: 'Standard', extra: 0, tier: 0}, {label: 'Flexible', extra: Math.round(netRate * 0.08), tier: 1}],
+      rooms: [{label:'Standard Suite',extra:0,tier:0},{label:'Premium Suite',extra:Math.round(netRate*0.4),tier:1}],
+      basis: [{label:'All-inclusive',extra:0,tier:0}],
+      flexibility: [{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:Math.round(netRate*0.08),tier:1}],
     },
+  };
+}
+
+// ─── DESTINATION MATCHER ─────────────────────────────────────
+// Maps AI-generated city names to Supabase destination values
+function matchDestination(cityName: string, country: string): (h: any) => boolean {
+  const city = cityName.toLowerCase();
+  const ctry = country.toLowerCase();
+
+  // Explicit destination keyword map
+  const destinationMap: Record<string, string> = {
+    'sabi sand': 'Kruger / Sabi Sand',
+    'singita sabi': 'Kruger / Sabi Sand',
+    'kruger': 'Kruger / Sabi Sand',
+    'sabi sands': 'Kruger / Sabi Sand',
+    'londolozi': 'Kruger / Sabi Sand',
+    'okavango': 'Okavango Delta',
+    'okavango delta': 'Okavango Delta',
+    'delta': 'Okavango Delta',
+    'cape town': 'Cape Town',
+    'cape': 'Cape Town',
+    'madikwe': 'Madikwe',
+    'victoria falls': 'Victoria Falls',
+    'vic falls': 'Victoria Falls',
+    'masai mara': 'Masai Mara',
+    'mara': 'Masai Mara',
+    'serengeti': 'Serengeti',
+    'ngorongoro': 'Ngorongoro',
+    'zanzibar': 'Zanzibar',
+  };
+
+  // Find matching destination string
+  let targetDestination: string | null = null;
+  for (const [keyword, dest] of Object.entries(destinationMap)) {
+    if (city.includes(keyword)) { targetDestination = dest; break; }
+  }
+
+  return (h: any) => {
+    // If we have a destination match, use it
+    if (targetDestination) {
+      const destMatch = h.destination?.toLowerCase() === targetDestination.toLowerCase();
+      // For Botswana specifically, also filter by country to avoid SA/Botswana crossover
+      if (targetDestination === 'Okavango Delta' && ctry.includes('botswana')) {
+        return destMatch && h.country?.toLowerCase().includes('botswana');
+      }
+      return destMatch;
+    }
+    // Fallback: country match
+    return h.country?.toLowerCase() === ctry;
   };
 }
 
@@ -1266,36 +1318,28 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
                     {city.departureGap&&<div style={{fontSize:11,color:"rgba(96,165,250,0.7)",lineHeight:1.5}}>🛫 <strong style={{color:"#60a5fa"}}>Before departure:</strong> {city.departureGap}</div>}
                   </div>}
 
-                  {/* Lodge swipe — filtered by country match first, then full stack */}
+                  {/* Lodge swipe — destination matched via matchDestination() */}
                   {(()=>{
-                    // Build a country-matched stack for this destination
-                    const countryMatch=HOTELS_BY_MARGIN.filter(h=>h.country?.toLowerCase()===city.country?.toLowerCase());
-                    const regionMatch=HOTELS_BY_MARGIN.filter(h=>h.location?.toLowerCase().includes(city.city?.split(' ')[0]?.toLowerCase()||'__'));
-                    // Use country match if available, otherwise full stack
-                    const stack=countryMatch.length>0?countryMatch:regionMatch.length>0?regionMatch:HOTELS_BY_MARGIN;
-                    // Clamp index to this stack's length
+                    const matcher=matchDestination(city.city,city.country);
+                    const matched=HOTELS_BY_MARGIN.filter(matcher);
+                    const countryFallback=HOTELS_BY_MARGIN.filter(h=>h.country?.toLowerCase()===city.country?.toLowerCase());
+                    const safeStack=matched.length>0?matched:countryFallback.length>0?countryFallback:HOTELS_BY_MARGIN;
                     const rawIdx=cityHotelIdxs[idx]??0;
-                    const currentIdx=rawIdx%stack.length;
-                    const hotel=stack[currentIdx]||stack[0];
+                    const currentIdx=rawIdx%safeStack.length;
+                    const hotel=safeStack[currentIdx]||safeStack[0];
                     return(
                       <div style={{borderTop:`0.5px solid ${T.border}`,paddingTop:12,marginTop:10}}>
-                        <div style={{fontSize:10,color:T.gold,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700,marginBottom:8}}>Selected lodge · {city.country}</div>
+                        <div style={{fontSize:10,color:T.gold,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700,marginBottom:8}}>
+                          Selected lodge · {hotel.destination||city.city} <span style={{color:T.textDim,fontWeight:400,fontSize:9}}>({safeStack.length} option{safeStack.length!==1?'s':''})</span>
+                        </div>
                         <div style={{background:T.bg,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
-                            <div>
-                              <div style={{fontSize:14,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif"}}>{hotel.name}</div>
-                              <div style={{fontSize:11,color:T.textDim,marginTop:1}}>{hotel.location}</div>
-                            </div>
-                            <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
-                              <div style={{fontSize:14,fontWeight:700,color:T.green}}>{fmt(Math.round(hotel.netRate*city.nights*MARGINS.hotels))}</div>
-                              <div style={{fontSize:10,color:T.textDim}}>{city.nights}n total</div>
-                            </div>
-                          </div>
+                          <div style={{fontSize:14,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:2}}>{hotel.name}</div>
+                          <div style={{fontSize:11,color:T.textDim}}>{hotel.location}</div>
                         </div>
                         <div style={{display:"flex",gap:8}}>
                           <button onClick={()=>setCityHotelIdxs(prev=>{const n=[...prev];n[idx]=Math.max(0,(n[idx]??0)-1);return n;})} disabled={(cityHotelIdxs[idx]??0)===0} style={{flex:1,padding:"8px",borderRadius:9,border:`0.5px solid ${T.border}`,background:T.surface,color:T.textMid,cursor:(cityHotelIdxs[idx]??0)===0?"not-allowed":"pointer",opacity:(cityHotelIdxs[idx]??0)===0?0.35:1,fontFamily:"inherit",fontSize:12}}>← Prev</button>
-                          <div style={{flex:1,textAlign:"center",fontSize:11,color:T.textDim,display:"flex",alignItems:"center",justifyContent:"center"}}>{currentIdx+1} of {stack.length}</div>
-                          <button onClick={()=>setCityHotelIdxs(prev=>{const n=[...prev];n[idx]=Math.min(stack.length-1,(n[idx]??0)+1);return n;})} disabled={(cityHotelIdxs[idx]??0)>=stack.length-1} style={{flex:1,padding:"8px",borderRadius:9,border:`0.5px solid ${T.border}`,background:T.surface,color:T.textMid,cursor:(cityHotelIdxs[idx]??0)>=stack.length-1?"not-allowed":"pointer",opacity:(cityHotelIdxs[idx]??0)>=stack.length-1?0.35:1,fontFamily:"inherit",fontSize:12}}>Next →</button>
+                          <div style={{flex:1,textAlign:"center",fontSize:11,color:T.textDim,display:"flex",alignItems:"center",justifyContent:"center"}}>{currentIdx+1} of {safeStack.length}</div>
+                          <button onClick={()=>setCityHotelIdxs(prev=>{const n=[...prev];n[idx]=Math.min(safeStack.length-1,(n[idx]??0)+1);return n;})} disabled={(cityHotelIdxs[idx]??0)>=safeStack.length-1} style={{flex:1,padding:"8px",borderRadius:9,border:`0.5px solid ${T.border}`,background:T.surface,color:T.textMid,cursor:(cityHotelIdxs[idx]??0)>=safeStack.length-1?"not-allowed":"pointer",opacity:(cityHotelIdxs[idx]??0)>=safeStack.length-1?0.35:1,fontFamily:"inherit",fontSize:12}}>Next →</button>
                         </div>
                       </div>
                     );
