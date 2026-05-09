@@ -5,7 +5,7 @@ const DEMO_PASSWORD = 'safari2026'
 export function middleware(request: NextRequest) {
   // Already authenticated
   const cookie = request.cookies.get('demo_auth')
-  if (cookie?.value === DEMO_PASSWORD) return NextResponse.next()
+  if (cookie?.value === 'authenticated') return NextResponse.next()
 
   // Let the login page through
   const { pathname } = request.nextUrl
