@@ -295,7 +295,8 @@ function MsBriefScreen({nights,setNights,adults,setAdults,children,setChildren,c
 export default function SafariEdition(){
   const [screen,setScreen]=useState<Screen>("landing");
   const [showEditions,setShowEditions]=useState(false);
-  const specialist=SPECIALISTS[Math.floor(Math.random()*SPECIALISTS.length)]||SPECIALISTS[0];
+  // Fixed per session — not re-randomised on every render
+  const [specialist]=useState(()=>SPECIALISTS[Math.floor(Math.random()*SPECIALISTS.length)]||SPECIALISTS[0]);
   const [currency,setCurrency]=useState(CURRENCIES[0]);
   const [chatOpen,setChatOpen]=useState(false);
   const [nights,setNights]=useState(7);
@@ -566,7 +567,7 @@ ${currentItinerary}
 GUEST REQUEST: "${msg}"
 
 CONSTRAINTS:
-- Budget: R${Math.round(budget).toLocaleString()} ZAR
+- Budget: R${Math.round(budget||120000).toLocaleString()} ZAR
 - Nights: ${nights}
 - Adults: ${adults}
 - Currency shown to guest: ${currency.code}
@@ -1178,14 +1179,20 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
                     {city.departureGap&&<div style={{fontSize:11,color:"rgba(96,165,250,0.7)",lineHeight:1.5}}>🛫 <strong style={{color:"#60a5fa"}}>Before departure:</strong> {city.departureGap}</div>}
                   </div>}
 
-                  {/* Lodge swipe */}
+                  {/* Lodge swipe — filtered by country match first, then full stack */}
                   {(()=>{
-                    const stack=HOTELS_BY_MARGIN;
-                    const currentIdx=cityHotelIdxs[idx]??0;
+                    // Build a country-matched stack for this destination
+                    const countryMatch=HOTELS_BY_MARGIN.filter(h=>h.country?.toLowerCase()===city.country?.toLowerCase());
+                    const regionMatch=HOTELS_BY_MARGIN.filter(h=>h.location?.toLowerCase().includes(city.city?.split(' ')[0]?.toLowerCase()||'__'));
+                    // Use country match if available, otherwise full stack
+                    const stack=countryMatch.length>0?countryMatch:regionMatch.length>0?regionMatch:HOTELS_BY_MARGIN;
+                    // Clamp index to this stack's length
+                    const rawIdx=cityHotelIdxs[idx]??0;
+                    const currentIdx=rawIdx%stack.length;
                     const hotel=stack[currentIdx]||stack[0];
                     return(
                       <div style={{borderTop:`0.5px solid ${T.border}`,paddingTop:12,marginTop:10}}>
-                        <div style={{fontSize:10,color:T.gold,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700,marginBottom:8}}>Selected lodge</div>
+                        <div style={{fontSize:10,color:T.gold,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700,marginBottom:8}}>Selected lodge · {city.country}</div>
                         <div style={{background:T.bg,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
                             <div>
@@ -1200,7 +1207,7 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
                         </div>
                         <div style={{display:"flex",gap:8}}>
                           <button onClick={()=>setCityHotelIdxs(prev=>{const n=[...prev];n[idx]=Math.max(0,(n[idx]??0)-1);return n;})} disabled={(cityHotelIdxs[idx]??0)===0} style={{flex:1,padding:"8px",borderRadius:9,border:`0.5px solid ${T.border}`,background:T.surface,color:T.textMid,cursor:(cityHotelIdxs[idx]??0)===0?"not-allowed":"pointer",opacity:(cityHotelIdxs[idx]??0)===0?0.35:1,fontFamily:"inherit",fontSize:12}}>← Prev</button>
-                          <div style={{flex:1,textAlign:"center",fontSize:11,color:T.textDim,display:"flex",alignItems:"center",justifyContent:"center"}}>{(cityHotelIdxs[idx]??0)+1} of {stack.length}</div>
+                          <div style={{flex:1,textAlign:"center",fontSize:11,color:T.textDim,display:"flex",alignItems:"center",justifyContent:"center"}}>{currentIdx+1} of {stack.length}</div>
                           <button onClick={()=>setCityHotelIdxs(prev=>{const n=[...prev];n[idx]=Math.min(stack.length-1,(n[idx]??0)+1);return n;})} disabled={(cityHotelIdxs[idx]??0)>=stack.length-1} style={{flex:1,padding:"8px",borderRadius:9,border:`0.5px solid ${T.border}`,background:T.surface,color:T.textMid,cursor:(cityHotelIdxs[idx]??0)>=stack.length-1?"not-allowed":"pointer",opacity:(cityHotelIdxs[idx]??0)>=stack.length-1?0.35:1,fontFamily:"inherit",fontSize:12}}>Next →</button>
                         </div>
                       </div>
@@ -1239,7 +1246,7 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
           })}
 
           <button onClick={async()=>{
-            setInspireChatInput(`Suggest the best destination to add after ${itinerary.cities[itinerary.cities.length-1]?.city}. Consider budget R${Math.round(budget).toLocaleString()}, ${nights} nights total. Give me a specific lodge recommendation.`);
+            setInspireChatInput(`Suggest the best destination to add after ${itinerary.cities[itinerary.cities.length-1]?.city}. Consider budget R${Math.round(budget||120000).toLocaleString()}, ${nights} nights total. Give me a specific lodge recommendation.`);
             setTimeout(()=>document.getElementById('inspire-send-btn')?.click(),50);
           }} style={{width:"100%",padding:"12px",borderRadius:12,border:`1px dashed ${T.borderGold}`,background:"rgba(212,175,55,0.04)",color:T.gold,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             <span style={{fontSize:18}}>+</span> Add another destination
@@ -1576,15 +1583,18 @@ RESPOND WITH ONLY THIS JSON — no markdown, no backticks, no preamble:
           {(activePillars.length>0||includeIntlFlight)&&(
             <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,padding:"20px",marginTop:8}}>
               <div style={{fontSize:13,fontWeight:600,marginBottom:14,color:T.text}}>Package summary</div>
-              {includeIntlFlight&&currentIntlFlight&&<SummaryRow label={`✈ ${currentIntlFlight.airline} · ${builderIntlOrigin}→JNB`} value={fmt(Math.round((currentIntlFlight.netRate*totalPax+(intlFlightUpgrade as number))*MARGINS.intl))} T={T}/>}
-              {activePillars.includes("flights")&&<SummaryRow label={`✈ ${FLIGHTS[flightIdx].airline} · ${FLIGHTS[flightIdx].route}`} value={fmt(Math.round((FLIGHTS[flightIdx].netRate*totalPax+(flightUpgrade as number))*MARGINS.flights))} T={T}/>}
-              {activePillars.includes("hotels")&&propertyStays.map((stay,i)=>{const stack2=availableHotelStack.length>0?availableHotelStack:HOTELS_BY_MARGIN;const h=stack2[Math.min(stay.hotelIdx,stack2.length-1)]||HOTELS[0];const{resolved}=resolveHotelUpgrades(h,stay.prefs);const ue=Object.values(resolved).reduce((s:number,v:any)=>s+(v?.extra||0),0);return<SummaryRow key={stay.id} label={`🏕 ${h.name} · ${stay.nights}n`} value={fmt(Math.round((h.netRate*stay.nights+ue)*MARGINS.hotels))} T={T}/>;})}
-              {activePillars.includes("hotels")&&interTransfers.map((it,i)=>{const t=INTER_TRANSFERS.find(x=>x.id===it.transferId);if(!t||t.netRate===0)return null;return<SummaryRow key={i} label={`${t.icon} ${t.label}`} value={fmt(Math.round(t.netRate*MARGINS.transfers))} T={T}/>;})}
-              {activePillars.includes("transfers")&&<SummaryRow label={`🚗 ${TRANSFERS[transferIdx].type}`} value={fmt(Math.round(((TRANSFERS[transferIdx]?.netRate||0)+(transferUpgrade as number))*MARGINS.transfers))} T={T}/>}
-              {activePillars.includes("activities")&&<SummaryRow label={`🦁 ${ACTIVITIES[activityIdx].name}`} value={fmt(Math.round(((ACTIVITIES[activityIdx]?.netRate||0)*totalPax+(activityUpgrade as number))*MARGINS.activities))} T={T}/>}
-              <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:6,borderTop:`0.5px solid ${T.borderGold}`}}>
-                <span style={{fontSize:15,fontWeight:700,color:T.text}}>Total</span>
-                <span style={{fontSize:22,fontWeight:700,color:T.gold,fontFamily:"'Playfair Display',serif"}}>{fmt(totalZAR)}</span>
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+                {propertyStays.map((stay,i)=>{const stack2=availableHotelStack.length>0?availableHotelStack:HOTELS_BY_MARGIN;const h=stack2[Math.min(stay.hotelIdx,stack2.length-1)]||HOTELS[0];return<div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.textMid}}><span style={{color:T.gold,flexShrink:0}}>✦</span>{h.name} · {stay.nights} night{stay.nights!==1?"s":""}</div>;})}
+                {activePillars.includes("flights")&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.textMid}}><span style={{color:T.gold,flexShrink:0}}>✦</span>{FLIGHTS[flightIdx].airline} · {FLIGHTS[flightIdx].route}</div>}
+                {includeIntlFlight&&currentIntlFlight&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.textMid}}><span style={{color:T.gold,flexShrink:0}}>✦</span>{currentIntlFlight.airline} · {builderIntlOrigin} → JNB</div>}
+                {activePillars.includes("transfers")&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.textMid}}><span style={{color:T.gold,flexShrink:0}}>✦</span>{TRANSFERS[transferIdx].type}</div>}
+                {activePillars.includes("activities")&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.textMid}}><span style={{color:T.gold,flexShrink:0}}>✦</span>{ACTIVITIES[activityIdx].name}{ACTIVITIES[activityIdx].netRate===0&&<span style={{color:T.green,fontSize:11,marginLeft:4}}>· Included</span>}</div>}
+              </div>
+              <div style={{borderTop:`0.5px solid ${T.borderGold}`,paddingTop:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                  <div><div style={{fontSize:13,fontWeight:700,color:T.text}}>Total package</div><div style={{fontSize:11,color:T.textDim,marginTop:2}}>Incl. all flights, lodges, transfers & 5% payment fee</div></div>
+                  <span style={{fontSize:26,fontWeight:700,color:T.gold,fontFamily:"'Playfair Display',serif"}}>{fmt(Math.round(totalZAR*1.05))}</span>
+                </div>
               </div>
               <button id="confirm-payment-btn" className="btn-gold" style={{width:"100%",padding:"15px",fontSize:15,marginTop:16}} onClick={async()=>{
                 try{
@@ -1667,8 +1677,8 @@ function PillarCard({item,displayRate,otaSaving,totalPax,nights,pillar,pillarCol
       </div>
       <div style={{padding:"13px 15px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-          <div><div style={{fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif",color:"#f5f0e8"}}>{item.name||item.type||item.airline}</div><div style={{fontSize:12,color:"rgba(245,240,232,0.6)",marginTop:1}}>{item.location||item.route||item.vehicle||item.duration}</div></div>
-          <div style={{textAlign:"right"}}><div style={{fontSize:20,fontWeight:700,color:pillarColor,fontFamily:"'Playfair Display',serif"}}>{fmt(displayRate)}</div></div>
+          <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif",color:"#f5f0e8"}}>{item.name||item.type||item.airline}</div><div style={{fontSize:12,color:"rgba(245,240,232,0.6)",marginTop:1}}>{item.location||item.route||item.vehicle||item.duration}</div></div>
+          {item.netRate===0&&<div style={{fontSize:12,color:"#4ade80",fontWeight:600,flexShrink:0}}>Included</div>}
         </div>
         {item.funFact&&<div style={{background:"rgba(212,175,55,0.07)",border:"0.5px solid rgba(212,175,55,0.16)",borderRadius:10,padding:"10px 14px",fontSize:12,color:"rgba(212,175,55,0.85)",lineHeight:1.55,marginBottom:10}}>✦ {item.funFact}</div>}
         <div style={{display:"flex",gap:8,marginTop:10}}>
