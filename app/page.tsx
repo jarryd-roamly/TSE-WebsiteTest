@@ -270,8 +270,7 @@ function getInterTransfer(regionA: string, regionB: string) {
   return INTER_TRANSFERS.find(t => t.applicableRegions.some(([a, b]) => a === regionA && b === regionB)) ?? INTER_TRANSFERS[0];
 }
 
-  return { resolved, mismatches };
-}
+
 
 // Fallback itinerary when AI is unavailable
 function buildFallbackItinerary(nights: number, budget: number, mode: InputMode): Itinerary {
