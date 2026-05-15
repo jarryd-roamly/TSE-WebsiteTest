@@ -8,10 +8,8 @@ import type { Hotel, PropertyStay, UpgradeOption } from './types';
 // Returns a formatter function. Call once per currency change, not per render.
 export function makeFmt(symbol: string, rate: number) {
   return (zarAmount: number) => {
-    const converted = zarAmount / rate;
-    if (converted >= 1_000_000) return `${symbol}${(converted / 1_000_000).toFixed(1)}M`;
-    if (converted >= 1_000)     return `${symbol}${Math.round(converted / 1_000)}k`;
-    return `${symbol}${Math.round(converted).toLocaleString()}`;
+    const converted = Math.round(zarAmount / rate);
+    return `${symbol}${converted.toLocaleString()}`
   };
 }
 
