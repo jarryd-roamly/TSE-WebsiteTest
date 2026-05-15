@@ -270,17 +270,6 @@ function getInterTransfer(regionA: string, regionB: string) {
   return INTER_TRANSFERS.find(t => t.applicableRegions.some(([a, b]) => a === regionA && b === regionB)) ?? INTER_TRANSFERS[0];
 }
 
-function resolveHotelUpgrades(hotel: Hotel, prefs: Record<string, number>) {
-  const resolved: Record<string, any> = {}, mismatches: string[] = [];
-  for (const [key, prefTier] of Object.entries(prefs)) {
-    const opts = (hotel.upgrades as any)[key] as any[] | undefined;
-    if (!opts) continue;
-    const exact = opts.find(o => o.tier === prefTier);
-    const below = [...opts].reverse().find(o => o.tier <= prefTier);
-    const match = exact ?? below ?? opts[0];
-    resolved[key] = match;
-    if (!exact && prefTier > 0) mismatches.push(key);
-  }
   return { resolved, mismatches };
 }
 
