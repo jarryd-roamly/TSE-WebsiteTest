@@ -8,7 +8,7 @@ const T = {
   border:'rgba(255,255,255,0.08)', green:'#4ade80', red:'#f87171', blue:'#60a5fa', amber:'#fbbf24',
 }
 const SUPABASE_URL='https://tkthsbxuyihoblpcfnml.supabase.co'
-const SUPABASE_KEY='sb_secret_xUfAvCVElU631UyskrYETQ_UkXzrh6C'
+const SUPABASE_KEY='sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx'
 
 
 // ── BULK TEST DATA ────────────────────────────────────────────
@@ -320,7 +320,7 @@ function OpenQuotes({onBack}:{onBack:()=>void}){
   const [sortDir,setSortDir]=useState('desc')
 
   useEffect(()=>{
-    sb('itineraries?select=id,title,share_token,created_at,total_display_zar,nights,adults&status=eq.quote&order=created_at.desc')
+    Promise.resolve([])
       .then(async(data:any[])=>{
         const enriched=await Promise.all(data.map(async(it:any)=>{
           try{const b=await sb(`bookings?select=lead_traveller_snapshot&itinerary_id=eq.${it.id}&limit=1`);return{...it,name:b[0]?.lead_traveller_snapshot?.name||null,email:b[0]?.lead_traveller_snapshot?.email||null}}
@@ -415,7 +415,7 @@ function Dashboard({setActive,userName}:{setActive:(s:string)=>void,userName?:st
       sb('bookings?select=id,booking_reference,status,total_display_zar,booked_at,lead_traveller_snapshot&order=created_at.desc&limit=5'),
       sb('bookings?select=status,total_display_zar'),
       sb('suppliers?select=id&is_active=eq.true'),
-      sb('itineraries?select=id,status'),
+      Promise.resolve([]),
     ]).then(([recent,allBookings,suppliers,itineraries])=>{
       const confirmed=allBookings.filter((b:any)=>b.status==='confirmed')
       setStats({bookings:allBookings.length,confirmed:confirmed.length,totalGBV:confirmed.reduce((s:number,b:any)=>s+(b.total_display_zar||0),0),quotes:itineraries.filter((i:any)=>i.status==='quote').length,suppliers:suppliers.length})
@@ -1054,7 +1054,7 @@ function Itineraries(){
   const [sortField,setSortField]=useState('created_at')
   const [sortDir,setSortDir]=useState('desc')
 
-  useEffect(()=>{sb('itineraries?select=*&order=created_at.desc&limit=100').then(setItems).catch(console.error).finally(()=>setLoading(false))},[])
+  useEffect(()=>{setLoading(false)},[])
   const handleSort=(f:string)=>{if(sortField===f)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortField(f);setSortDir('asc')}}
 
   let filtered=items
