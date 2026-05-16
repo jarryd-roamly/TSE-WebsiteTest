@@ -327,56 +327,152 @@ function SupplierContentPanel() {
     saveFlash("✓ Description submitted for admin review");
   };
 
-  // ── SIMULATE IMAGE UPLOAD ─────────────────────────────────────────────────
-  const handleImageFiles = (files) => {
+  // ── REAL IMAGE UPLOAD — posts to /api/upload → Supabase Storage ────────────
+  const handleImageFiles = async (files) => {
     const arr = Array.from(files).slice(0, 20 - supplier.images.length);
-    const newImgs = arr.map((f, i) => ({
-      id: `img_new_${Date.now()}_${i}`,
-      url: URL.createObjectURL(f),
-      caption: f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
-      room_type: "general",
-      is_primary: supplier.images.length === 0 && i === 0,
-      order: supplier.images.length + i,
-      status: "pending",
-      width: 1920, height: 1080, // optimistic — real check would use Image() object
-      file: f,
-    }));
-    setSupplier(s => ({ ...s, images: [...s.images, ...newImgs] }));
-    saveFlash(`✓ ${newImgs.length} image(s) uploaded — pending admin review`);
+    if (arr.length === 0) return;
+    saveFlash(`⟳ Uploading ${arr.length} image(s)…`);
+
+    const uploaded = [];
+    for (const file of arr) {
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("supplier_id", supplier.id);
+        fd.append("media_type", "images");
+        fd.append("caption", file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
+        fd.append("room_type", "general");
+        fd.append("is_primary", String(supplier.images.length === 0 && uploaded.length === 0));
+
+        const res  = await fetch("/api/upload", { method: "POST", body: fd });
+        const data = await res.json();
+
+        if (data.success) {
+          // Get image dimensions from the returned URL
+          const dims = await getImageDimensions(data.url);
+          uploaded.push({
+            id:        data.image_id,
+            url:       data.url,
+            path:      data.path,
+            caption:   file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
+            room_type: "general",
+            is_primary: supplier.images.length === 0 && uploaded.length === 0,
+            order:     supplier.images.length + uploaded.length,
+            status:    "pending",
+            width:     dims.width,
+            height:    dims.height,
+          });
+        } else {
+          console.error("Upload failed:", data.error);
+        }
+      } catch (err) {
+        console.error("Upload error:", err);
+      }
+    }
+
+    if (uploaded.length > 0) {
+      setSupplier(s => ({ ...s, images: [...s.images, ...uploaded] }));
+      saveFlash(`✓ ${uploaded.length} image(s) uploaded — pending admin review`);
+    } else {
+      saveFlash("✗ Upload failed — please try again");
+    }
   };
 
-  const updateImageCaption = (id, caption) => {
-    setSupplier(s => ({ ...s, images: s.images.map(img => img.id === id ? { ...img, caption } : img) }));
+  // Get image dimensions after upload for quality indicator
+  const getImageDimensions = (url) => new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload  = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 0, height: 0 });
+    img.src = url;
+  });
+
+  const updateImageMeta = async (id, updates) => {
+    setSupplier(s => ({ ...s, images: s.images.map(img => img.id === id ? { ...img, ...updates } : img) }));
+    try {
+      await fetch("/api/upload", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supplier_id: supplier.id, file_id: id, updates, media_type: "images" }),
+      });
+    } catch (err) { console.error("Meta update error:", err); }
+  };
+  const updateImageCaption  = (id, caption)    => updateImageMeta(id, { caption });
+  const updateImageRoomType = (id, room_type)  => updateImageMeta(id, { room_type });
+
+  const removeImage = async (id) => {
+    const img = supplier.images.find(i => i.id === id);
+    if (img?.path) {
+      try {
+        await fetch("/api/upload", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ supplier_id: supplier.id, file_id: id, file_path: img.path, media_type: "images" }),
+        });
+      } catch (err) { console.error("Delete error:", err); }
+    }
+    setSupplier(s => ({ ...s, images: s.images.filter(i => i.id !== id) }));
+    saveFlash("✓ Image removed");
   };
 
-  const updateImageRoomType = (id, room_type) => {
-    setSupplier(s => ({ ...s, images: s.images.map(img => img.id === id ? { ...img, room_type } : img) }));
-  };
-
-  const removeImage = (id) => {
-    setSupplier(s => ({ ...s, images: s.images.filter(img => img.id !== id) }));
-  };
-
-  const setPrimary = (id) => {
+  const setPrimary = async (id) => {
     setSupplier(s => ({ ...s, images: s.images.map(img => ({ ...img, is_primary: img.id === id })) }));
+    try {
+      await fetch("/api/upload", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supplier_id: supplier.id, file_id: id, updates: { is_primary: true }, media_type: "images" }),
+      });
+    } catch (err) { console.error("Set primary error:", err); }
   };
 
-  // ── SIMULATE REEL UPLOAD ──────────────────────────────────────────────────
-  const handleReelFile = (file) => {
-    const newReel = {
-      id: `reel_${Date.now()}`,
-      url: URL.createObjectURL(file),
-      thumbnail: null,
-      type: "room",
-      caption: file.name.replace(/\.[^.]+$/, ""),
-      approved: false,
-      duration_s: 22, // simulated
-      status: "pending",
-      file,
-    };
-    setSupplier(s => ({ ...s, reels: [...s.reels, newReel] }));
-    saveFlash("✓ Reel uploaded — pending admin review");
+  // ── REAL REEL UPLOAD — posts to /api/upload → Supabase Storage ─────────────
+  const handleReelFile = async (file) => {
+    saveFlash("⟳ Uploading reel…");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("supplier_id", supplier.id);
+      fd.append("media_type", "reels");
+      fd.append("caption", file.name.replace(/\.[^.]+$/, ""));
+      fd.append("reel_type", "room");
+
+      const res  = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+
+      if (data.success) {
+        const duration = await getVideoDuration(file);
+        setSupplier(s => ({
+          ...s,
+          reels: [...s.reels, {
+            id:         data.reel_id,
+            url:        data.url,
+            path:       data.path,
+            thumbnail:  null,
+            type:       "room",
+            caption:    file.name.replace(/\.[^.]+$/, ""),
+            approved:   false,
+            duration_s: Math.round(duration),
+            status:     "pending",
+          }],
+        }));
+        saveFlash("✓ Reel uploaded — pending admin review");
+      } else {
+        saveFlash("✗ Reel upload failed: " + data.error);
+      }
+    } catch (err) {
+      saveFlash("✗ Upload error — please try again");
+      console.error(err);
+    }
   };
+
+  // Get video duration from file before upload
+  const getVideoDuration = (file) => new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => { URL.revokeObjectURL(video.src); resolve(video.duration); };
+    video.onerror = () => resolve(0);
+    video.src = URL.createObjectURL(file);
+  });
 
   // ── CHECK TAGS WITH HAIKU ─────────────────────────────────────────────────
   const checkTags = async () => {
