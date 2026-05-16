@@ -246,22 +246,58 @@ const COUNTRY_REGION: Record<string, string> = {
 function mapSupplierRow(s: any): Hotel {
   const netRate = Number(s.net_rate_per_night) || 25000;
   const displayRate = Number(s.display_rate_per_night) || Math.round(netRate * 1.15);
+
+  // Pull primary image from images JSONB array, fallback to unsplash
+  const images = Array.isArray(s.images) ? s.images : (s.images ? JSON.parse(s.images) : []);
+  const primaryImage = images.find((img: any) => img.is_primary && img.status === 'approved')
+    ?? images.find((img: any) => img.status === 'approved')
+    ?? images[0];
+  const imageUrl = primaryImage?.url
+    ?? 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80';
+
+  // Build destination label from region_slug
+  const regionLabel: Record<string, string> = {
+    'kruger-sabi-sand':  'Kruger / Sabi Sand',
+    'okavango-delta':    'Okavango Delta',
+    'cape-town':         'Cape Town',
+    'madikwe':           'Madikwe',
+    'phinda':            'Phinda',
+    'mozambique':        'Mozambique',
+    'chobe-vic-falls':   'Chobe / Victoria Falls',
+    'masai-mara':        'Masai Mara',
+    'bwindi':            'Bwindi / Uganda',
+    'kalahari':          'Kalahari',
+  };
+  const destination = regionLabel[s.region_slug] ?? s.destination ?? s.region_slug ?? '';
+
   return {
     id: s.id, edition_id: s.edition_id || 'safari',
     name: s.name,
-    location: s.region ? `${s.region}, ${s.country}` : `${s.destination || ''}, ${s.country}`.replace(/^, /, ''),
-    destination: s.destination || '', subRegion: s.region || '',
-    region: COUNTRY_REGION[s.country] || 'southern-africa', country: s.country || '',
-    stars: 5, trustScore: s.trust_score || 85, contentScore: s.content_score || 70,
-    netRate, otaRate: s.ota_rate_per_night ? Number(s.ota_rate_per_night) : null,
+    location: destination ? `${destination}, ${s.country}` : s.country ?? '',
+    destination,
+    subRegion: s.region_slug ?? '',
+    region: COUNTRY_REGION[s.country] || 'southern-africa',
+    country: s.country || '',
+    stars: 5,
+    trustScore: s.trust_score || 85,
+    contentScore: s.content_score || 70,
+    netRate,
+    otaRate: s.ota_rate_per_night ? Number(s.ota_rate_per_night) : null,
     marginScore: displayRate > 0 ? Math.round((displayRate - netRate) / displayRate * 100) : 20,
-    image: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80',
-    funFact: s.description ? String(s.description).slice(0, 120) : null,
-    malariaFree: s.malaria_status === 'malaria-free', tags: s.tags || [],
+    image: imageUrl,
+    funFact: s.short_tagline ?? (s.description ? String(s.description).slice(0, 120) : null),
+    malariaFree: s.malaria_status === 'malaria-free',
+    tags: s.tags || [],
     upgrades: {
-      rooms: [{ label: 'Standard Suite', extra: 0, tier: 0 }, { label: 'Premium Suite', extra: Math.round(netRate * 0.4), tier: 1 }],
+      rooms: [
+        { label: 'Standard Suite', extra: 0, tier: 0 },
+        { label: 'Premium Suite', extra: Math.round(netRate * 0.4), tier: 1 },
+      ],
       basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }],
-      flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: Math.round(netRate * 0.08), tier: 1 }],
+      flexibility: [
+        { label: 'Standard', extra: 0, tier: 0 },
+        { label: 'Flexible', extra: Math.round(netRate * 0.08), tier: 1 },
+      ],
     },
   };
 }
@@ -1052,7 +1088,8 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                 }
                 setActivePillars(['flights','hotels','transfers','activities']);
                 setInputMode('builder');
-                setScreen('builder');
+                setCustomise(null);
+setScreen('builder');
               }}>Price & Book This →</button>
               <button onClick={runSocraticPlanner} className="btn-ghost" style={{ padding: 16, fontSize: 14 }}>🔄 Rebuild itinerary</button>
             </div>
