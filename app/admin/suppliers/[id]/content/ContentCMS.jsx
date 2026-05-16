@@ -270,7 +270,7 @@ function Btn({ label, onClick, variant = "ghost", small = false, disabled = fals
 // SUPPLIER CONTENT PANEL
 // What the supplier sees and interacts with
 // ────────────────────────────────────────────────────────────────────────────
-function SupplierContentPanel() {
+function SupplierContentPanel({ uploadedBy = "supplier" }) {
   const [supplier, setSupplier] = useState(DEMO_SUPPLIER);
   const [tab, setTab] = useState("overview");
   const [saved, setSaved] = useState("");
@@ -343,6 +343,7 @@ function SupplierContentPanel() {
         fd.append("caption", file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
         fd.append("room_type", "general");
         fd.append("is_primary", String(supplier.images.length === 0 && uploaded.length === 0));
+        fd.append("uploaded_by", uploadedBy);
 
         const res  = await fetch("/api/upload", { method: "POST", body: fd });
         const data = await res.json();
@@ -358,7 +359,7 @@ function SupplierContentPanel() {
             room_type: "general",
             is_primary: supplier.images.length === 0 && uploaded.length === 0,
             order:     supplier.images.length + uploaded.length,
-            status:    "pending",
+            status:    data.status,  // "approved" for admin, "pending" for supplier
             width:     dims.width,
             height:    dims.height,
           });
@@ -435,6 +436,7 @@ function SupplierContentPanel() {
       fd.append("media_type", "reels");
       fd.append("caption", file.name.replace(/\.[^.]+$/, ""));
       fd.append("reel_type", "room");
+      fd.append("uploaded_by", uploadedBy);
 
       const res  = await fetch("/api/upload", { method: "POST", body: fd });
       const data = await res.json();
@@ -1178,7 +1180,7 @@ export default function ContentCMS() {
 
       {/* Main content */}
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
-        {mode === "supplier" ? <SupplierContentPanel /> : <AdminReviewPanel />}
+        {mode === "supplier" ? <SupplierContentPanel uploadedBy={mode === "admin" ? "admin" : "supplier"} /> : <AdminReviewPanel />}
       </div>
     </div>
   );
