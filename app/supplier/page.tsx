@@ -1625,7 +1625,7 @@ function ContentMedia() {
       {[
         { label: 'Property Reels (15–30s)', status: 'missing', note: '2 of 3 required Reels uploaded. Missing: Arrival experience, Room walkthrough.', color: T.red },
         { label: 'Hero Photography', status: 'approved', note: '18 images approved. Next review: 2026-07-01.', color: T.green },
-        { label: 'Knowledge Base entries', status: 'partial', note: '3 entries active. Room booking notes missing.', color: T.amber },
+        
         { label: 'Property description copy', status: 'approved', note: 'AI-verified. GPTZero: Human-written. Last updated 2026-02-14.', color: T.green },
       ].map((item, i) => (
         <Card key={i} style={{ padding: '14px 18px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
