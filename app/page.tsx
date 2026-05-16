@@ -316,7 +316,7 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode)
     routing: `JNB → Sabi Sand (${Math.ceil(nights * 0.55)}n) → Okavango (${Math.floor(nights * 0.45)}n) → JNB`,
     bestTiming: 'June–September: dry season, short grass, animals at water.',
     cities: [
-      { city: 'Singita Sabi Sand', country: 'South Africa', nights: Math.ceil(nights * 0.55), why: 'First destination while fresh. Highest leopard density in Africa.', highlights: ['Leopard tracking at dawn', 'Night drive', 'Sundowner in the bush'], estimatedCost: Math.round(budget * 0.52), hotelRate: 56000, flightCost: 7600, transferCost: 3800, activityCost: 0, arrivalGap: 'Land Skukuza 09:30, lodge 11:00', departureGap: 'Final morning drive 05:30–09:30 before charter' },
+      { city: 'Kruger / Sabi Sand', country: 'South Africa', nights: Math.ceil(nights * 0.55), why: 'First destination while fresh. Highest leopard density in Africa.', highlights: ['Leopard tracking at dawn', 'Night drive', 'Sundowner in the bush'], estimatedCost: Math.round(budget * 0.52), hotelRate: 56000, flightCost: 7600, transferCost: 3800, activityCost: 0, arrivalGap: 'Land Skukuza 09:30, lodge 11:00', departureGap: 'Final morning drive 05:30–09:30 before charter' },
       { city: 'Okavango Delta',    country: 'Botswana',      nights: Math.floor(nights * 0.45), why: 'Contrast — water, mokoro, bird life after dry Lowveld.',           highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'], estimatedCost: Math.round(budget * 0.42), hotelRate: 62000, flightCost: 9200, transferCost: 2400, activityCost: 1800, arrivalGap: 'Land 12:00, settle in for evening drive', departureGap: 'Final mokoro 07:00–10:00' },
     ],
     totalEstimate: Math.round(budget * 0.94),
@@ -1021,9 +1021,11 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
             {/* City cards */}
             {itinerary.cities.map((city, i) => {
-              const stack = hotelsByMargin;
-              const hotelIdx = cityHotelIdxs[i] ?? i % stack.length;
-              const hotel = stack[hotelIdx] ?? stack[0];
+                  const cityRegion = COUNTRY_REGION[city.country] ?? 'southern-africa';
+                  const regionStack = hotelsByMargin.filter(h => h.region === cityRegion);
+                  const stack = regionStack.length > 0 ? regionStack : hotelsByMargin;
+                  const hotelIdx = cityHotelIdxs[i] ?? 0;
+                  const hotel = stack[Math.min(hotelIdx, stack.length - 1)] ?? hotelsByMargin[0];
               return (
                 <div key={i} className="city-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
