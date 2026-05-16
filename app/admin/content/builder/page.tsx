@@ -1,5 +1,7 @@
-import ContentCMS from './ContentCMS'
-
 export default function ContentBuilderPage() {
-  return <ContentCMS />
+  return (
+    <div>
+      <h1>Content Builder</h1>
+    </div>
+  )
 }
