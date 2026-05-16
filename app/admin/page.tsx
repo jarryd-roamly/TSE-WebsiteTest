@@ -8,7 +8,7 @@ const T = {
   border:'rgba(255,255,255,0.08)', green:'#4ade80', red:'#f87171', blue:'#60a5fa', amber:'#fbbf24',
 }
 const SUPABASE_URL='https://tkthsbxuyihoblpcfnml.supabase.co'
-const SUPABASE_KEY='sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx'
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrdGhzYnh1eWlob2JscGNmbm1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3MzkzODAsImV4cCI6MjA5MzMxNTM4MH0.vMYkuyH-5vs4zCd9ONxq9evvZZ_OTyxSPyUSU6pdUGg'
 
 
 // ── BULK TEST DATA ────────────────────────────────────────────
