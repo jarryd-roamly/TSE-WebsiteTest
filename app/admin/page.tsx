@@ -7,7 +7,7 @@ const T = {
   text:'#f5f0e8', textMid:'rgba(245,240,232,0.6)', textDim:'rgba(245,240,232,0.35)',
   border:'rgba(255,255,255,0.08)', green:'#4ade80', red:'#f87171', blue:'#60a5fa', amber:'#fbbf24',
 }
-const SUPABASE_URL='https://zhkpxmcoklbmpsdcjffb.supabase.co'
+const SUPABASE_URL='https://tkthsbxuyihoblpcfnml.supabase.co'
 const SUPABASE_KEY='sb_publishable_LjKnraC4RwaYLS9F-P-kww_nKljckkn'
 
 
