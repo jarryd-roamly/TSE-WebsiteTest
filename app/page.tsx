@@ -1021,11 +1021,24 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
             {/* City cards */}
             {itinerary.cities.map((city, i) => {
-                  const cityRegion = COUNTRY_REGION[city.country] ?? 'southern-africa';
-                  const regionStack = hotelsByMargin.filter(h => h.region === cityRegion);
-                  const stack = regionStack.length > 0 ? regionStack : hotelsByMargin;
-                  const hotelIdx = cityHotelIdxs[i] ?? 0;
-                  const hotel = stack[Math.min(hotelIdx, stack.length - 1)] ?? hotelsByMargin[0];
+// Match hotel to city by destination name or subRegion
+const cityName = city.city.toLowerCase();
+const destinationStack = hotelsByMargin.filter(h => {
+  const dest = (h.destination ?? '').toLowerCase();
+  const sub  = (h.subRegion ?? '').toLowerCase();
+  const name = (h.name ?? '').toLowerCase();
+  return dest.includes(cityName) || cityName.includes(dest) ||
+         sub.includes(cityName)  || cityName.includes(sub)  ||
+         name.includes(cityName) || cityName.includes(name);
+});
+// Fallback: match by region
+const cityRegion = COUNTRY_REGION[city.country] ?? 'southern-africa';
+const regionStack = hotelsByMargin.filter(h => h.region === cityRegion);
+const stack = destinationStack.length > 0 ? destinationStack
+            : regionStack.length > 0 ? regionStack
+            : hotelsByMargin;
+const hotelIdx = cityHotelIdxs[i] ?? 0;
+const hotel = stack[Math.min(hotelIdx, stack.length - 1)] ?? hotelsByMargin[0];
               return (
                 <div key={i} className="city-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
