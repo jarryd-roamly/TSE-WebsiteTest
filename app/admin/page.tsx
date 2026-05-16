@@ -8,7 +8,7 @@ const T = {
   border:'rgba(255,255,255,0.08)', green:'#4ade80', red:'#f87171', blue:'#60a5fa', amber:'#fbbf24',
 }
 const SUPABASE_URL='https://tkthsbxuyihoblpcfnml.supabase.co'
-const SUPABASE_KEY='sb_publishable_LjKnraC4RwaYLS9F-P-kww_nKljckkn'
+const SUPABASE_KEY='sb_secret_xUfAvCVElU631UyskrYETQ_UkXzrh6C'
 
 
 // ── BULK TEST DATA ────────────────────────────────────────────
