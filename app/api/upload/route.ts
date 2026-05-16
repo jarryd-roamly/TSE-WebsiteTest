@@ -49,7 +49,10 @@ export async function POST(req: NextRequest) {
     const mediaType  = (formData.get('media_type') as string | null) ?? 'images';
     const caption    = (formData.get('caption') as string | null) ?? '';
     const roomType   = (formData.get('room_type') as string | null) ?? 'general';
-    const isPrimary  = formData.get('is_primary') === 'true';
+    const isPrimary     = formData.get('is_primary') === 'true';
+    const uploadedBy    = (formData.get('uploaded_by') as string | null) ?? 'supplier';
+    // TSE admin uploads skip the review queue and go live immediately
+    const autoApprove   = uploadedBy === 'admin';
 
     // ── Validation ──────────────────────────────────────────────────────────
     if (!file)       return NextResponse.json({ error: 'No file provided' },       { status: 400 });
@@ -131,10 +134,11 @@ export async function POST(req: NextRequest) {
         room_type: roomType,
         is_primary: isPrimary || currentImages.length === 0, // first image auto-primary
         order:     currentImages.length,
-        status:    'pending',        // admin must approve before live
+        status:    autoApprove ? 'approved' : 'pending',
         width:     null,             // filled by client after load
         height:    null,
         uploaded_at: new Date().toISOString(),
+        uploaded_by: uploadedBy,
       };
 
       updatedImages.push(newImage);
@@ -155,7 +159,7 @@ export async function POST(req: NextRequest) {
         path:     storagePath,
         image_id: newImage.id,
         status:   'pending',
-        message:  'Image uploaded. Pending admin review before going live.',
+        message:  autoApprove ? 'Image uploaded and live.' : 'Image uploaded. Pending admin review before going live.',
       });
 
     } else {
@@ -169,7 +173,7 @@ export async function POST(req: NextRequest) {
         type:        (formData.get('reel_type') as string) ?? 'room',
         caption,
         approved:    false,
-        status:      'pending',
+        status:      autoApprove ? 'approved' : 'pending',
         duration_s:  null,           // filled by client after load
         uploaded_at: new Date().toISOString(),
       };
@@ -191,7 +195,7 @@ export async function POST(req: NextRequest) {
         path:     storagePath,
         reel_id:  newReel.id,
         status:   'pending',
-        message:  'Reel uploaded. Pending admin review before going live.',
+        message:  autoApprove ? 'Reel uploaded and live.' : 'Reel uploaded. Pending admin review before going live.',
       });
     }
 
