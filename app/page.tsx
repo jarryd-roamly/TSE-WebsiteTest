@@ -1613,5 +1613,4 @@ function BriefScreen({ nights, setNights, adults, setAdults, children, setChildr
     </div>
   );
 }
-ENDOFPART2
-echo "Part 3 written: $(wc -l < /home/claude/page_part3.tsx) lines"
+
