@@ -11,7 +11,7 @@ const T = {
 }
 
 const SUPABASE_URL = 'https://tkthsbxuyihoblpcfnml.supabase.co'
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrdGhzYnh1eWlob2JscGNmbW1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3MzkzODAsImV4cCI6MjA5MzMxNTM4MH0.vMYkuyH-5vs4zCd9ONxq9evvZZ_OTyxSPyUSU6pdUGg'
+const SUPABASE_KEY='sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx'
 const EDITION_ID = '3fc42337-7dd0-426a-acef-790938aa9671'
 
 async function sb(path: string, opts: any = {}) {
