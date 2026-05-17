@@ -354,7 +354,7 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode,
       'Cape Town':            { country: 'South Africa', why: 'World-class city, mountain, winelands — the perfect safari bookend.', highlights: ['Table Mountain', 'Winelands day trip', 'V&A Waterfront'] },
       'Madikwe':              { country: 'South Africa', why: 'Malaria-free Big Five. Excellent for families and first-timers.', highlights: ['Big Five game drives', 'Malaria-free', 'Excellent guiding'] },
       'Kruger / Sabi Sand':   { country: 'South Africa', why: 'Highest leopard density in Africa. The benchmark safari experience.', highlights: ['Leopard tracking at dawn', 'Night drive', 'Sundowner in the bush'] },
-      'Okavango Delta':       { country: 'Botswana',     why: 'No roads. No fences. The world's finest wilderness safari.', highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'] },
+      'Okavango Delta':       { country: 'Botswana',     why: 'No roads. No fences. The world\'s finest wilderness safari.', highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'] },
       'Chobe / Victoria Falls':{ country: 'Zimbabwe',   why: 'One of the Seven Wonders of Nature. Incredible elephant herds on the Chobe.', highlights: ['Victoria Falls', 'Chobe River cruise', 'Elephant herds'] },
     };
     const info = destInfo[singleDest] ?? destInfo['Kruger / Sabi Sand'];
