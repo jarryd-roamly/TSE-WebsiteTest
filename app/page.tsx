@@ -347,7 +347,33 @@ function getInterTransfer(regionA: string, regionB: string) {
   return INTER_TRANSFERS.find(t => t.applicableRegions.some(([a, b]) => a === regionA && b === regionB)) ?? INTER_TRANSFERS[0];
 }
  
-function buildFallbackItinerary(nights: number, budget: number, mode: InputMode): Itinerary {
+function buildFallbackItinerary(nights: number, budget: number, mode: InputMode, singleDest?: string): Itinerary {
+  // Single destination fallback
+  if (singleDest) {
+    const destInfo: Record<string, { country: string; why: string; highlights: string[] }> = {
+      'Cape Town':            { country: 'South Africa', why: 'World-class city, mountain, winelands — the perfect safari bookend.', highlights: ['Table Mountain', 'Winelands day trip', 'V&A Waterfront'] },
+      'Madikwe':              { country: 'South Africa', why: 'Malaria-free Big Five. Excellent for families and first-timers.', highlights: ['Big Five game drives', 'Malaria-free', 'Excellent guiding'] },
+      'Kruger / Sabi Sand':   { country: 'South Africa', why: 'Highest leopard density in Africa. The benchmark safari experience.', highlights: ['Leopard tracking at dawn', 'Night drive', 'Sundowner in the bush'] },
+      'Okavango Delta':       { country: 'Botswana',     why: "No roads. No fences. The world's finest wilderness safari.", highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'] },
+      'Chobe / Victoria Falls':{ country: 'Zimbabwe',   why: 'One of the Seven Wonders of Nature. Incredible elephant herds on the Chobe.', highlights: ['Victoria Falls', 'Chobe River cruise', 'Elephant herds'] },
+    };
+    const info = destInfo[singleDest] ?? destInfo['Kruger / Sabi Sand'];
+    return {
+      title: `${nights}-Night ${singleDest}`,
+      summary: `A focused ${nights}-night journey in ${singleDest} — exactly as requested.`,
+      routing: `JNB → ${singleDest} (${nights}n) → JNB`,
+      bestTiming: 'June–September: dry season, short grass, animals at water.',
+      cities: [
+        { city: singleDest, country: info.country, nights, why: info.why, highlights: info.highlights, estimatedCost: Math.round(budget * 0.92), hotelRate: 45000, flightCost: 7600, transferCost: 3800, activityCost: 0, arrivalGap: 'Arrive midday, first drive at 16:00', departureGap: 'Final morning drive before departure' },
+      ],
+      totalEstimate: Math.round(budget * 0.92),
+      aiInsights: [`${nights} nights gives you ${nights * 2} game drives — enough to hit your stride`, 'Our rates are 20–27% below booking direct'],
+      warnings: [],
+      inputMode: mode,
+    };
+  }
+ 
+  // Two-destination fallback
   return {
     title: `${nights}-Night Safari Journey`,
     summary: `A perfectly sequenced ${nights}-night journey across two of Africa's finest wilderness areas.`,
@@ -355,7 +381,7 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode)
     bestTiming: 'June–September: dry season, short grass, animals at water.',
     cities: [
       { city: 'Kruger / Sabi Sand', country: 'South Africa', nights: Math.ceil(nights * 0.55), why: 'First destination while fresh. Highest leopard density in Africa.', highlights: ['Leopard tracking at dawn', 'Night drive', 'Sundowner in the bush'], estimatedCost: Math.round(budget * 0.52), hotelRate: 56000, flightCost: 7600, transferCost: 3800, activityCost: 0, arrivalGap: 'Land Skukuza 09:30, lodge 11:00', departureGap: 'Final morning drive 05:30–09:30 before charter' },
-      { city: 'Okavango Delta',    country: 'Botswana',      nights: Math.floor(nights * 0.45), why: 'Contrast — water, mokoro, bird life after dry Lowveld.',           highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'], estimatedCost: Math.round(budget * 0.42), hotelRate: 62000, flightCost: 9200, transferCost: 2400, activityCost: 1800, arrivalGap: 'Land 12:00, settle in for evening drive', departureGap: 'Final mokoro 07:00–10:00' },
+      { city: 'Okavango Delta',    country: 'Botswana',      nights: Math.floor(nights * 0.45), why: 'Contrast — water, mokoro, bird life after dry Lowveld.', highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'], estimatedCost: Math.round(budget * 0.42), hotelRate: 62000, flightCost: 9200, transferCost: 2400, activityCost: 1800, arrivalGap: 'Land 12:00, settle in for evening drive', departureGap: 'Final mokoro 07:00–10:00' },
     ],
     totalEstimate: Math.round(budget * 0.94),
     aiInsights: ['Federal Air JNB→Skukuza saves R8,000 vs road transfer', 'Our Singita rate is 27% below Booking.com'],
@@ -780,7 +806,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       setCityHotelIdxs([0,1,2,3]);
       setInspireMsgs([{ role: 'assistant', text: `We've put together your journey. Want to adjust anything?` }]);
     } catch {
-      const fallback = buildFallbackItinerary(nights, budget, mode);
+      const fallback = buildFallbackItinerary(nights, budget, mode, (promptBody.match(/destinations?: ([^.\n]+)/i)||[])[1]?.trim());
       setItinerary(fallback);
       setInspireMsgs([{ role: 'assistant', text: `We've built your safari. Our rates save you ${fmt(fallback.totalEstimate * 0.27)} vs booking direct.` }]);
     }
@@ -798,8 +824,59 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   };
  
   const runBriefPlanner = (briefText: string) => {
-    const promptBody = `You are a luxury safari journey designer at ${edition.name}.\nA traveller has written their own brief. Extract their intent and plan an optimised safari itinerary.\n\nTRAVELLER BRIEF: "${briefText}"\nKNOWN PARAMETERS: Nights: ${nights}, Adults: ${adults}, Children: ${children}`;
-    track('brief_submit', edition.id, { briefLength: briefText.length, nights, adults });
+    // Extract explicit constraints from brief text before sending to AI
+    const nightsMatch = briefText.match(/(\d+)\s*night/i);
+    const extractedNights = nightsMatch ? parseInt(nightsMatch[1]) : nights;
+ 
+    // Detect single-destination briefs
+    const singleDestinationKeywords = [
+      'cape town only', 'only cape town', 'just cape town',
+      'madikwe only', 'only madikwe', 'just madikwe',
+      'sabi sand only', 'only sabi sand', 'just sabi sand',
+      'okavango only', 'only okavango', 'just okavango',
+      'kruger only', 'only kruger', 'just kruger',
+    ];
+    const isSingleDest = singleDestinationKeywords.some(kw => briefText.toLowerCase().includes(kw));
+ 
+    // Detect mentioned destinations
+    const destMap: Record<string, string> = {
+      'cape town': 'Cape Town', 'madikwe': 'Madikwe', 'sabi sand': 'Kruger / Sabi Sand',
+      'kruger': 'Kruger / Sabi Sand', 'okavango': 'Okavango Delta', 'botswana': 'Okavango Delta',
+      'victoria falls': 'Chobe / Victoria Falls', 'vic falls': 'Chobe / Victoria Falls',
+      'chobe': 'Chobe / Victoria Falls', 'phinda': 'Phinda', 'mozambique': 'Mozambique',
+    };
+    const mentionedDests = Object.entries(destMap)
+      .filter(([kw]) => briefText.toLowerCase().includes(kw))
+      .map(([, dest]) => dest);
+    const uniqueDests = [...new Set(mentionedDests)];
+ 
+    const numCitiesNote = isSingleDest
+      ? '1 city only — the traveller explicitly wants a single destination'
+      : uniqueDests.length > 0
+        ? `${Math.min(uniqueDests.length, 2)} cities — only include destinations mentioned in the brief`
+        : 'maximum 2 cities — do not add a third city unless the brief explicitly requests it';
+    const destsNote = uniqueDests.length > 0
+      ? `Use only these destinations: ${uniqueDests.join(', ')}`
+      : 'Choose the best destinations for this brief';
+    const paxNote = `${adults} adults${children > 0 ? `, ${children} children` : ''}`;
+ 
+    const promptBody = `You are a luxury safari journey designer at ${edition.name}.
+A traveller has written their own brief. Extract their intent and plan an optimised safari itinerary.
+ 
+TRAVELLER BRIEF: "${briefText}"
+ 
+HARD CONSTRAINTS — you MUST follow these exactly, no exceptions:
+1. TOTAL NIGHTS: exactly ${extractedNights} nights total across ALL cities combined. Do not add or subtract even one night.
+2. NUMBER OF CITIES: ${numCitiesNote}.
+3. DESTINATIONS: ${destsNote}.
+4. NIGHTS PER CITY: all city nights must add up to exactly ${extractedNights}. If 1 city, it gets all ${extractedNights} nights. If 2 cities, split them so they total ${extractedNights}.
+5. KNOWN PARAMETERS: ${paxNote}.
+ 
+Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, no explanation.`;
+ 
+    track('brief_submit', edition.id, { briefLength: briefText.length, nights: extractedNights, adults });
+    // Update nights state to match what was in the brief
+    if (extractedNights !== nights) setNights(extractedNights);
     runEngine(promptBody, 'brief');
   };
  
@@ -956,8 +1033,8 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
           {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={() => setChatOpen(false)} edition={edition} />}
         </div>
       )}
- 
-      {/* ── INSPIRE INPUT ────────────────────────────────────────────────── */}
+
+     {/* ── INSPIRE INPUT ────────────────────────────────────────────────── */}
       {screen === 'inspire-input' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
           <Nav {...navProps} />
@@ -1048,17 +1125,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       )}
  
       {/* ── INSPIRE RESEARCH ─────────────────────────────────────────────── */}
-      {screen === 'inspire-research' && (
-        <div style={{ minHeight:'100vh', background:T.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:40 }}>
-          <div style={{ marginBottom:32, display:'flex', gap:6 }}>
-            {RESEARCH_STEPS.map((_, i) => <StepDot key={i} active={i <= researchStep} />)}
-          </div>
-          <Spinner />
-          <div style={{ fontSize:14, color:T.textMid, textAlign:'center' as const, marginTop:20, maxWidth:360 }}>{RESEARCH_STEPS[researchStep]}</div>
-          <div style={{ fontSize:12, color:T.textDim, marginTop:8 }}>Searching live conditions · Checking lodge availability</div>
-        </div>
-      )}
-                   {/* ── INSPIRE RESEARCH ─────────────────────────────────────────────── */}
       {screen === 'inspire-research' && (
         <div style={{ minHeight:'100vh', background:T.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:40 }}>
           <div style={{ marginBottom:32, display:'flex', gap:6 }}>
@@ -1547,3 +1613,5 @@ function BriefScreen({ nights, setNights, adults, setAdults, children, setChildr
     </div>
   );
 }
+ENDOFPART2
+echo "Part 3 written: $(wc -l < /home/claude/page_part3.tsx) lines"
