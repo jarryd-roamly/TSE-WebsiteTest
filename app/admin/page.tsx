@@ -1,1607 +1,1126 @@
-'use client';
- 
-// ═══════════════════════════════════════════════════════════════════════════════
-// THE TRAVEL CATALOGUE — page.tsx
-// Safari Edition · v3.1 · Login gate + Edition dropdown + Region images + KB expanded
-// ═══════════════════════════════════════════════════════════════════════════════
- 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { T, GLOBAL_CSS }                     from './lib/theme';
-import { buildKBContext, runPlannerEngine,
-         answerFactual, applyCreativeDiff,
-         chatWithSpecialist }                from './lib/aiGateway';
-import { fetchAvailability, findAlternativeDate,
-         preloadHotels, availCache,
-         addDays, todayPlusDays }            from './lib/availability';
-import { resolveHotelUpgrades, makeFmt }     from './lib/pricing';
-import { applyDeterministicChange }          from './lib/chatEngine';
-import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
-              InterTransferState, UpgradeState, Itinerary,
-              ItineraryCity, Currency, KBEntry, ChatMessage,
-              BookingState, BookingIntent, BookingComponent,
-              AvailResult, AltDate, EditionConfig,
-              InclusionSource }  from './lib/types';
-import { canTransition, VALID_TRANSITIONS }  from './lib/types';
- 
-// ─────────────────────────────────────────────────────────────────────────────
-// EDITION CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
-const SAFARI_EDITION: EditionConfig = {
-  id:              'safari',
-  name:            'The Safari Edition',
-  tagline:         'Sub-Saharan Africa · Curated',
-  heroImage:       'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1400&q=80',
-  primaryRegion:   'southern-africa',
-  defaultCurrency: 'ZAR',
-  margins: { flights: 1.08, hotels: 1.15, transfers: 1.20, activities: 1.18, intl: 1.08 },
-  ai: {
-    plannerModel:     'claude-sonnet-4-20250514',
-    chatModel:        'claude-haiku-4-5-20251001',
-    maxPlanTokens:    1200,
-    maxChatTokens:    400,
-    monthlyBudgetZAR: 5000,
-  },
-  payment: { gateways: ['payfast', 'stripe'], depositPercent: 30, balanceDaysBefore: 30 },
-  support: { email: 'journeys@thesafariedition.com', whatsapp: '+27000000000' },
-};
- 
-// ─────────────────────────────────────────────────────────────────────────────
-// STATIC DATA
-// ─────────────────────────────────────────────────────────────────────────────
- 
-const CURRENCIES: Currency[] = [
-  { code: 'ZAR', symbol: 'R ',  rate: 1     },
-  { code: 'USD', symbol: '$',   rate: 18.62 },
-  { code: 'EUR', symbol: '€',   rate: 20.14 },
-  { code: 'GBP', symbol: '£',   rate: 23.48 },
-];
- 
-const OTHER_EDITIONS = [
-  { id:'island',    name:'The Island Edition',    icon:'🏝', color:'#60a5fa', desc:'Maldives · Seychelles · Zanzibar' },
-  { id:'adventure', name:'The Adventure Edition', icon:'🧗', color:'#4ade80', desc:'Nepal · Patagonia · Arctic' },
-  { id:'japan',     name:'The Japan Edition',     icon:'⛩',  color:'#f87171', desc:'Tokyo · Kyoto · Hokkaido' },
-  { id:'arabian',   name:'The Arabian Edition',   icon:'🌙', color:'#fbbf24', desc:'Jordan · Oman · UAE' },
-  { id:'ski',       name:'The Ski Edition',       icon:'⛷',  color:'#a78bfa', desc:'Alps · Aspen · Hokkaido' },
-  { id:'city',      name:'The City Edition',      icon:'🌆', color:'#fb923c', desc:'New York · Tokyo · Paris' },
-];
- 
-const REGIONS = [
-  { id: 'southern-africa', label: 'Southern Africa', icon: '🌍' },
-  { id: 'east-africa',     label: 'East Africa',     icon: '🦒' },
-  { id: 'indian-ocean',    label: 'Indian Ocean',    icon: '🌊' },
-  { id: 'inspire-me',      label: 'Inspire Me',      icon: '✨' },
-];
- 
-const THEMES = [
-  { id: 'safari',    label: 'Big Five Safari',  icon: '🦁' },
-  { id: 'romance',   label: 'Romance',          icon: '💫' },
-  { id: 'family',    label: 'Family',           icon: '👨‍👩‍👧' },
-  { id: 'adventure', label: 'Adventure',        icon: '🧗' },
-  { id: 'luxury',    label: 'Ultra-Luxury',     icon: '✨' },
-  { id: 'beach',     label: 'Beach & Coast',    icon: '🏖️' },
-  { id: 'culture',   label: 'Culture',          icon: '🎭' },
-  { id: 'wellness',  label: 'Wellness',         icon: '🧘' },
-];
- 
-const REGIONAL_ORIGINS = [
-  { code: 'JNB', label: 'Johannesburg (O.R. Tambo)', flag: '🇿🇦' },
-  { code: 'CPT', label: 'Cape Town',                 flag: '🇿🇦' },
-  { code: 'DUR', label: 'Durban',                    flag: '🇿🇦' },
-  { code: 'HRE', label: 'Harare',                    flag: '🇿🇼' },
-  { code: 'GBE', label: 'Gaborone',                  flag: '🇧🇼' },
-  { code: 'NBO', label: 'Nairobi',                   flag: '🇰🇪' },
-];
- 
-const INTERNATIONAL_ORIGINS = [
-  { code: 'LHR', label: 'London Heathrow',         flag: '🇬🇧' },
-  { code: 'LGW', label: 'London Gatwick',          flag: '🇬🇧' },
-  { code: 'MAN', label: 'Manchester',              flag: '🇬🇧' },
-  { code: 'AMS', label: 'Amsterdam',               flag: '🇳🇱' },
-  { code: 'FRA', label: 'Frankfurt',               flag: '🇩🇪' },
-  { code: 'CDG', label: 'Paris CDG',               flag: '🇫🇷' },
-  { code: 'JFK', label: 'New York (JFK)',           flag: '🇺🇸' },
-  { code: 'EWR', label: 'New York (Newark)',        flag: '🇺🇸' },
-  { code: 'LAX', label: 'Los Angeles',             flag: '🇺🇸' },
-  { code: 'DXB', label: 'Dubai',                   flag: '🇦🇪' },
-  { code: 'SYD', label: 'Sydney',                  flag: '🇦🇺' },
-  { code: 'SIN', label: 'Singapore',               flag: '🇸🇬' },
-];
- 
-const INTL_FLIGHTS = [
-  { id: 'LHR-JNB', from: 'LHR', to: 'JNB', airline: 'British Airways',     duration: '11h 20m', netRate: 9800,  otaRate: 14200, image: 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=800&q=80', upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Premium Economy', extra: 8500 }, { label: 'Business Class', extra: 32000 }], baggage: [{ label: '23kg included', extra: 0 }, { label: 'Extra 23kg', extra: 650 }] } },
-  { id: 'LHR-JNB-VA', from: 'LHR', to: 'JNB', airline: 'Virgin Atlantic',  duration: '11h 35m', netRate: 8900,  otaRate: 12800, image: 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=800&q=80', upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Premium', extra: 7200 }, { label: 'Upper Class', extra: 38000 }], baggage: [{ label: '23kg included', extra: 0 }, { label: 'Extra 23kg', extra: 580 }] } },
-  { id: 'AMS-JNB', from: 'AMS', to: 'JNB', airline: 'KLM',                 duration: '11h 05m', netRate: 8200,  otaRate: 11500, image: 'https://images.unsplash.com/photo-1570710891163-6d3b5c47248b?w=800&q=80', upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'World Business', extra: 28000 }], baggage: [{ label: '23kg included', extra: 0 }, { label: 'Extra 23kg', extra: 600 }] } },
-  { id: 'DXB-JNB', from: 'DXB', to: 'JNB', airline: 'Emirates',            duration: '8h 45m',  netRate: 7400,  otaRate: 10800, image: 'https://images.unsplash.com/photo-1569629743817-70d8db6c323b?w=800&q=80', upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Business Class', extra: 24000 }], baggage: [{ label: '30kg included', extra: 0 }, { label: 'Extra 23kg', extra: 520 }] } },
-  { id: 'JFK-JNB', from: 'JFK', to: 'JNB', airline: 'South African Airways',duration: '15h 30m', netRate: 11200, otaRate: 16500, image: 'https://images.unsplash.com/photo-1540946485063-a40da27545f8?w=800&q=80', upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Business Class', extra: 38000 }], baggage: [{ label: '23kg included', extra: 0 }, { label: 'Extra 23kg', extra: 680 }] } },
-  { id: 'SYD-JNB', from: 'SYD', to: 'JNB', airline: 'Qantas via DXB',      duration: '20h 10m', netRate: 13800, otaRate: 20500, image: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&q=80', upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Business', extra: 42000 }], baggage: [{ label: '23kg included', extra: 0 }] } },
-];
- 
-const FLIGHTS = [
-  { id: 1, airline: 'Federal Airlines',          route: 'JNB → Skukuza',           trustScore: 94, netRate: 3800,  otaRate: null,  image: 'https://images.unsplash.com/photo-1570710891163-6d3b5c47248b?w=800&q=80', funFact: '55 minutes vs 5+ hours by road — the only sensible way in.',                upgrades: { classes: [{ label: 'Standard seat', extra: 0 }, { label: 'Forward seats', extra: 400 }],  baggage: [{ label: '15kg included', extra: 0 }, { label: 'Extra 15kg', extra: 580 }] } },
-  { id: 2, airline: 'FlySafair + Road Transfer', route: 'JNB → Nelspruit + transfer', trustScore: 88, netRate: 2200,  otaRate: 2650,  image: 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=800&q=80', funFact: 'Budget option — scenic 2hr drive through the lowveld included.',             upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Premium Economy', extra: 1200 }],    baggage: [{ label: 'Hand luggage', extra: 0 }, { label: '20kg bag', extra: 380 }] } },
-  { id: 3, airline: 'SAA + Airlink',             route: 'JNB → Hoedspruit',         trustScore: 85, netRate: 4200,  otaRate: 5800,  image: 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=800&q=80', funFact: 'Direct Airlink connection into Hoedspruit.',                                 upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Business Class', extra: 6500 }],     baggage: [{ label: '23kg included', extra: 0 }, { label: 'Extra 23kg', extra: 420 }] } },
-  { id: 4, airline: 'Kenya Airways',             route: 'JNB → Nairobi (NBO)',       trustScore: 86, netRate: 7800,  otaRate: 10200, image: 'https://images.unsplash.com/photo-1569629743817-70d8db6c323b?w=800&q=80', funFact: 'Direct to Nairobi — connect to any Mara camp in under 2 hours.',            upgrades: { classes: [{ label: 'Economy', extra: 0 }, { label: 'Business Class', extra: 8400 }],     baggage: [{ label: '23kg included', extra: 0 }, { label: 'Extra 23kg', extra: 480 }] } },
-  { id: 5, airline: 'LAM Mozambique',            route: 'JNB → Vilanculos',          trustScore: 82, netRate: 3200,  otaRate: null,  image: 'https://images.unsplash.com/photo-1540946485063-a40da27545f8?w=800&q=80', funFact: 'Gateway to Bazaruto — speedboat 20 min from the airstrip.',                 upgrades: { classes: [{ label: 'Economy', extra: 0 }],                                               baggage: [{ label: '15kg included', extra: 0 }, { label: 'Extra 15kg', extra: 320 }] } },
-];
- 
-const INTER_TRANSFERS = [
-  { id: 'road-sa',       label: 'Road transfer',         icon: '🚗', netRate: 1800, otaRate: 2600,  duration: '2–4 hrs',   note: 'Private SUV with refreshments.', applicableRegions: [['southern-africa','southern-africa']] },
-  { id: 'charter-sa-sa', label: 'Federal Air charter',   icon: '✈',  netRate: 6200, otaRate: null,  duration: '45–75 min', note: 'Fastest between reserves — aerial views.', applicableRegions: [['southern-africa','southern-africa']] },
-  { id: 'charter-sa-ea', label: 'International charter', icon: '✈',  netRate: 9800, otaRate: 13500, duration: '3–5 hrs',   note: 'SA ↔ East Africa — we handle all logistics.', applicableRegions: [['southern-africa','east-africa'],['east-africa','southern-africa']] },
-  { id: 'charter-sa-io', label: 'Indian Ocean connection',icon: '🛥', netRate: 7400, otaRate: null,  duration: '2–3 hrs',   note: 'Light aircraft to Vilanculos, speedboat to island.', applicableRegions: [['southern-africa','indian-ocean'],['indian-ocean','southern-africa'],['east-africa','indian-ocean'],['indian-ocean','east-africa']] },
-  { id: 'charter-ea-ea', label: 'East Africa charter',   icon: '✈',  netRate: 5800, otaRate: null,  duration: '30–90 min', note: 'Fly between camps — skip the roads.', applicableRegions: [['east-africa','east-africa']] },
-];
- 
-const TRANSFERS = [
-  { id: 2, type: 'Private Game Drive Transfer', vehicle: 'Private Land Cruiser + guide', trustScore: 96, netRate: 3200, otaRate: 4500,  image: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=800&q=80', funFact: 'Your own vehicle — stop when you want.', upgrades: { vehicles: [{ label: 'Private Land Cruiser', extra: 0 }, { label: 'Specialist walking guide', extra: 1800 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Sundowner setup', extra: 650 }] } },
-  { id: 3, type: 'Private Airport Transfer',     vehicle: 'Private SUV',               trustScore: 91, netRate: 980,  otaRate: 1350,  image: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=800&q=80', funFact: 'Airstrip to lodge — game visible immediately.', upgrades: { vehicles: [{ label: 'Private SUV', extra: 0 }, { label: 'Luxury V-Class', extra: 900 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Meet & greet', extra: 180 }] } },
-  { id: 4, type: 'Helicopter Transfer',          vehicle: 'Robinson R44 or similar',   trustScore: 96, netRate: 8500, otaRate: null,  image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact: 'Arrive in style — aerial views before you land.', upgrades: { vehicles: [{ label: 'Shared helicopter', extra: 0 }, { label: 'Private charter', extra: 6500 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Champagne on arrival', extra: 480 }] } },
-];
- 
-// PAID ADD-ON ACTIVITIES ONLY — free/included activities are part of lodge rate
-const ACTIVITIES = [
-  { id: 2, name: 'Bush Walk with Armed Ranger',    type: 'Adventure',    duration: '3 hours · dawn',              trustScore: 97, netRate: 1800, otaRate: 2600, image: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact: 'Tracks, plants — the detail you miss from a vehicle.', upgrades: { options: [{ label: 'Group walk', extra: 0 }, { label: 'Private walk', extra: 2400 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Breakfast in the bush', extra: 680 }] } },
-  { id: 3, name: 'Hot Air Balloon Safari',         type: 'Luxury',       duration: '3 hours · dawn',              trustScore: 94, netRate: 4800, otaRate: 7200, image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact: 'The Mara from above — one of the great experiences on Earth.', upgrades: { options: [{ label: 'Shared basket', extra: 0 }, { label: 'Private basket', extra: 8500 }], extras: [{ label: 'Champagne breakfast', extra: 0 }, { label: 'Private bush breakfast', extra: 1200 }] } },
-  { id: 4, name: 'Night Drive & Spotlight Safari', type: 'Wildlife',     duration: '2.5 hours · 20:00',           trustScore: 95, netRate: 1200, otaRate: 1800, image: 'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80', funFact: 'Leopards, civets, honey badgers — the nocturnal world.', upgrades: { options: [{ label: 'Group drive', extra: 0 }, { label: 'Private drive', extra: 2800 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Add sundowners', extra: 480 }] } },
-  { id: 5, name: 'Victoria Falls Helicopter',      type: 'Scenic',       duration: "15 min 'Flight of Angels'",   trustScore: 96, netRate: 2800, otaRate: 4200, image: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact: '108m high, 1.7km wide — the only way to grasp the scale.', upgrades: { options: [{ label: '15-minute flight', extra: 0 }, { label: '30-minute flight', extra: 2200 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Private helicopter', extra: 5800 }] } },
-  { id: 6, name: 'Rhino Tracking on Foot',         type: 'Conservation', duration: 'Half day',                    trustScore: 93, netRate: 2200, otaRate: 3200, image: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact: 'One of only a handful of places you can approach white rhino on foot.', upgrades: { options: [{ label: 'Group tracking', extra: 0 }, { label: 'Private with conservationist', extra: 3400 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Full conservation day', extra: 4800 }] } },
-];
- 
-const SPECIALISTS = [
-  { name: 'Sarah Mitchell', role: 'Senior Safari Specialist',          avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', tip: 'June–August is peak season — book 6 months ahead for Sabi Sand.',           instagram: '@sarahsafaris',  quote: 'Every great safari starts with the right lodge in the right season.', trips: 247 },
-  { name: 'James Okonkwo',  role: 'East Africa Specialist',            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80', tip: 'The Great Migration crosses the Mara River July–October. Don\'t miss it.', instagram: '@jamesonsafari', quote: 'Kenya and Tanzania together is the ultimate safari combination.',     trips: 183 },
-  { name: 'Priya Naidoo',   role: 'Indian Ocean & Islands Specialist', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=120&q=80', tip: 'Combine 4 nights bush with 4 nights beach — the perfect balance.',          instagram: '@priyatravels',  quote: 'The best safaris end on an island.',                                trips: 156 },
-];
- 
-const CURATED_JOURNEYS = [
-  { id: 'sabi-classic',    name: 'The Sabi Sand Classic',        tagline: "South Africa's finest leopard territory",    nights: 5, pax: 2, image: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', badge: 'Most popular',     badgeColor: T.gold,    includes: ['Return Federal Air charter JNB→Skukuza','5 nights Singita Sabi Sand','All-inclusive','All game drives & walks','All transfers'],     priceFrom: 142000, otaEquivalent: 192000 },
-  { id: 'grand-circuit',   name: 'The Grand Safari Circuit',     tagline: 'Two countries. Three ecosystems.',           nights: 9, pax: 2, image: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', badge: 'Signature',       badgeColor: '#a78bfa', includes: ['All charter flights','3n Singita Sabi Sand','3n Ngorongoro Crater Lodge','3n Mara Plains Camp','All-inclusive throughout'],          priceFrom: 298000, otaEquivalent: 412000 },
-  { id: 'vic-falls-combo', name: 'Kruger & Victoria Falls',      tagline: 'Big Five then one of the Seven Wonders',     nights: 7, pax: 2, image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', badge: 'Classic combo',   badgeColor: T.green,   includes: ['Return flights JNB','4n Royal Malewane','Charter to Vic Falls','3n Victoria Falls Hotel','All-inclusive at Malewane'],                  priceFrom: 198000, otaEquivalent: 272000 },
-  { id: 'island-finish',   name: 'Safari & Indian Ocean Finale', tagline: 'Bush then beach — the perfect combination',  nights: 8, pax: 2, image: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', badge: 'Our favourite',   badgeColor: '#60a5fa', includes: ['All flights & transfers','4n AndBeyond Phinda','4n Azura Bazaruto','All-inclusive throughout','Speedboat transfers'],              priceFrom: 224000, otaEquivalent: 316000 },
-];
- 
-const DEFAULT_KB: KBEntry[] = [
-  {
-    id: 'kb-region-kruger', edition_id: 'safari', type: 'regional',
-    inclusion_source: 'KB', title: 'Kruger / Sabi Sand — Regional Guide',
-    linkedTo: 'Kruger / Sabi Sand', active: true,
-    structuredFields: {
-      best_season: 'May–September. Dry season. Short grass, animals at waterholes.',
-      malaria: 'Malaria area. Prophylactics recommended. Consult your GP 6 weeks before.',
-      did_you_know: 'The Sabi Sand shares an unfenced boundary with Kruger — predators roam freely across 65,000 hectares.',
-      history: 'Established in 1950, Sabi Sand was one of the first private game reserves in South Africa.',
-      why_visit: 'Highest leopard density in Africa. Private concessions mean no other vehicles at sightings.',
-      best_sightings: 'Leopard year-round. Lion June–August. Wild dog May–July. Rhino on foot at select properties.',
-      ideal_nights: '4 nights minimum. 3 nights feels rushed. 5–7 if budget allows.',
-      visa: 'South Africa: 90-day visa on arrival for most nationalities.',
-      flights: 'Federal Air JNB→Skukuza: 55 minutes vs 5+ hours by road.',
-    },
-    specialistNotes: 'Lead with Singita Boulders or Londolozi for UK/US first-timers. Our rates are 20–27% below Booking.com.',
-  },
-  {
-    id: 'kb-region-okavango', edition_id: 'safari', type: 'regional',
-    inclusion_source: 'KB', title: 'Okavango Delta — Regional Guide',
-    linkedTo: 'Okavango Delta', active: true,
-    structuredFields: {
-      best_season: 'June–October. Flood peaks July–August. October: dry, concentrated game.',
-      malaria: 'Malaria area. Prophylactics essential.',
-      did_you_know: 'The Okavango flows inland and disappears into the Kalahari — the world\'s largest inland delta.',
-      history: 'UNESCO World Heritage Site since 2014. The San people have lived here for over 100,000 years.',
-      why_visit: 'No roads. No fences. You arrive by light aircraft. Nothing else like it on Earth.',
-      best_sightings: 'African wild dog (highest density in Africa). Red lechwe. Sitatunga. Lion and elephant year-round.',
-      ideal_nights: '3 nights minimum. 4 optimal. Combine with Sabi Sand for the perfect circuit.',
-      flights: 'All transfers by light aircraft from Maun. 20kg soft bag STRICTLY enforced.',
-    },
-    specialistNotes: 'Mombo is the apex property. For honeymooners: Jao or Nxabega. For wild dog: DumaTau.',
-  },
-  {
-    id: 'kb-region-cape', edition_id: 'safari', type: 'regional',
-    inclusion_source: 'KB', title: 'Cape Town — Regional Guide',
-    linkedTo: 'Cape Town', active: true,
-    structuredFields: {
-      best_season: 'November–April. Long warm days. Winelands at their best.',
-      did_you_know: 'Table Mountain is one of the New Seven Wonders of Nature and is older than the Himalayas.',
-      history: 'Founded in 1652 by the Dutch East India Company. Cape Malay community descends from Indonesian and Malaysian slaves.',
-      why_visit: 'The perfect start or end to any safari. World-class food, wine, and scenery within 45 minutes.',
-      ideal_nights: '3–4 nights. Enough for city, mountain, and a winelands day trip.',
-      no_malaria: 'Malaria-free. No prophylactics needed.',
-    },
-    specialistNotes: 'Ellerman House for seclusion and views. The Silo for design and city access.',
-  },
-  {
-    id: 'kb-prop-singita-boulders', edition_id: 'safari', type: 'property',
-    inclusion_source: 'KB', title: 'Singita Boulders Lodge',
-    linkedTo: 'Singita Boulders Lodge', active: true,
-    structuredFields: {
-      why_here: 'Six riverside suites built into the boulders above the Sand River. The benchmark luxury safari lodge.',
-      best_room: 'Request Suite 3 (Boulders Suite) — north-facing, directly above the river bend, private plunge pool.',
-      best_sightings: 'Leopard at the river most evenings. Lion crosses at dawn. Wild dog May–July.',
-      did_you_know: 'Singita means "place of miracles" in Shangaan. The concession covers 33,000 hectares.',
-      ideal_nights: '4 nights. 3 feels rushed — you need two full drive cycles to hit your stride.',
-      children: 'Children 10+ in main lodge. Family villa for younger children.',
-    },
-    specialistNotes: 'Our rate is 27% below Booking.com. Groups 6+: 10% discount. Ask for Marcus or Sipho as guide.',
-  },
-  {
-    id: 'kb-prop-mombo', edition_id: 'safari', type: 'property',
-    inclusion_source: 'KB', title: 'Wilderness Mombo Camp',
-    linkedTo: 'Wilderness Mombo Camp', active: true,
-    structuredFields: {
-      why_here: 'Chief\'s Island — the largest island in the Delta — has the highest predator density in Botswana.',
-      best_sightings: 'Wild dog almost guaranteed June–September. Lion year-round. Leopard in riverine forest.',
-      did_you_know: 'No hunting on Chief\'s Island for 40+ years — animals are remarkably relaxed.',
-      ideal_nights: '3–4 nights. Your best sighting is often the last morning.',
-      conservation: 'Part of every booking funds Botswana\'s anti-poaching unit directly.',
-    },
-    specialistNotes: 'Request Little Mombo (6 tents) for honeymooners — more intimate. Same guiding team.',
-  },
-  {
-    id: 'kb4', edition_id: 'safari', type: 'trade_tip', inclusion_source: 'KB',
-    title: 'Charter Flights — Booking Tips', linkedTo: 'flights', active: true,
-    structuredFields: {
-      federal_air: 'Book minimum 6 weeks ahead high season. Weight limit: 20kg soft bag only.',
-      baggage: 'ALL bush charter carriers: 20kg total soft bag. No exceptions. Advise guests firmly.',
-      cancellation: 'Federal Air: 72hr cancellation policy. Full charge within 72hrs.',
-    },
-    specialistNotes: 'Federal Air preferred for Skukuza, Eastgate, Hoedspruit. Never book LAM Mozambique without reconfirming 48hrs ahead.',
-  },
-];
- 
-const RESEARCH_STEPS = [
-  'Reviewing seasonal conditions and migration patterns...',
-  'Checking lodge availability across the region...',
-  'Finding the best charter connections...',
-  'Comparing lodge rates and margin opportunities...',
-  'Optimising your itinerary sequence...',
-  'Identifying time gaps for bonus experiences...',
-  'Putting your personalised journey together...',
-];
- 
-const SECTION_LABELS: Record<string, string> = {
-  rooms: 'Room type', basis: 'Meal basis', flexibility: 'Cancellation',
-  classes: 'Cabin class', baggage: 'Baggage', vehicles: 'Vehicle',
-  extras: 'Add-ons', options: 'Option',
-};
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
- 
-async function track(event: string, editionId: string, properties: Record<string, any> = {}) {
-  try {
-    await fetch('/api/track', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event, edition_id: editionId, properties, ts: Date.now() }),
-    });
-  } catch { /* silent */ }
+'use client'
+import { useState, useEffect, useRef } from 'react'
+
+const T = {
+  bg:'#080818', bg2:'#0f0f1f', surface:'#1a1a2e',
+  gold:'#d4af37', goldDim:'rgba(212,175,55,0.15)', borderGold:'rgba(212,175,55,0.3)',
+  text:'#f5f0e8', textMid:'rgba(245,240,232,0.6)', textDim:'rgba(245,240,232,0.35)',
+  border:'rgba(255,255,255,0.08)', green:'#4ade80', red:'#f87171', blue:'#60a5fa', amber:'#fbbf24',
 }
- 
-function generateIdempotencyKey(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
- 
-const COUNTRY_REGION: Record<string, string> = {
-  'South Africa': 'southern-africa', 'Botswana': 'southern-africa',
-  'Zimbabwe': 'southern-africa', 'Zambia': 'southern-africa', 'Namibia': 'southern-africa',
-  'Kenya': 'east-africa', 'Tanzania': 'east-africa', 'Uganda': 'east-africa', 'Rwanda': 'east-africa',
-  'Mozambique': 'indian-ocean', 'Seychelles': 'indian-ocean', 'Maldives': 'indian-ocean', 'Mauritius': 'indian-ocean',
-};
- 
-const REGION_LABEL: Record<string, string> = {
-  'kruger-sabi-sand':  'Kruger / Sabi Sand',
-  'okavango-delta':    'Okavango Delta',
-  'cape-town':         'Cape Town',
-  'madikwe':           'Madikwe',
-  'phinda':            'Phinda',
-  'mozambique':        'Mozambique',
-  'chobe-vic-falls':   'Chobe / Victoria Falls',
-  'masai-mara':        'Masai Mara',
-  'bwindi':            'Bwindi / Uganda',
-  'kalahari':          'Kalahari',
-};
- 
-function mapSupplierRow(s: any): Hotel {
-  const netRate = Number(s.net_rate_per_night) || 25000;
-  const displayRate = Number(s.display_rate_per_night) || Math.round(netRate * 1.15);
- 
-  // Pull primary image from images JSONB array
-  let images: any[] = [];
-  try { images = Array.isArray(s.images) ? s.images : (s.images ? JSON.parse(s.images) : []); } catch { images = []; }
-  const primaryImage = images.find((img: any) => img.is_primary && img.status === 'approved')
-    ?? images.find((img: any) => img.status === 'approved')
-    ?? images[0];
-  const imageUrl = primaryImage?.url ?? 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80';
- 
-  const destination = REGION_LABEL[s.region_slug] ?? s.destination ?? s.region_slug ?? '';
- 
-  return {
-    id: s.id, edition_id: s.edition_id || 'safari',
-    name: s.name,
-    location: destination ? `${destination}, ${s.country}` : s.country ?? '',
-    destination,
-    subRegion: s.region_slug ?? '',
-    region: COUNTRY_REGION[s.country] || 'southern-africa',
-    country: s.country || '',
-    stars: 5,
-    trustScore: s.trust_score || 85,
-    contentScore: s.content_score || 70,
-    netRate,
-    otaRate: s.ota_rate_per_night ? Number(s.ota_rate_per_night) : null,
-    marginScore: displayRate > 0 ? Math.round((displayRate - netRate) / displayRate * 100) : 20,
-    image: imageUrl,
-    funFact: s.short_tagline ?? (s.description ? String(s.description).slice(0, 120) : null),
-    malariaFree: s.malaria_status === 'malaria-free',
-    tags: s.tags || [],
-    upgrades: {
-      rooms: [{ label: 'Standard Suite', extra: 0, tier: 0 }, { label: 'Premium Suite', extra: Math.round(netRate * 0.4), tier: 1 }],
-      basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }],
-      flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: Math.round(netRate * 0.08), tier: 1 }],
-    },
-  };
-}
- 
-function getInterTransfer(regionA: string, regionB: string) {
-  return INTER_TRANSFERS.find(t => t.applicableRegions.some(([a, b]) => a === regionA && b === regionB)) ?? INTER_TRANSFERS[0];
-}
- 
-function buildFallbackItinerary(nights: number, budget: number, mode: InputMode, singleDest?: string): Itinerary {
-  // Single destination fallback
-  if (singleDest) {
-    const destInfo: Record<string, { country: string; why: string; highlights: string[] }> = {
-      'Cape Town':            { country: 'South Africa', why: 'World-class city, mountain, winelands — the perfect safari bookend.', highlights: ['Table Mountain', 'Winelands day trip', 'V&A Waterfront'] },
-      'Madikwe':              { country: 'South Africa', why: 'Malaria-free Big Five. Excellent for families and first-timers.', highlights: ['Big Five game drives', 'Malaria-free', 'Excellent guiding'] },
-      'Kruger / Sabi Sand':   { country: 'South Africa', why: 'Highest leopard density in Africa. The benchmark safari experience.', highlights: ['Leopard tracking at dawn', 'Night drive', 'Sundowner in the bush'] },
-      'Okavango Delta':       { country: 'Botswana',     why: 'No roads. No fences. The world\'s finest wilderness safari.', highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'] },
-      'Chobe / Victoria Falls':{ country: 'Zimbabwe',   why: 'One of the Seven Wonders of Nature. Incredible elephant herds on the Chobe.', highlights: ['Victoria Falls', 'Chobe River cruise', 'Elephant herds'] },
-    };
-    const info = destInfo[singleDest] ?? destInfo['Kruger / Sabi Sand'];
-    return {
-      title: `${nights}-Night ${singleDest}`,
-      summary: `A focused ${nights}-night journey in ${singleDest} — exactly as requested.`,
-      routing: `JNB → ${singleDest} (${nights}n) → JNB`,
-      bestTiming: 'June–September: dry season, short grass, animals at water.',
-      cities: [
-        { city: singleDest, country: info.country, nights, why: info.why, highlights: info.highlights, estimatedCost: Math.round(budget * 0.92), hotelRate: 45000, flightCost: 7600, transferCost: 3800, activityCost: 0, arrivalGap: 'Arrive midday, first drive at 16:00', departureGap: 'Final morning drive before departure' },
-      ],
-      totalEstimate: Math.round(budget * 0.92),
-      aiInsights: [`${nights} nights gives you ${nights * 2} game drives — enough to hit your stride`, 'Our rates are 20–27% below booking direct'],
-      warnings: [],
-      inputMode: mode,
-    };
+const SUPABASE_URL='https://tkthsbxuyihoblpcfnml.supabase.co'
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrdGhzYnh1eWlob2JscGNmbW1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3MzkzODAsImV4cCI6MjA5MzMxNTM4MH0.vMYkuyH-5vs4zCd9ONxq9evvZZ_OTyxSPyUSU6pdUGg'
+
+const BULK_BOOKINGS=[
+  {id:'b1',booking_reference:'TSE-PAST001',status:'confirmed',total_display_zar:186000,total_net_zar:157980,total_paid_zar:186000,booked_at:'2026-01-15',lead_traveller_snapshot:{name:'Müller Family',email:'muller@gmail.com'},itinerary_id:'it1',supplier_id:'sup-singita-001'},
+  {id:'b2',booking_reference:'TSE-PAST002',status:'confirmed',total_display_zar:312000,total_net_zar:265200,total_paid_zar:312000,booked_at:'2026-02-01',lead_traveller_snapshot:{name:'Thompson & Party',email:'jthompson@outlook.com'},itinerary_id:'it2',supplier_id:'sup-singita-001'},
+  {id:'b3',booking_reference:'TSE-PAST003',status:'confirmed',total_display_zar:245000,total_net_zar:208250,total_paid_zar:245000,booked_at:'2026-02-20',lead_traveller_snapshot:{name:'Davies Honeymoon',email:'s.davies@icloud.com'},itinerary_id:'it3',supplier_id:'sup-singita-001'},
+  {id:'b4',booking_reference:'TSE-CURR001',status:'confirmed',total_display_zar:465000,total_net_zar:394500,total_paid_zar:465000,booked_at:'2026-03-01',lead_traveller_snapshot:{name:'Henderson Couple',email:'henderson@mac.com'},itinerary_id:'it4',supplier_id:'sup-singita-001'},
+  {id:'b5',booking_reference:'TSE-CURR002',status:'confirmed',total_display_zar:224000,total_net_zar:189760,total_paid_zar:67200,booked_at:'2026-03-15',lead_traveller_snapshot:{name:'Johnson Family',email:'johnson@gmail.com'},itinerary_id:'it5',supplier_id:'sup-singita-001'},
+  {id:'b6',booking_reference:'TSE-FUT001',status:'confirmed',total_display_zar:390000,total_net_zar:331500,total_paid_zar:117000,booked_at:'2026-04-01',lead_traveller_snapshot:{name:'Van der Berg Group',email:'vdberg@telkom.net'},itinerary_id:'it6',supplier_id:'sup-singita-001'},
+  {id:'b7',booking_reference:'TSE-FUT002',status:'confirmed',total_display_zar:520000,total_net_zar:442000,total_paid_zar:156000,booked_at:'2026-04-10',lead_traveller_snapshot:{name:'Williams Anniversary',email:'rwilliams@bt.com'},itinerary_id:'it7',supplier_id:'sup-singita-001'},
+  {id:'b8',booking_reference:'TSE-FUT003',status:'confirmed',total_display_zar:185000,total_net_zar:157250,total_paid_zar:0,booked_at:'2026-04-20',lead_traveller_snapshot:{name:'Patel Family',email:'dpatel@yahoo.com'},itinerary_id:'it8',supplier_id:'sup-singita-001'},
+  {id:'b9',booking_reference:'TSE-FUT004',status:'pending_payment',total_display_zar:680000,total_net_zar:578000,total_paid_zar:204000,booked_at:'2026-04-25',lead_traveller_snapshot:{name:'Okonkwo & Party',email:'okonkwo@gmail.com'},itinerary_id:'it9',supplier_id:'sup-singita-001'},
+]
+
+const BULK_SUPPLIER_STATS: Record<string,any> = {
+  'sup-singita-001': {
+    trust_score:97,content_score:88,active_campaigns:2,
+    net_commission_ytd:187420,bookings_ytd:8,bednights_ytd:42,
+    threshold_nights:150,override_pct:3,
+    peer_avg_trust:89,peer_avg_content:74,region:'Sabi Sand Game Reserve'
   }
- 
-  // Two-destination fallback
-  return {
-    title: `${nights}-Night Safari Journey`,
-    summary: `A perfectly sequenced ${nights}-night journey across two of Africa's finest wilderness areas.`,
-    routing: `JNB → Kruger / Sabi Sand (${Math.ceil(nights * 0.55)}n) → Okavango (${Math.floor(nights * 0.45)}n) → JNB`,
-    bestTiming: 'June–September: dry season, short grass, animals at water.',
-    cities: [
-      { city: 'Kruger / Sabi Sand', country: 'South Africa', nights: Math.ceil(nights * 0.55), why: 'First destination while fresh. Highest leopard density in Africa.', highlights: ['Leopard tracking at dawn', 'Night drive', 'Sundowner in the bush'], estimatedCost: Math.round(budget * 0.52), hotelRate: 56000, flightCost: 7600, transferCost: 3800, activityCost: 0, arrivalGap: 'Land Skukuza 09:30, lodge 11:00', departureGap: 'Final morning drive 05:30–09:30 before charter' },
-      { city: 'Okavango Delta',    country: 'Botswana',      nights: Math.floor(nights * 0.45), why: 'Contrast — water, mokoro, bird life after dry Lowveld.', highlights: ['Mokoro through papyrus', 'Walking safari', 'Helicopter over Delta'], estimatedCost: Math.round(budget * 0.42), hotelRate: 62000, flightCost: 9200, transferCost: 2400, activityCost: 1800, arrivalGap: 'Land 12:00, settle in for evening drive', departureGap: 'Final mokoro 07:00–10:00' },
-    ],
-    totalEstimate: Math.round(budget * 0.94),
-    aiInsights: ['Federal Air JNB→Skukuza saves R8,000 vs road transfer', 'Our Singita rate is 27% below Booking.com'],
-    warnings: budget < 100000 ? ['Budget tight for premium lodges — consider single destination'] : [],
-    inputMode: mode,
-  };
 }
- 
-// ─────────────────────────────────────────────────────────────────────────────
-// LOGIN GATE
-// ─────────────────────────────────────────────────────────────────────────────
-function LoginGate({ onUnlock }: { onUnlock: () => void }) {
-  const [code, setCode]       = useState('');
-  const [error, setError]     = useState(false);
-  const [shaking, setShaking] = useState(false);
- 
-  const attempt = () => {
-    if (code.trim().toLowerCase() === 'safari2026') {
-      localStorage.setItem('tse_access', 'safari2026');
-      onUnlock();
-    } else {
-      setError(true); setShaking(true);
-      setTimeout(() => setShaking(false), 500);
+
+async function sb(path:string,opts:any={}){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{
+    headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':'application/json','Prefer':'return=representation',...opts.headers},...opts
+  })
+  if(!res.ok)throw new Error(await res.text())
+  const text=await res.text(); return text?JSON.parse(text):[]
+}
+
+function fmt(n:number){return `R ${Math.round(n).toLocaleString()}`}
+function fmtDate(d:string){return d?new Date(d).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}):'—'}
+function daysSince(d:string){return Math.floor((Date.now()-new Date(d).getTime())/(1000*60*60*24))}
+
+function exportCSV(data:any[],filename:string){
+  if(!data.length)return
+  const keys=Object.keys(data[0])
+  const csv=[keys.join(','),...data.map(r=>keys.map(k=>`"${String(r[k]||'').replace(/"/g,'""')}"`).join(','))].join('\n')
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:`${filename}.csv`})
+  a.click()
+}
+function exportPDF(title:string,headers:string[],rows:string[][]){
+  const html=`<html><head><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}h1{font-size:18px;color:#111}p{color:#666;font-size:10px;margin-bottom:16px}table{width:100%;border-collapse:collapse}th{background:#080818;color:#d4af37;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase}td{padding:7px 10px;border-bottom:1px solid #eee;font-size:11px}tr:nth-child(even){background:#f9f9f9}</style></head><body><h1>${title}</h1><p>Exported ${new Date().toLocaleDateString('en-ZA',{day:'numeric',month:'long',year:'numeric'})} · The Safari Edition</p><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`
+  const w=window.open('','_blank'); if(w){w.document.write(html);w.document.close();setTimeout(()=>w.print(),500)}
+}
+
+function TableToolbar({search,onSearch,searchPlaceholder,filters,activeFilter,onFilter,onExportCSV,onExportPDF,count,title,actions}:{search:string,onSearch:(v:string)=>void,searchPlaceholder:string,filters?:{label:string,value:string}[],activeFilter?:string,onFilter?:(v:string)=>void,onExportCSV?:()=>void,onExportPDF?:()=>void,count?:number,title:string,actions?:React.ReactNode}){
+  const [showFilter,setShowFilter]=useState(false)
+  const [showMore,setShowMore]=useState(false)
+  const filterRef=useRef<HTMLDivElement>(null)
+  const moreRef=useRef<HTMLDivElement>(null)
+  useEffect(()=>{
+    function handleClick(e:MouseEvent){
+      if(filterRef.current&&!filterRef.current.contains(e.target as Node))setShowFilter(false)
+      if(moreRef.current&&!moreRef.current.contains(e.target as Node))setShowMore(false)
     }
-  };
- 
-  return (
-    <div style={{ minHeight:'100vh', background:'#0a0a0a', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24 }}>
-      <div style={{ marginBottom:32, textAlign:'center' }}>
-        <div style={{ fontSize:28, color:'#d4af37', fontFamily:"'Playfair Display',serif", fontWeight:700, marginBottom:8 }}>✦ The Safari Edition</div>
-        <div style={{ fontSize:13, color:'rgba(245,240,232,0.4)', letterSpacing:'0.15em', textTransform:'uppercase' as const }}>Private Preview</div>
+    document.addEventListener('mousedown',handleClick)
+    return()=>document.removeEventListener('mousedown',handleClick)
+  },[])
+  const activeFilterLabel=filters?.find(f=>f.value===activeFilter)?.label
+  return(
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif"}}>{title}</div>
+        {count!==undefined&&<div style={{fontSize:12,color:T.textDim,background:'rgba(255,255,255,0.06)',borderRadius:20,padding:'2px 9px'}}>{count}</div>}
       </div>
-      <div style={{ width:'100%', maxWidth:340, animation: shaking ? 'shake 0.4s ease' : 'none' }}>
-        <input
-          type="password" value={code}
-          onChange={e => { setCode(e.target.value); setError(false); }}
-          onKeyDown={e => e.key === 'Enter' && attempt()}
-          placeholder="Enter access code" autoFocus
-          style={{ width:'100%', padding:'14px 18px', background:'#1e1e1e', border:`1.5px solid ${error ? '#f87171' : 'rgba(212,175,55,0.3)'}`, borderRadius:12, color:'#f5f0e8', fontSize:15, outline:'none', fontFamily:'inherit', textAlign:'center' as const, letterSpacing:'0.1em', marginBottom:12, boxSizing:'border-box' as const }}
-        />
-        {error && <div style={{ fontSize:12, color:'#f87171', textAlign:'center' as const, marginBottom:10 }}>Incorrect code — try again</div>}
-        <button onClick={attempt} style={{ width:'100%', padding:14, background:'linear-gradient(135deg,#d4af37,#f0c040)', border:'none', borderRadius:12, color:'#0a0a0a', fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Enter →</button>
-      </div>
-      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}`}</style>
-    </div>
-  );
-}
- 
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED UI COMPONENTS
-// ─────────────────────────────────────────────────────────────────────────────
- 
-function Spinner() { return <div className="spinner" />; }
- 
-function Nav({ edition, setScreen, currency, setCurrency, chatOpen, setChatOpen, totalZAR, fmt, hasPricedItems }: any) {
-  const [editionOpen, setEditionOpen] = useState(false);
-  return (
-    <nav style={{ position:'sticky', top:0, zIndex:100, background:'rgba(10,10,10,0.96)', backdropFilter:'blur(16px)', borderBottom:`0.5px solid ${T.border}`, padding:'0 20px' }}>
-      <div style={{ maxWidth:900, margin:'0 auto', height:58, display:'flex', alignItems:'center', justifyContent:'space-between', position:'relative' }}>
-        {/* LEFT — Edition dropdown */}
-        <div style={{ position:'relative' }}>
-          <button onClick={() => setEditionOpen((x: boolean) => !x)} style={{ background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6 }}>
-            <span style={{ fontSize:14, fontWeight:700, color:T.gold, letterSpacing:'0.05em' }}>✦ {edition.name}</span>
-            <span style={{ fontSize:10, color:T.textDim, marginTop:1 }}>{editionOpen ? '▲' : '▼'}</span>
-          </button>
-          {editionOpen && (
-            <div style={{ position:'absolute', top:'calc(100% + 8px)', left:0, background:'#111', border:`0.5px solid rgba(212,175,55,0.3)`, borderRadius:14, padding:10, minWidth:260, zIndex:200, boxShadow:'0 8px 32px rgba(0,0,0,0.6)' }}>
-              <div style={{ padding:'8px 12px', marginBottom:6, background:'rgba(212,175,55,0.08)', borderRadius:10, border:`0.5px solid rgba(212,175,55,0.2)` }}>
-                <div style={{ fontSize:12, fontWeight:700, color:T.gold }}>✦ {edition.name}</div>
-                <div style={{ fontSize:10, color:T.textDim, marginTop:1 }}>Sub-Saharan Africa · Active</div>
+      <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        {actions}
+        <div style={{position:'relative',display:'flex',alignItems:'center'}}>
+          <span style={{position:'absolute',left:10,color:T.textDim,fontSize:13,pointerEvents:'none'}}>⌕</span>
+          <input value={search} onChange={e=>onSearch(e.target.value)} placeholder={searchPlaceholder} style={{paddingLeft:28,paddingRight:10,paddingTop:7,paddingBottom:7,background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:8,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',width:180}}/>
+          {search&&<button onClick={()=>onSearch('')} style={{position:'absolute',right:8,background:'none',border:'none',color:T.textDim,cursor:'pointer',fontSize:14,lineHeight:1}}>×</button>}
+        </div>
+        {filters&&onFilter&&(
+          <div ref={filterRef} style={{position:'relative'}}>
+            <button onClick={()=>setShowFilter(s=>!s)} style={{padding:'7px 12px',borderRadius:8,border:`0.5px solid ${activeFilter&&activeFilter!=='all'?T.gold:T.border}`,background:activeFilter&&activeFilter!=='all'?T.goldDim:'transparent',color:activeFilter&&activeFilter!=='all'?T.gold:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:5}}>
+              {activeFilter&&activeFilter!=='all'?`${activeFilterLabel}`:'Filter'} ▾
+            </button>
+            {showFilter&&(
+              <div style={{position:'absolute',top:'100%',right:0,marginTop:4,background:T.bg2,border:`0.5px solid ${T.borderGold}`,borderRadius:10,overflow:'hidden',zIndex:200,minWidth:140,boxShadow:'0 8px 24px rgba(0,0,0,0.5)'}}>
+                {filters.map(f=>(
+                  <button key={f.value} onClick={()=>{onFilter(f.value);setShowFilter(false)}} style={{width:'100%',padding:'9px 14px',background:activeFilter===f.value?T.goldDim:'transparent',border:'none',color:activeFilter===f.value?T.gold:T.textMid,fontSize:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left',display:'flex',alignItems:'center',gap:8}}>
+                    {activeFilter===f.value&&<span style={{color:T.gold}}>✓</span>}{f.label}
+                  </button>
+                ))}
               </div>
-              {OTHER_EDITIONS.map((e: any) => (
-                <div key={e.id} style={{ padding:'8px 12px', borderRadius:10, display:'flex', alignItems:'center', gap:10, opacity:0.6 }}>
-                  <span style={{ fontSize:18 }}>{e.icon}</span>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12, color:T.text, fontWeight:600 }}>{e.name}</div>
-                    <div style={{ fontSize:10, color:T.textDim }}>{e.desc}</div>
+            )}
+          </div>
+        )}
+        {(onExportCSV||onExportPDF)&&(
+          <div ref={moreRef} style={{position:'relative'}}>
+            <button onClick={()=>setShowMore(s=>!s)} style={{padding:'7px 10px',borderRadius:8,border:`0.5px solid ${T.border}`,background:'transparent',color:T.textDim,fontSize:14,cursor:'pointer',fontFamily:'inherit',lineHeight:1}}>⋯</button>
+            {showMore&&(
+              <div style={{position:'absolute',top:'100%',right:0,marginTop:4,background:T.bg2,border:`0.5px solid ${T.border}`,borderRadius:10,overflow:'hidden',zIndex:200,minWidth:140,boxShadow:'0 8px 24px rgba(0,0,0,0.5)'}}>
+                {onExportCSV&&<button onClick={()=>{onExportCSV();setShowMore(false)}} style={{width:'100%',padding:'9px 14px',background:'transparent',border:'none',color:T.textMid,fontSize:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left',display:'flex',alignItems:'center',gap:8}}>📊 Export CSV</button>}
+                {onExportPDF&&<button onClick={()=>{onExportPDF();setShowMore(false)}} style={{width:'100%',padding:'9px 14px',background:'transparent',border:'none',color:T.textMid,fontSize:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left',display:'flex',alignItems:'center',gap:8}}>📄 Export PDF</button>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ColHeader({label,field,sortField,sortDir,onSort,align='left',width}:{label:string,field?:string,sortField?:string,sortDir?:string,onSort?:(f:string)=>void,align?:string,width?:string}){
+  const active=field&&sortField===field
+  return(
+    <div onClick={()=>field&&onSort&&onSort(field)} style={{cursor:field?'pointer':'default',display:'flex',alignItems:'center',gap:4,justifyContent:align==='right'?'flex-end':'flex-start',color:active?T.gold:T.textDim,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',userSelect:'none',width}}>
+      {label}
+      {field&&<span style={{fontSize:9,opacity:active?1:0.3}}>{active?(sortDir==='asc'?'↑':'↓'):'↕'}</span>}
+    </div>
+  )
+}
+
+function Btn({label,onClick,variant}:{label:string,onClick:()=>void,variant?:string}){
+  return(
+    <button onClick={onClick} style={{padding:'8px 16px',borderRadius:8,border:variant==='gold'?'none':`0.5px solid ${T.border}`,background:variant==='gold'?`linear-gradient(135deg,${T.gold},#f0c040)`:'transparent',color:variant==='gold'?'#0a0a0a':T.textDim,fontSize:12,fontWeight:variant==='gold'?700:400,cursor:'pointer',fontFamily:'inherit'}}>
+      {label}
+    </button>
+  )
+}
+
+function SectionHeader({title,sub,action}:{title:string,sub?:string,action?:React.ReactNode}){
+  return(
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+      <div>
+        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif"}}>{title}</div>
+        {sub&&<div style={{fontSize:12,color:T.textDim,marginTop:4}}>{sub}</div>}
+      </div>
+      {action}
+    </div>
+  )
+}
+
+const NAV=[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'bookings',label:'Bookings',icon:'📋'},{id:'suppliers',label:'Suppliers',icon:'🏕️'},{id:'stack',label:'Stack Manager',icon:'🎯'},{id:'knowledge',label:'Knowledge Base',icon:'📚'},{id:'itineraries',label:'Itineraries',icon:'🗺️'},{id:'users',label:'Users',icon:'👥'}]
+
+const ALL_USERS = [
+  {email:'admin@thesafariedition.com', pwd:'safari2026', name:'JD (Founder)', type:'edition', role:'edition_admin'},
+  {email:'ops@thesafariedition.com',   pwd:'ops2026',    name:'Sarah Mitchell', type:'edition', role:'edition_ops'},
+  {email:'finance@thesafariedition.com', pwd:'finance2026', name:'Tom van der Berg', type:'edition', role:'edition_finance'},
+  {email:'content@thesafariedition.com', pwd:'content2026', name:'Priya Naidoo', type:'edition', role:'edition_content'},
+  {email:'admin@singita.com',          pwd:'admin2026',  name:'Sarah Dlamini', type:'supplier', role:'supplier_admin', supplier:'Singita Sabi Sand'},
+  {email:'reservations@singita.com',   pwd:'res2026',    name:'Thabo Nkosi',   type:'supplier', role:'reservations_manager', supplier:'Singita Sabi Sand'},
+  {email:'content@singita.com',        pwd:'content2026',name:'Priya Moodley', type:'supplier', role:'content_manager', supplier:'Singita Sabi Sand'},
+  {email:'finance@singita.com',        pwd:'finance2026',name:'James Olifant', type:'supplier', role:'finance_contact', supplier:'Singita Sabi Sand'},
+  {email:'sales@singita.com',          pwd:'sales2026',  name:'Mpho Sithole',  type:'supplier', role:'sales_marketing', supplier:'Singita Sabi Sand'},
+]
+
+function Login({onLogin}:{onLogin:(name:string)=>void}){
+  const [email,setEmail]=useState('')
+  const [pwd,setPwd]=useState('')
+  const [error,setError]=useState('')
+  const [loading,setLoading]=useState(false)
+  const handle=async()=>{
+    setLoading(true); setError('')
+    await new Promise(r=>setTimeout(r,400))
+    const user=ALL_USERS.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.pwd===pwd)
+    if(user){
+      if(user.type==='supplier'){
+        const supplierSess=JSON.stringify({name:user.name,email:user.email,type:'supplier',role:user.role,supplier:(user as any).supplier||''})
+        sessionStorage.setItem('tse_session',supplierSess)
+        localStorage.setItem('tse_session',supplierSess)
+        window.location.href='/supplier'
+      } else {
+        const sess=JSON.stringify({name:user.name,email:user.email,type:'edition',role:user.role})
+        sessionStorage.setItem('tse_session',sess)
+        localStorage.setItem('tse_session',sess)
+        onLogin(user.name)
+      }
+    } else { setError('Incorrect email or password') }
+    setLoading(false)
+  }
+  const EDITION_USERS=ALL_USERS.filter(u=>u.type==='edition')
+  const SUPPLIER_USERS=ALL_USERS.filter(u=>u.type==='supplier')
+  return(
+    <div style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Arial,sans-serif'}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap')`}</style>
+      <div style={{width:'100%',maxWidth:760,padding:'24px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}}>
+        <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,padding:'32px'}}>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:11,color:T.gold,letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6}}>The Safari Edition</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,fontWeight:700,marginBottom:4}}>Sign In</div>
+          <div style={{fontSize:12,color:T.textDim,marginBottom:24}}>Edition team and supplier partners</div>
+          <div style={{marginBottom:12}}>
+            <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:5}}>Email address</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handle()} placeholder="you@example.com" style={{width:'100%',padding:'11px 13px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:9,color:T.text,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+          </div>
+          <div style={{marginBottom:16}}>
+            <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:5}}>Password</label>
+            <input type="password" value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handle()} placeholder="••••••••" style={{width:'100%',padding:'11px 13px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:9,color:T.text,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+          </div>
+          {error&&<div style={{fontSize:12,color:T.red,marginBottom:12,padding:'8px 12px',background:'rgba(248,113,113,0.08)',borderRadius:7}}>{error}</div>}
+          <button onClick={handle} disabled={loading} style={{width:'100%',padding:'12px',background:loading?'rgba(255,255,255,0.06)':`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:9,color:loading?T.textDim:'#0a0a0a',fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',fontFamily:'inherit',transition:'all 0.2s'}}>
+            {loading?'Signing in…':'Sign In →'}
+          </button>
+          <div style={{marginTop:20,padding:'12px',background:'rgba(96,165,250,0.06)',border:'0.5px solid rgba(96,165,250,0.18)',borderRadius:9,fontSize:11,color:'#60a5fa',lineHeight:1.6}}>
+            Edition team → Admin Dashboard<br/>Supplier contacts → Supplier Portal (automatic)
+          </div>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:'18px'}}>
+            <div style={{fontSize:11,color:T.gold,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Edition Team</div>
+            {EDITION_USERS.map(u=>(
+              <div key={u.email} onClick={()=>{setEmail(u.email);setPwd(u.pwd)}} style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',borderRadius:7,cursor:'pointer',marginBottom:4,border:'0.5px solid transparent'}}
+                onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.04)';(e.currentTarget as HTMLElement).style.borderColor=T.border}}
+                onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.background='transparent';(e.currentTarget as HTMLElement).style.borderColor='transparent'}}>
+                <span style={{fontSize:12,color:T.blue}}>{u.email}</span>
+                <span style={{fontSize:11,color:T.textDim}}>{u.name}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:'18px'}}>
+            <div style={{fontSize:11,color:T.gold,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:12}}>Supplier Contacts <span style={{color:T.textDim,fontWeight:400}}>→ auto-routes to portal</span></div>
+            {SUPPLIER_USERS.map(u=>(
+              <div key={u.email} onClick={()=>{setEmail(u.email);setPwd(u.pwd)}} style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',borderRadius:7,cursor:'pointer',marginBottom:4,border:'0.5px solid transparent'}}
+                onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.04)';(e.currentTarget as HTMLElement).style.borderColor=T.border}}
+                onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.background='transparent';(e.currentTarget as HTMLElement).style.borderColor='transparent'}}>
+                <span style={{fontSize:12,color:'#a78bfa'}}>{u.email}</span>
+                <span style={{fontSize:11,color:T.textDim}}>{u.role.replace(/_/g,' ')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StatCard({label,value,sub,color,onClick}:{label:string,value:string,sub?:string,color?:string,onClick?:()=>void}){
+  return(
+    <div onClick={onClick} style={{background:T.surface,border:`0.5px solid ${onClick?T.borderGold:T.border}`,borderRadius:12,padding:'16px 18px',cursor:onClick?'pointer':'default'}}
+      onMouseEnter={e=>{if(onClick)(e.currentTarget as HTMLElement).style.background='rgba(212,175,55,0.04)'}}
+      onMouseLeave={e=>{if(onClick)(e.currentTarget as HTMLElement).style.background=T.surface}}>
+      <div style={{fontSize:11,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>{label}</div>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,fontWeight:700,color:color||T.gold}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:T.textDim,marginTop:4}}>{sub}</div>}
+      {onClick&&<div style={{fontSize:10,color:T.gold,marginTop:6}}>View →</div>}
+    </div>
+  )
+}
+
+function NudgeModal({quote,onClose}:{quote:any,onClose:()=>void}){
+  const [msg,setMsg]=useState(`Hi${quote.name?' '+quote.name.split(' ')[0]:''}, just checking in on your safari quote. Your itinerary is still available — happy to answer any questions or make changes. The Safari Edition team.`)
+  const [sent,setSent]=useState(false)
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,padding:28,width:'100%',maxWidth:480}}>
+        <div style={{fontSize:16,fontWeight:700,color:T.gold,marginBottom:4}}>Nudge Traveller</div>
+        <div style={{fontSize:12,color:T.textDim,marginBottom:16}}>{quote.name} · {quote.email}</div>
+        <textarea value={msg} onChange={e=>setMsg(e.target.value)} rows={5} style={{width:'100%',padding:'10px 12px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:9,color:T.text,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box',resize:'vertical',marginBottom:16}}/>
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={()=>setSent(true)} style={{flex:1,padding:'11px',background:sent?T.green:`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:9,color:sent?'white':'#0a0a0a',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{sent?'✓ Logged':'Send Nudge'}</button>
+          <button onClick={onClose} style={{padding:'11px 18px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:9,color:T.textDim,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Close</button>
+        </div>
+        {sent&&<div style={{fontSize:11,color:T.textDim,marginTop:10,textAlign:'center'}}>Logged — email/WhatsApp sends when Operations module is connected</div>}
+      </div>
+    </div>
+  )
+}
+
+function OpenQuotes({onBack}:{onBack:()=>void}){
+  const [quotes,setQuotes]=useState<any[]>([])
+  const [loading,setLoading]=useState(true)
+  const [nudging,setNudging]=useState<any>(null)
+  const [search,setSearch]=useState('')
+  const [sortField,setSortField]=useState('created_at')
+  const [sortDir,setSortDir]=useState('desc')
+  useEffect(()=>{ setLoading(false) },[])
+  const quoteExpiry=(d:string)=>{const exp=new Date(d);exp.setDate(exp.getDate()+7);return Math.max(0,Math.floor((exp.getTime()-Date.now())/(1000*60*60*24)))}
+  const handleSort=(f:string)=>{if(sortField===f)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortField(f);setSortDir('asc')}}
+  let filtered=quotes.filter(q=>!search||(q.name||'').toLowerCase().includes(search.toLowerCase())||(q.title||'').toLowerCase().includes(search.toLowerCase()))
+  const totalValue=filtered.reduce((s:number,q:any)=>s+(q.total_display_zar||0),0)
+  if(loading)return <div style={{color:T.textDim,padding:40}}>Loading…</div>
+  return(
+    <div>
+      {nudging&&<NudgeModal quote={nudging} onClose={()=>setNudging(null)}/>}
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+        <button onClick={onBack} style={{background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:8,padding:'6px 12px',color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>← Dashboard</button>
+        <div>
+          <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif"}}>Open Quotes</div>
+          <div style={{fontSize:12,color:T.textDim}}>{filtered.length} quotes · Pipeline {fmt(totalValue)}</div>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:20}}>
+        <StatCard label="Pipeline value" value={fmt(totalValue)} color={T.gold}/>
+        <StatCard label="Open quotes" value={String(filtered.length)} color={T.amber}/>
+        <StatCard label="Avg value" value={filtered.length>0?fmt(totalValue/filtered.length):'—'}/>
+      </div>
+      <div style={{padding:24,textAlign:'center',color:T.textDim,background:T.surface,borderRadius:12,border:`0.5px solid ${T.border}`}}>No open quotes yet — quotes will appear here when travellers build itineraries.</div>
+    </div>
+  )
+}
+
+function Dashboard({setActive,userName}:{setActive:(s:string)=>void,userName?:string}){
+  const [stats,setStats]=useState({bookings:0,confirmed:0,totalGBV:0,quotes:0,suppliers:0})
+  const [recentBookings,setRecentBookings]=useState<any[]>([])
+  const [loading,setLoading]=useState(true)
+  const [showQuotes,setShowQuotes]=useState(false)
+  useEffect(()=>{
+    Promise.all([
+      sb('bookings?select=id,booking_reference,status,total_display_zar,booked_at,lead_traveller_snapshot&order=created_at.desc&limit=5'),
+      sb('bookings?select=status,total_display_zar'),
+      sb('suppliers?select=id&is_active=eq.true'),
+      Promise.resolve([]),
+    ]).then(([recent,allBookings,suppliers,itineraries])=>{
+      const confirmed=allBookings.filter((b:any)=>b.status==='confirmed')
+      setStats({bookings:allBookings.length,confirmed:confirmed.length,totalGBV:confirmed.reduce((s:number,b:any)=>s+(b.total_display_zar||0),0),quotes:0,suppliers:suppliers.length})
+      setRecentBookings(recent)
+    }).catch(console.error).finally(()=>setLoading(false))
+  },[])
+  if(loading)return <div style={{color:T.textDim,padding:40}}>Loading…</div>
+  if(showQuotes)return <OpenQuotes onBack={()=>setShowQuotes(false)}/>
+  return(
+    <div>
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:22,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:4}}>Good morning ✦</div>
+        <div style={{fontSize:13,color:T.textDim}}>The Safari Edition — Admin Overview</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,marginBottom:28}}>
+        <StatCard label="Total bookings" value={String(stats.bookings)} sub="All time" onClick={()=>setActive('bookings')}/>
+        <StatCard label="Confirmed" value={String(stats.confirmed)} color={T.green} onClick={()=>setActive('bookings')}/>
+        <StatCard label="Total GBV" value={fmt(stats.totalGBV)} color={T.gold}/>
+        <StatCard label="Open quotes" value={String(stats.quotes)} color={T.amber} sub="Click to manage" onClick={()=>setShowQuotes(true)}/>
+        <StatCard label="Active suppliers" value={String(stats.suppliers)} onClick={()=>setActive('suppliers')}/>
+      </div>
+      <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:'hidden'}}>
+        <div style={{padding:'12px 16px',borderBottom:`0.5px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.text}}>Recent Bookings</div>
+          <button onClick={()=>setActive('bookings')} style={{fontSize:12,color:T.gold,background:'transparent',border:'none',cursor:'pointer',fontFamily:'inherit'}}>View all →</button>
+        </div>
+        {recentBookings.length===0?<div style={{padding:24,textAlign:'center',color:T.textDim,fontSize:13}}>No bookings yet</div>
+        :recentBookings.map((b,i)=>(
+          <div key={i} onClick={()=>setActive('bookings')} style={{padding:'11px 16px',borderBottom:`0.5px solid ${T.border}`,display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}
+            onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.02)'}
+            onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:T.gold}}>{b.booking_reference}</div>
+              <div style={{fontSize:12,color:T.textMid,marginTop:1}}>{b.lead_traveller_snapshot?.name||'—'}</div>
+              <div style={{fontSize:11,color:T.textDim,marginTop:1}}>{fmtDate(b.booked_at)}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:14,fontWeight:700,color:T.gold}}>{fmt(b.total_display_zar||0)}</div>
+              <div style={{fontSize:11,color:b.status==='confirmed'?T.green:T.amber,marginTop:2}}>{b.status?.replace(/_/g,' ')}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Bookings(){
+  const [bookings,setBookings]=useState<any[]>([])
+  const [loading,setLoading]=useState(true)
+  const [search,setSearch]=useState('')
+  const [filter,setFilter]=useState('all')
+  const [sortField,setSortField]=useState('booked_at')
+  const [sortDir,setSortDir]=useState('desc')
+  const [expanded,setExpanded]=useState<string|null>(null)
+  const SPECIALISTS=['Sarah Mitchell','James Okonkwo','Priya Naidoo','Tom van der Berg']
+  useEffect(()=>{
+    sb('bookings?select=id,booking_reference,status,total_display_zar,total_net_zar,total_paid_zar,booked_at,lead_traveller_snapshot,itinerary_id&order=created_at.desc')
+      .then(async(data:any[])=>{
+        const enriched=await Promise.all(data.map(async(b:any)=>{
+          try{
+            const components=await sb(`itinerary_components?select=pillar,display_rate_zar,net_rate_zar,notes,suppliers(name,destination)&itinerary_id=eq.${b.itinerary_id}&order=sequence`)
+            return{...b,itinerary:null,components:components||[]}
+          }catch{return{...b,itinerary:null,components:[]}}
+        }))
+        setBookings(enriched)
+      }).catch(console.error).finally(()=>setLoading(false))
+  },[])
+  const handleSort=(f:string)=>{if(sortField===f)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortField(f);setSortDir('asc')}}
+  let filtered=bookings
+  if(filter!=='all')filtered=filtered.filter((b:any)=>b.status===filter)
+  if(search)filtered=filtered.filter((b:any)=>(b.booking_reference||'').toLowerCase().includes(search.toLowerCase())||(b.lead_traveller_snapshot?.name||'').toLowerCase().includes(search.toLowerCase()))
+  filtered=[...filtered].sort((a,b)=>{
+    const av=sortField==='total_display_zar'?(a[sortField]||0):new Date(a[sortField]).getTime()
+    const bv=sortField==='total_display_zar'?(b[sortField]||0):new Date(b[sortField]).getTime()
+    return sortDir==='asc'?(av>bv?1:-1):(av<bv?1:-1)
+  })
+  if(loading)return <div style={{color:T.textDim,padding:40}}>Loading bookings…</div>
+  return(
+    <div>
+      <TableToolbar title="Bookings" count={filtered.length} search={search} onSearch={setSearch} searchPlaceholder="Search reference or name…"
+        filters={[{label:'All',value:'all'},{label:'Confirmed',value:'confirmed'},{label:'Pending payment',value:'pending_payment'},{label:'Cancelled',value:'cancelled'}]}
+        activeFilter={filter} onFilter={setFilter}
+        onExportCSV={()=>exportCSV(filtered.map(b=>({'Ref':b.booking_reference,'Name':b.lead_traveller_snapshot?.name||'—','Status':b.status,'Value':b.total_display_zar||0,'Net':b.total_net_zar||0,'Date':fmtDate(b.booked_at)})),'bookings')}
+        onExportPDF={()=>exportPDF('Bookings',['Ref','Name','Status','Value','Margin','Date'],filtered.map(b=>[b.booking_reference,b.lead_traveller_snapshot?.name||'—',b.status,fmt(b.total_display_zar||0),b.total_net_zar?Math.round(((b.total_display_zar-b.total_net_zar)/b.total_display_zar)*100)+'%':'—',fmtDate(b.booked_at)]))}
+      />
+      <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:'hidden'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1.5fr 1.5fr 1fr 1fr 1fr 20px',gap:8,padding:'10px 16px',borderBottom:`0.5px solid ${T.border}`}}>
+          <ColHeader label="Reference" field="booking_reference" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Traveller"/>
+          <ColHeader label="Value" field="total_display_zar" sortField={sortField} sortDir={sortDir} onSort={handleSort} align="right"/>
+          <ColHeader label="Margin"/>
+          <ColHeader label="Date" field="booked_at" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <div/>
+        </div>
+        {filtered.length===0?<div style={{padding:24,textAlign:'center',color:T.textDim}}>No bookings found</div>
+        :filtered.map((b:any,i:number)=>{
+          const margin=b.total_display_zar&&b.total_net_zar?b.total_display_zar-b.total_net_zar:0
+          const marginPct=b.total_display_zar&&margin?Math.round((margin/b.total_display_zar)*100):0
+          const depositPaid=b.total_paid_zar||0
+          const balance=(b.total_display_zar||0)-depositPaid
+          const specialist=SPECIALISTS[i%SPECIALISTS.length]
+          const isExpanded=expanded===b.id
+          return(
+            <div key={i}>
+              <div onClick={()=>setExpanded(isExpanded?null:b.id)} style={{display:'grid',gridTemplateColumns:'1.5fr 1.5fr 1fr 1fr 1fr 20px',gap:8,padding:'12px 16px',borderBottom:`0.5px solid ${T.border}`,alignItems:'center',cursor:'pointer',background:i%2===1?'rgba(255,255,255,0.01)':'transparent'}}
+                onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='rgba(255,255,255,0.03)'}
+                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background=i%2===1?'rgba(255,255,255,0.01)':'transparent'}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:T.gold}}>{b.booking_reference}</div>
+                  <div style={{fontSize:10,marginTop:2,padding:'1px 6px',borderRadius:4,display:'inline-block',background:b.status==='confirmed'?'rgba(74,222,128,0.1)':b.status==='cancelled'?'rgba(248,113,113,0.1)':'rgba(251,191,36,0.1)',color:b.status==='confirmed'?T.green:b.status==='cancelled'?T.red:T.amber}}>{b.status?.replace(/_/g,' ')}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:13,color:T.text}}>{b.lead_traveller_snapshot?.name||'—'}</div>
+                  <div style={{fontSize:11,color:T.textDim,marginTop:1}}>{b.lead_traveller_snapshot?.email||'—'}</div>
+                </div>
+                <div style={{textAlign:'right',fontSize:13,fontWeight:700,color:T.gold}}>{fmt(b.total_display_zar||0)}</div>
+                <div>{margin>0&&<><div style={{fontSize:12,color:T.green,fontWeight:600}}>{fmt(margin)}</div><div style={{fontSize:10,color:T.textDim}}>{marginPct}%</div></>}</div>
+                <div style={{fontSize:11,color:T.textDim}}>{fmtDate(b.booked_at)}</div>
+                <div style={{fontSize:12,color:T.textDim}}>{isExpanded?'▲':'▼'}</div>
+              </div>
+              {isExpanded&&(
+                <div style={{background:'rgba(255,255,255,0.01)',borderBottom:`0.5px solid ${T.border}`,padding:'16px 18px'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10,marginBottom:16}}>
+                    <div style={{background:T.bg,borderRadius:9,padding:'10px 12px'}}><div style={{fontSize:10,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Deposit paid</div><div style={{fontSize:12,color:depositPaid>0?T.green:T.amber}}>{depositPaid>0?fmt(depositPaid):'Not paid'}</div></div>
+                    <div style={{background:T.bg,borderRadius:9,padding:'10px 12px'}}><div style={{fontSize:10,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Balance due</div><div style={{fontSize:12,color:balance>0?T.text:T.green}}>{balance>0?fmt(balance):'Paid in full'}</div></div>
+                    <div style={{background:'rgba(212,175,55,0.06)',border:`0.5px solid ${T.borderGold}`,borderRadius:9,padding:'10px 12px'}}><div style={{fontSize:10,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Journey Specialist</div><div style={{fontSize:12,color:T.gold,fontWeight:600}}>{specialist}</div></div>
                   </div>
-                  <span style={{ fontSize:9, color:e.color, background:`${e.color}18`, border:`0.5px solid ${e.color}40`, borderRadius:20, padding:'2px 7px', fontWeight:700 }}>Soon</span>
+                  <div style={{display:'flex',gap:8}}>
+                    <button style={{fontSize:11,color:T.gold,padding:'5px 12px',border:`0.5px solid ${T.borderGold}`,borderRadius:7,background:T.goldDim,cursor:'pointer',fontFamily:'inherit'}}>Send confirmation</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function InviteModal({onClose}:{onClose:()=>void}){
+  const [email,setEmail]=useState('')
+  const [name,setName]=useState('')
+  const [sent,setSent]=useState(false)
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,padding:28,width:'100%',maxWidth:440}}>
+        <div style={{fontSize:16,fontWeight:700,color:T.gold,marginBottom:4}}>Invite Supplier</div>
+        <div style={{fontSize:12,color:T.textDim,marginBottom:20}}>Send a registration form to the supplier.</div>
+        <div style={{marginBottom:12}}>
+          <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Property name</label>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Singita Sabi Sand" style={{width:'100%',padding:'10px 12px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:8,color:T.text,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+        </div>
+        <div style={{marginBottom:20}}>
+          <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Supplier email</label>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="reservations@property.com" style={{width:'100%',padding:'10px 12px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:8,color:T.text,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/>
+        </div>
+        {sent&&<div style={{background:'rgba(74,222,128,0.08)',border:'0.5px solid rgba(74,222,128,0.2)',borderRadius:9,padding:'10px 14px',marginBottom:16}}><div style={{fontSize:12,color:T.green,fontWeight:600}}>✓ Invitation logged</div></div>}
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={()=>{if(email&&name)setSent(true)}} style={{flex:1,padding:'11px',background:`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:9,color:'#0a0a0a',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Send Invitation</button>
+          <button onClick={onClose} style={{padding:'11px 18px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:9,color:T.textDim,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const SUPPLIER_TYPES=['Lodge','Hotel','Charter','Commercial Airline','Road Transfer Service','Activity']
+
+function Suppliers({onViewSupplier}:{onViewSupplier:(s:any)=>void}){
+  const [suppliers,setSuppliers]=useState<any[]>([])
+  const [loading,setLoading]=useState(true)
+  const [search,setSearch]=useState('')
+  const [filter,setFilter]=useState('all')
+  const [sortField,setSortField]=useState('name')
+  const [sortDir,setSortDir]=useState('asc')
+  const [adding,setAdding]=useState(false)
+  const [inviting,setInviting]=useState(false)
+  const [saving,setSaving]=useState(false)
+  const [saveMsg,setSaveMsg]=useState('')
+  const [newSupplier,setNewSupplier]=useState({name:'',type:'Lodge',country:'South Africa',destination:'',tagline:'',commission_pct:15,override_pct:3,override_threshold_nights:100,payment_terms:'End of Month Following Travel',max_adults:2,max_children:2,extra_beds:0,net_rate_pppn:0,min_nights:2,meal_basis:'All-Inclusive',pms_type:'',keywords:'',notes:''})
+  const [loadError,setLoadError]=useState('')
+
+  const load=()=>{
+    setLoading(true); setLoadError('')
+    sb('suppliers?select=*&order=name.asc&limit=200')
+      .then(data=>{
+        setSuppliers(data)
+        if(data.length===0)setLoadError('No suppliers returned. Check RLS policies.')
+      })
+      .catch(e=>{setLoadError(`Supabase error: ${e.message||JSON.stringify(e)}`);console.error(e)})
+      .finally(()=>setLoading(false))
+  }
+  useEffect(()=>{load()},[])
+
+  const handleAdd=async()=>{
+    if(!newSupplier.name.trim()){setSaveMsg('Property name is required');return}
+    setSaving(true);setSaveMsg('')
+    try{
+      const payload={name:newSupplier.name,type:newSupplier.type.toLowerCase().replace(/ /g,'_'),country:newSupplier.country,destination:newSupplier.destination,tagline:newSupplier.tagline,commission_pct:newSupplier.commission_pct,override_pct:newSupplier.override_pct,payment_terms:newSupplier.payment_terms,is_active:true,trust_score:70,content_score:50,edition_id:'3fc42337-7dd0-426a-acef-790938aa9671'}
+      await sb('suppliers',{method:'POST',body:JSON.stringify(payload)})
+      setSaveMsg('✓ Supplier saved successfully')
+      setTimeout(()=>{setAdding(false);setSaveMsg('');setNewSupplier({name:'',type:'Lodge',country:'South Africa',destination:'',tagline:'',commission_pct:15,override_pct:3,override_threshold_nights:100,payment_terms:'End of Month Following Travel',max_adults:2,max_children:2,extra_beds:0,net_rate_pppn:0,min_nights:2,meal_basis:'All-Inclusive',pms_type:'',keywords:'',notes:''})},1000)
+      load()
+    }catch(e:any){setSaveMsg(`Error: ${e.message||'Could not save.'}`)}
+    setSaving(false)
+  }
+
+  const handleToggle=async(id:string,current:boolean)=>{
+    await sb(`suppliers?id=eq.${id}`,{method:'PATCH',body:JSON.stringify({is_active:!current})})
+    load()
+  }
+  const handleSort=(f:string)=>{if(sortField===f)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortField(f);setSortDir('asc')}}
+  const typeFilterOptions=[{label:'All',value:'all'},{label:'Lodge',value:'lodge'},{label:'Hotel',value:'hotel'},{label:'Charter',value:'charter'},{label:'Airline',value:'commercial_airline'},{label:'Transfer',value:'road_transfer_service'},{label:'Activity',value:'activity'}]
+
+  let filtered=suppliers
+  if(filter!=='all')filtered=filtered.filter((s:any)=>(s.type||'').toLowerCase().replace(/ /g,'_')===filter)
+  if(search)filtered=filtered.filter((s:any)=>(s.name||'').toLowerCase().includes(search.toLowerCase())||(s.destination||'').toLowerCase().includes(search.toLowerCase()))
+  filtered=[...filtered].sort((a,b)=>{
+    const av=typeof a[sortField]==='number'?(a[sortField]||0):(a[sortField]||'')
+    const bv=typeof b[sortField]==='number'?(b[sortField]||0):(b[sortField]||'')
+    return sortDir==='asc'?(av>bv?1:-1):(av<bv?1:-1)
+  })
+
+  if(loading)return <div style={{color:T.textDim,padding:40}}>Loading suppliers…</div>
+  if(loadError)return <div style={{color:T.red,padding:40,fontSize:13}}>{loadError} <button onClick={load} style={{marginLeft:12,padding:'6px 12px',background:T.goldDim,border:`0.5px solid ${T.borderGold}`,borderRadius:7,color:T.gold,cursor:'pointer',fontFamily:'inherit',fontSize:12}}>Retry</button></div>
+
+  const F=({label,k,ph='',type='text'}:{label:string,k:string,ph?:string,type?:string})=>(
+    <div>
+      <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:3}}>{label}</label>
+      <input type={type} value={(newSupplier as any)[k]} onChange={e=>setNewSupplier(s=>({...s,[k]:type==='number'?Number(e.target.value):e.target.value}))} placeholder={ph} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box' as const}}/>
+    </div>
+  )
+
+  return(
+    <div>
+      {inviting&&<InviteModal onClose={()=>setInviting(false)}/>}
+      <TableToolbar title="Suppliers" count={filtered.length} search={search} onSearch={setSearch} searchPlaceholder="Search by name or destination…"
+        filters={typeFilterOptions} activeFilter={filter} onFilter={setFilter}
+        onExportCSV={()=>exportCSV(filtered.map((s:any)=>({Name:s.name,Type:s.type,Destination:s.destination,Country:s.country,Trust:s.trust_score,Commission:`${s.commission_pct||15}%`,Active:s.is_active?'Yes':'No'})),'suppliers')}
+        onExportPDF={()=>exportPDF('Suppliers',['Name','Type','Destination','Trust','Commission','Active'],filtered.map((s:any)=>[s.name,s.type,s.destination||'—',String(Math.round(s.trust_score||0)),`${s.commission_pct||15}%`,s.is_active?'Yes':'No']))}
+        actions={<>
+          <button onClick={()=>setInviting(true)} style={{padding:'7px 12px',borderRadius:8,border:`0.5px solid ${T.borderGold}`,background:T.goldDim,color:T.gold,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>✉ Invite</button>
+          <button onClick={()=>setAdding(v=>!v)} style={{padding:'7px 12px',borderRadius:8,border:'none',background:`linear-gradient(135deg,${T.gold},#f0c040)`,color:'#0a0a0a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{adding?'✕ Cancel':'+ Add'}</button>
+        </>}
+      />
+
+      {adding&&(
+        <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:12,padding:'20px',marginBottom:16}}>
+          <div style={{fontSize:14,fontWeight:700,color:T.gold,marginBottom:16}}>New Supplier / Property</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <F label="Property name *" k="name" ph="e.g. Singita Sabi Sand"/>
+            <div>
+              <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:3}}>Type *</label>
+              <select value={newSupplier.type} onChange={e=>setNewSupplier(s=>({...s,type:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
+                {SUPPLIER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <F label="Destination" k="destination" ph="e.g. Sabi Sand Game Reserve"/>
+            <F label="Country" k="country" ph="South Africa"/>
+            <F label="Tagline" k="tagline" ph="One line — what makes this property special"/>
+            <F label="Keywords" k="keywords" ph="e.g. leopard, family, malaria-free"/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:12}}>
+            <F label="Commission %" k="commission_pct" ph="15" type="number"/>
+            <F label="Override %" k="override_pct" ph="3" type="number"/>
+            <F label="Override threshold (nights)" k="override_threshold_nights" ph="100" type="number"/>
+            <div>
+              <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:3}}>Payment terms</label>
+              <select value={newSupplier.payment_terms} onChange={e=>setNewSupplier(s=>({...s,payment_terms:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
+                {['End of Month Following Travel','30 Days After Travel','60 Days After Travel','On Confirmation (Deposit)'].map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{marginBottom:16}}>
+            <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:3}}>Internal notes</label>
+            <textarea value={newSupplier.notes} onChange={e=>setNewSupplier(s=>({...s,notes:e.target.value}))} rows={2} placeholder="e.g. Contact: James. Known for leopard sightings." style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box' as const,resize:'vertical' as const}}/>
+          </div>
+          {saveMsg&&<div style={{fontSize:12,color:saveMsg.startsWith('✓')?T.green:T.red,marginBottom:10,padding:'8px 12px',background:saveMsg.startsWith('✓')?'rgba(74,222,128,0.08)':'rgba(248,113,113,0.08)',borderRadius:7}}>{saveMsg}</div>}
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={handleAdd} disabled={saving} style={{background:saving?'rgba(255,255,255,0.06)':`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:8,padding:'10px 22px',color:saving?T.textDim:'#0a0a0a',fontSize:13,fontWeight:700,cursor:saving?'wait':'pointer',fontFamily:'inherit'}}>{saving?'Saving…':'Save Supplier'}</button>
+            <button onClick={()=>{setAdding(false);setSaveMsg('')}} style={{background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:8,padding:'10px 18px',color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:'hidden'}}>
+        <div style={{display:'grid',gridTemplateColumns:'2.5fr 1.2fr 1fr 1fr 50px 70px',gap:8,padding:'10px 16px',borderBottom:`0.5px solid ${T.border}`}}>
+          <ColHeader label="Supplier" field="name" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Type" field="type" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Destination" field="destination" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Commission" field="commission_pct" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Active"/>
+          <ColHeader label="CMS"/>
+        </div>
+        {filtered.length===0
+          ?<div style={{padding:24,textAlign:'center',color:T.textDim}}>No suppliers found</div>
+          :filtered.map((s:any,i:number)=>(
+          <div key={i} style={{display:'grid',gridTemplateColumns:'2.5fr 1.2fr 1fr 1fr 50px 70px',gap:8,padding:'11px 16px',borderBottom:`0.5px solid ${T.border}`,alignItems:'center',background:i%2===1?'rgba(255,255,255,0.01)':'transparent'}}>
+            <div>
+              <div onClick={()=>onViewSupplier(s)} style={{fontSize:13,fontWeight:600,color:T.gold,cursor:'pointer',textDecoration:'underline',textDecorationColor:'rgba(212,175,55,0.4)'}}>{s.name||'—'}</div>
+              <div style={{fontSize:11,color:T.textDim,marginTop:1}}>{s.country||''}</div>
+            </div>
+            <div style={{fontSize:11,color:T.textMid,textTransform:'capitalize' as const}}>{(s.type||'').replace(/_/g,' ')}</div>
+            <div style={{fontSize:11,color:T.textMid,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{s.destination||'—'}</div>
+            <div style={{fontSize:12,color:T.textMid}}>{s.commission_pct||15}%</div>
+            <button onClick={()=>handleToggle(s.id,s.is_active)} style={{width:36,height:20,borderRadius:10,border:'none',background:s.is_active?T.green:'rgba(255,255,255,0.1)',cursor:'pointer',position:'relative' as const,transition:'background 0.2s'}}>
+              <div style={{position:'absolute' as const,top:2,left:s.is_active?18:2,width:16,height:16,borderRadius:'50%',background:'white',transition:'left 0.2s'}}/>
+            </button>
+            <a href={`/admin/suppliers/${s.id}/content`} target="_blank" rel="noopener noreferrer"
+              style={{fontSize:11,color:T.blue,textDecoration:'none',padding:'4px 8px',border:'0.5px solid rgba(96,165,250,0.25)',borderRadius:6,background:'rgba(96,165,250,0.06)',textAlign:'center' as const,display:'block'}}>
+              CMS ↗
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StackManager(){
+  const [suppliers,setSuppliers]=useState<any[]>([])
+  const [loading,setLoading]=useState(true)
+  const [saved,setSaved]=useState(false)
+  const [search,setSearch]=useState('')
+  const [useAI,setUseAI]=useState(true)
+  const [dragIdx,setDragIdx]=useState<number|null>(null)
+  useEffect(()=>{sb('suppliers?select=*&is_active=eq.true&order=name.asc').then(setSuppliers).catch(console.error).finally(()=>setLoading(false))},[])
+  const handleDragStart=(idx:number)=>setDragIdx(idx)
+  const handleDragOver=(e:any,idx:number)=>{e.preventDefault();if(dragIdx===null||dragIdx===idx)return;const items=[...suppliers];const [moved]=items.splice(dragIdx,1);items.splice(idx,0,moved);setSuppliers(items);setDragIdx(idx)}
+  const handleSave=async()=>{await Promise.all(suppliers.map((s,i)=>sb(`suppliers?id=eq.${s.id}`,{method:'PATCH',body:JSON.stringify({is_featured:i<5})})));setSaved(true);setTimeout(()=>setSaved(false),2000)}
+  const filtered=search?suppliers.filter(s=>(s.name||'').toLowerCase().includes(search.toLowerCase())):suppliers
+  if(loading)return <div style={{color:T.textDim,padding:40}}>Loading…</div>
+  const aiScore=(s:any)=>{
+    const stats=BULK_SUPPLIER_STATS[s.id]
+    if(!stats) return Math.round((s.trust_score||60)*0.4+(s.content_score||50)*0.3+10)
+    return Math.round((stats.trust_score||60)*0.3+(stats.content_score||60)*0.25+Math.min(stats.active_campaigns*10,20)*0.2+Math.min(stats.net_commission_ytd/10000,20)*0.15+Math.min((stats.bednights_ytd/stats.threshold_nights)*20,20)*0.1)
+  }
+  const displaySuppliers=useAI?[...filtered].sort((a,b)=>aiScore(b)-aiScore(a)):filtered
+  return(
+    <div>
+      <TableToolbar title="Stack Manager" search={search} onSearch={setSearch} searchPlaceholder="Search properties…"
+        actions={<div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <button onClick={()=>setUseAI(v=>!v)} style={{padding:'7px 12px',borderRadius:8,border:`0.5px solid ${useAI?T.blue:T.border}`,background:useAI?'rgba(96,165,250,0.1)':'transparent',color:useAI?T.blue:T.textDim,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>{useAI?'🤖 AI Ranked':'✋ Manual Order'}</button>
+          <button onClick={handleSave} style={{padding:'7px 14px',borderRadius:8,border:'none',background:saved?T.green:`linear-gradient(135deg,${T.gold},#f0c040)`,color:saved?'white':'#0a0a0a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{saved?'✓ Saved':'Save Order'}</button>
+        </div>}
+      />
+      <div style={{background:'rgba(212,175,55,0.06)',border:`0.5px solid ${T.borderGold}`,borderRadius:9,padding:'9px 14px',marginBottom:12,fontSize:12,color:T.gold}}>
+        {useAI?'🤖 AI ranking: Trust Score · Content Score · Active Campaigns · Commission YTD · Bednights progress':'✋ Manual order — drag to reorder · Save to apply'}
+      </div>
+      {displaySuppliers.map((s,i)=>{
+        const score=aiScore(s)
+        return(
+          <div key={s.id} draggable={!useAI} onDragStart={()=>!useAI&&handleDragStart(i)} onDragOver={e=>!useAI&&handleDragOver(e,i)}
+            style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',background:i<5?'rgba(212,175,55,0.04)':T.surface,border:`0.5px solid ${i<5?T.borderGold:T.border}`,borderRadius:9,marginBottom:6,cursor:useAI?'default':'grab',userSelect:'none'}}>
+            <div style={{width:26,height:26,borderRadius:6,background:i<5?T.goldDim:'rgba(255,255,255,0.05)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:i<5?T.gold:T.textDim,flexShrink:0}}>{i+1}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.text}}>{s.name}</div>
+              <div style={{fontSize:11,color:T.textDim,marginTop:1}}>{s.destination} · {s.type}</div>
+            </div>
+            <div style={{textAlign:'right' as const,minWidth:50}}>
+              <div style={{fontSize:9,color:T.blue,textTransform:'uppercase' as const,letterSpacing:'0.06em'}}>AI Score</div>
+              <div style={{fontSize:14,fontWeight:700,color:T.blue}}>{score}</div>
+            </div>
+            {i<5&&<div style={{background:T.goldDim,border:`0.5px solid ${T.borderGold}`,borderRadius:6,padding:'2px 7px',fontSize:10,color:T.gold}}>Featured</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function KnowledgeBase(){
+  const LOCAL_KB=[
+    {id:'kb1',segment_type:'property',title:'Singita Sabi Sand — Booking Notes',content:'Request Boulders Suite for couples. North-facing — uninterrupted bush views. WiFi limited at Boulders. Private vehicle confirmed with 48h notice. Early check-in available at R1,800.',priority:'high',verified_at:'2026-04-01'},
+    {id:'kb2',segment_type:'region',title:'Sabi Sand — Seasonal Notes',content:'Peak: June–October. Green season Nov–Feb — lower rates, dramatic skies, good birding. Leopard sightings year-round. Malaria area — prophylaxis required.',priority:'standard',verified_at:'2026-04-01'},
+    {id:'kb3',segment_type:'airport',title:'JNB — OR Tambo Transit Tips',content:'Domestic connections: minimum 2h. International to domestic: minimum 3h. Forex rates poor at airport — use Bidvest. SLOW lounge excellent for long layovers.',priority:'standard',verified_at:'2026-04-01'},
+    {id:'kb4',segment_type:'transfer',title:'Federal Airlines — Booking Notes',content:'Weight limit 20kg per person in soft bags only. Check-in 45min before departure. Ensure arrival before 16:00 at Skukuza for afternoon drive.',priority:'high',verified_at:'2026-04-01'},
+    {id:'kb5',segment_type:'region',title:'Okavango Delta — Best Timing',content:'Peak water: June–August. Best wildlife: July–October. Green season: Nov–March — good for birdlife. Mokoro season: May–September.',priority:'standard',verified_at:'2026-04-01'},
+  ]
+  const [entries,setEntries]=useState<any[]>(LOCAL_KB)
+  const [adding,setAdding]=useState(false)
+  const [form,setForm]=useState({segment_type:'property',title:'',content:'',priority:'standard'})
+  const [search,setSearch]=useState('')
+  const [filter,setFilter]=useState('all')
+  const [sortField,setSortField]=useState('priority')
+  const [sortDir,setSortDir]=useState('desc')
+  const handleSort=(f:string)=>{if(sortField===f)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortField(f);setSortDir('asc')}}
+  const priorityColor=(p:string)=>p==='critical'?T.red:p==='high'?T.amber:T.textDim
+  const priorityRank=(p:string)=>p==='critical'?3:p==='high'?2:1
+  let filtered=entries
+  if(filter!=='all')filtered=filtered.filter(e=>e.segment_type===filter)
+  if(search)filtered=filtered.filter(e=>e.title.toLowerCase().includes(search.toLowerCase())||e.content.toLowerCase().includes(search.toLowerCase()))
+  filtered=[...filtered].sort((a,b)=>sortField==='priority'?(sortDir==='asc'?priorityRank(a.priority)-priorityRank(b.priority):priorityRank(b.priority)-priorityRank(a.priority)):sortDir==='asc'?(a[sortField]>b[sortField]?1:-1):(a[sortField]<b[sortField]?1:-1))
+  return(
+    <div>
+      <TableToolbar title="Knowledge Base" count={filtered.length} search={search} onSearch={setSearch} searchPlaceholder="Search entries…"
+        filters={[{label:'All',value:'all'},{label:'Property',value:'property'},{label:'Region',value:'region'},{label:'Area',value:'area'},{label:'Activity',value:'activity'},{label:'Airport',value:'airport'},{label:'Transfer',value:'transfer'}]}
+        activeFilter={filter} onFilter={setFilter}
+        onExportCSV={()=>exportCSV(filtered.map(e=>({Type:e.segment_type,Title:e.title,Content:e.content,Priority:e.priority,Verified:e.verified_at})),'knowledge-base')}
+        onExportPDF={()=>exportPDF('Knowledge Base',['Type','Title','Priority','Verified'],filtered.map(e=>[e.segment_type,e.title,e.priority,e.verified_at]))}
+        actions={<button onClick={()=>setAdding(true)} style={{padding:'7px 12px',borderRadius:8,border:'none',background:`linear-gradient(135deg,${T.gold},#f0c040)`,color:'#0a0a0a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Add Entry</button>}
+      />
+      {adding&&(
+        <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:12,padding:'18px',marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.gold,marginBottom:12}}>New Entry</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Type</label>
+            <select value={form.segment_type} onChange={e=>setForm(f=>({...f,segment_type:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
+              {['property','region','area','activity','airport','transfer'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Priority</label>
+            <select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
+              {['standard','high','critical'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+          </div>
+          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Title</label>
+          <input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="e.g. Singita — Booking Notes" style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+          <div style={{marginBottom:12}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Notes</label>
+          <textarea value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))} rows={3} placeholder="Specialist notes…" style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box',resize:'vertical'}}/></div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>{if(form.title&&form.content){setEntries(e=>[{...form,id:`kb${Date.now()}`,verified_at:new Date().toISOString().slice(0,10)},...e]);setAdding(false);setForm({segment_type:'property',title:'',content:'',priority:'standard'})}}} style={{background:`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:8,padding:'8px 16px',color:'#0a0a0a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Save</button>
+            <button onClick={()=>setAdding(false)} style={{background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:8,padding:'8px 16px',color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:'hidden'}}>
+        <div style={{display:'grid',gridTemplateColumns:'120px 1fr 80px 100px',gap:8,padding:'10px 16px',borderBottom:`0.5px solid ${T.border}`}}>
+          <ColHeader label="Type" field="segment_type" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Title" field="title" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Priority" field="priority" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Verified" field="verified_at" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+        </div>
+        {filtered.map((e,i)=>(
+          <div key={i} style={{display:'grid',gridTemplateColumns:'120px 1fr 80px 100px',gap:8,padding:'0',borderBottom:`0.5px solid ${T.border}`,background:i%2===1?'rgba(255,255,255,0.01)':'transparent'}}>
+            <div style={{padding:'12px 16px',fontSize:11,color:T.textDim,textTransform:'capitalize',alignSelf:'start',paddingTop:14}}>{e.segment_type}</div>
+            <div style={{padding:'12px 8px'}}><div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3}}>{e.title}</div><div style={{fontSize:11,color:T.textMid,lineHeight:1.5}}>{e.content}</div></div>
+            <div style={{padding:'14px 8px',fontSize:11,color:priorityColor(e.priority),fontWeight:600,textTransform:'uppercase',alignSelf:'start'}}>{e.priority}</div>
+            <div style={{padding:'14px 8px',fontSize:11,color:T.textDim,alignSelf:'start'}}>{e.verified_at}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Itineraries(){
+  const [items]=useState<any[]>([])
+  const [loading]=useState(false)
+  const [search,setSearch]=useState('')
+  const [filter,setFilter]=useState('all')
+  let filtered=items
+  if(filter!=='all')filtered=filtered.filter((i:any)=>i.status===filter)
+  if(search)filtered=filtered.filter((i:any)=>(i.title||'').toLowerCase().includes(search.toLowerCase()))
+  if(loading)return <div style={{color:T.textDim,padding:40}}>Loading itineraries…</div>
+  return(
+    <div>
+      <TableToolbar title="Itineraries" count={filtered.length} search={search} onSearch={setSearch} searchPlaceholder="Search by title…"
+        filters={[{label:'All',value:'all'},{label:'Quote',value:'quote'},{label:'Confirmed',value:'confirmed'}]}
+        activeFilter={filter} onFilter={setFilter}
+      />
+      <div style={{padding:40,textAlign:'center',color:T.textDim,background:T.surface,borderRadius:12,border:`0.5px solid ${T.border}`}}>
+        Itineraries table not yet configured. Will appear here once bookings flow through the platform.
+      </div>
+    </div>
+  )
+}
+
+const DEMO_STAFF=[
+  {id:'u1',name:'JD (Founder)',email:'admin@thesafariedition.com',role:'edition_admin',dept:'Leadership',active:true,lastLogin:'2026-04-28'},
+  {id:'u2',name:'Sarah Mitchell',email:'ops@thesafariedition.com',role:'edition_ops',dept:'Operations',active:true,lastLogin:'2026-04-27'},
+  {id:'u3',name:'Tom van der Berg',email:'finance@thesafariedition.com',role:'edition_finance',dept:'Finance',active:true,lastLogin:'2026-04-26'},
+  {id:'u4',name:'Priya Naidoo',email:'content@thesafariedition.com',role:'edition_content',dept:'Content',active:true,lastLogin:'2026-04-25'},
+  {id:'u5',name:'Sarah Dlamini',email:'admin@singita.com',role:'supplier_admin',dept:'Singita Sabi Sand',active:true,lastLogin:'2026-04-28'},
+  {id:'u6',name:'Thabo Nkosi',email:'reservations@singita.com',role:'reservations_manager',dept:'Singita Sabi Sand',active:true,lastLogin:'2026-04-27'},
+  {id:'u7',name:'Priya Moodley',email:'content@singita.com',role:'content_manager',dept:'Singita Sabi Sand',active:true,lastLogin:'2026-04-20'},
+  {id:'u8',name:'James Olifant',email:'finance@singita.com',role:'finance_contact',dept:'Singita Sabi Sand',active:false,lastLogin:'2026-03-15'},
+  {id:'u9',name:'Mpho Sithole',email:'sales@singita.com',role:'sales_marketing',dept:'Singita Sabi Sand',active:true,lastLogin:'2026-04-22'},
+]
+
+const ROLE_PERMISSIONS: Record<string,{label:string,read:string[],write:string[]}>={
+  edition_admin:{label:'Edition Admin',read:['all'],write:['all']},
+  edition_ops:{label:'Edition Operations',read:['bookings','suppliers','itineraries'],write:['bookings','suppliers']},
+  edition_finance:{label:'Edition Finance',read:['bookings','payments'],write:['payments']},
+  edition_content:{label:'Edition Content',read:['suppliers','knowledge'],write:['knowledge','suppliers']},
+  supplier_admin:{label:'Supplier Admin',read:['all portal tabs'],write:['rates','content','bookings']},
+  reservations_manager:{label:'Reservations Manager',read:['bookings','rates','payments'],write:['bookings']},
+  content_manager:{label:'Content Manager',read:['content','reviews'],write:['content']},
+  finance_contact:{label:'Finance Contact',read:['bookings (values only)','payments'],write:[]},
+  sales_marketing:{label:'Sales & Marketing',read:['campaigns','content','reviews'],write:['campaigns']},
+}
+
+function UserManagement(){
+  const [users,setUsers]=useState(DEMO_STAFF)
+  const [selectedUser,setSelectedUser]=useState<any>(null)
+  const [showAdd,setShowAdd]=useState(false)
+  const [newUser,setNewUser]=useState({name:'',email:'',role:'reservations_manager',dept:''})
+  const [resetPwdUser,setResetPwdUser]=useState<any>(null)
+  const [newPwd,setNewPwd]=useState('')
+  const [saved,setSaved]=useState('')
+  const [filterType,setFilterType]=useState<'all'|'edition'|'supplier'>('all')
+  const filtered=users.filter(u=>{if(filterType==='edition')return u.role.startsWith('edition');if(filterType==='supplier')return !u.role.startsWith('edition');return true})
+  return(
+    <div>
+      <SectionHeader title="User Management" sub="Manage Edition team and supplier portal access."
+        action={<Btn variant="gold" label="+ Add User" onClick={()=>setShowAdd(v=>!v)}/>}
+      />
+      {showAdd&&(
+        <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:12,padding:20,marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.gold,marginBottom:14}}>New User</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            {[{k:'name',l:'Full name',ph:'e.g. Sarah Mitchell'},{k:'email',l:'Email address',ph:'e.g. sarah@thesafariedition.com'},{k:'dept',l:'Supplier / Department',ph:'e.g. Singita Sabi Sand'}].map(f=>(
+              <div key={f.k}>
+                <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:3}}>{f.l}</label>
+                <input value={(newUser as any)[f.k]} onChange={e=>setNewUser(u=>({...u,[f.k]:e.target.value}))} placeholder={f.ph} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box' as const}}/>
+              </div>
+            ))}
+            <div>
+              <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:3}}>Role</label>
+              <select value={newUser.role} onChange={e=>setNewUser(u=>({...u,role:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
+                {Object.entries(ROLE_PERMISSIONS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+          </div>
+          {saved&&<div style={{fontSize:12,color:T.green,marginBottom:10}}>{saved}</div>}
+          <div style={{display:'flex',gap:8}}>
+            <Btn variant="gold" label="Create User & Send Invite" onClick={()=>{setUsers(u=>[...u,{id:`u${Date.now()}`,name:newUser.name,email:newUser.email,role:newUser.role,dept:newUser.dept,active:true,lastLogin:'Never'}]);setSaved('✓ User created.');setTimeout(()=>{setSaved('');setShowAdd(false);setNewUser({name:'',email:'',role:'reservations_manager',dept:''})},2000)}}/>
+            <Btn label="Cancel" onClick={()=>setShowAdd(false)}/>
+          </div>
+        </div>
+      )}
+      {resetPwdUser&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.65)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,padding:28,width:'100%',maxWidth:400}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.gold,marginBottom:4}}>Reset Password</div>
+            <div style={{fontSize:12,color:T.textDim,marginBottom:16}}>{resetPwdUser.name} · {resetPwdUser.email}</div>
+            <div style={{marginBottom:16}}>
+              <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:4}}>New password</label>
+              <input type="text" value={newPwd} onChange={e=>setNewPwd(e.target.value)} placeholder="e.g. Safari2026!" style={{width:'100%',padding:'10px 12px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:8,color:T.text,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box' as const}}/>
+            </div>
+            <div style={{display:'flex',gap:10}}>
+              <Btn variant="gold" label="Set Password" onClick={()=>{setSaved(`✓ Password reset for ${resetPwdUser.name}`);setResetPwdUser(null);setNewPwd('');setTimeout(()=>setSaved(''),3000)}}/>
+              <Btn label="Cancel" onClick={()=>{setResetPwdUser(null);setNewPwd('')}}/>
+            </div>
+          </div>
+        </div>
+      )}
+      {saved&&!resetPwdUser&&<div style={{background:'rgba(74,222,128,0.08)',border:'0.5px solid rgba(74,222,128,0.2)',borderRadius:9,padding:'10px 14px',marginBottom:14,fontSize:12,color:T.green}}>{saved}</div>}
+      <div style={{display:'flex',gap:8,marginBottom:14}}>
+        {(['all','edition','supplier'] as const).map(f=>(
+          <button key={f} onClick={()=>setFilterType(f)} style={{padding:'6px 14px',borderRadius:8,border:`0.5px solid ${filterType===f?T.gold:T.border}`,background:filterType===f?T.goldDim:'transparent',color:filterType===f?T.gold:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit',textTransform:'capitalize' as const}}>
+            {f==='all'?`All (${users.length})`:f==='edition'?`Edition team (${users.filter(u=>u.role.startsWith('edition')).length})`:`Supplier contacts (${users.filter(u=>!u.role.startsWith('edition')).length})`}
+          </button>
+        ))}
+      </div>
+      <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:'hidden'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1.5fr 1.5fr 1.2fr 1fr 0.8fr 0.6fr 1.2fr',gap:8,padding:'10px 16px',borderBottom:`0.5px solid ${T.border}`,fontSize:9,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.07em'}}>
+          <div>Name</div><div>Email</div><div>Role</div><div>Dept</div><div>Last login</div><div>Active</div><div>Actions</div>
+        </div>
+        {filtered.map((u,i)=>(
+          <div key={i} style={{display:'grid',gridTemplateColumns:'1.5fr 1.5fr 1.2fr 1fr 0.8fr 0.6fr 1.2fr',gap:8,padding:'11px 16px',borderBottom:`0.5px solid ${T.border}`,alignItems:'center',background:i%2===1?'rgba(255,255,255,0.01)':'transparent'}}>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{u.name}</div>
+            <div style={{fontSize:11,color:T.textDim,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' as const}}>{u.email}</div>
+            <div style={{fontSize:11,color:u.role.startsWith('edition')?T.gold:T.blue}}>{ROLE_PERMISSIONS[u.role]?.label||u.role}</div>
+            <div style={{fontSize:11,color:T.textMid}}>{u.dept}</div>
+            <div style={{fontSize:11,color:T.textDim}}>{u.lastLogin}</div>
+            <div>
+              <button onClick={()=>setUsers(us=>us.map(x=>x.id===u.id?{...x,active:!x.active}:x))} style={{width:32,height:18,borderRadius:9,border:'none',background:u.active?T.green:'rgba(255,255,255,0.1)',cursor:'pointer',position:'relative' as const}}>
+                <div style={{position:'absolute' as const,top:2,left:u.active?14:2,width:14,height:14,borderRadius:'50%',background:'white',transition:'left 0.2s'}}/>
+              </button>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button onClick={()=>setResetPwdUser(u)} style={{padding:'4px 9px',background:T.goldDim,border:`0.5px solid ${T.borderGold}`,borderRadius:6,color:T.gold,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>Reset pwd</button>
+              <button onClick={()=>setSelectedUser(selectedUser?.id===u.id?null:u)} style={{padding:'4px 9px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:6,color:T.textDim,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>Permissions</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {selectedUser&&(
+        <div style={{marginTop:14,background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:12,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.gold,marginBottom:4}}>{selectedUser.name} — Permissions</div>
+          <div style={{fontSize:11,color:T.textDim,marginBottom:14}}>{ROLE_PERMISSIONS[selectedUser.role]?.label} · {selectedUser.email}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <div>
+              <div style={{fontSize:10,color:T.green,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:8,fontWeight:600}}>Read access</div>
+              {(ROLE_PERMISSIONS[selectedUser.role]?.read||[]).map((p,i)=>(
+                <div key={i} style={{fontSize:12,color:T.textMid,display:'flex',gap:6,marginBottom:4,padding:'5px 10px',background:'rgba(74,222,128,0.06)',borderRadius:6}}><span style={{color:T.green}}>✓</span>{p}</div>
+              ))}
+            </div>
+            <div>
+              <div style={{fontSize:10,color:T.gold,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:8,fontWeight:600}}>Write access</div>
+              {(ROLE_PERMISSIONS[selectedUser.role]?.write||[]).length===0
+                ?<div style={{fontSize:12,color:T.textDim,fontStyle:'italic' as const}}>Read-only role</div>
+                :(ROLE_PERMISSIONS[selectedUser.role]?.write||[]).map((p,i)=>(
+                  <div key={i} style={{fontSize:12,color:T.textMid,display:'flex',gap:6,marginBottom:4,padding:'5px 10px',background:T.goldDim,borderRadius:6}}><span style={{color:T.gold}}>✎</span>{p}</div>
+                ))
+              }
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SupplierDashboard({supplier,onClose}:{supplier:any,onClose:()=>void}){
+  const [tab,setTab]=useState('overview')
+  const [pendingChange,setPendingChange]=useState<any>(null)
+  const [changeApprovals,setChangeApprovals]=useState<any[]>([])
+  const stats=BULK_SUPPLIER_STATS[supplier.id]||{trust_score:supplier.trust_score||70,content_score:supplier.content_score||60,active_campaigns:0,net_commission_ytd:0,bookings_ytd:0,bednights_ytd:0,threshold_nights:100,override_pct:3,peer_avg_trust:80,peer_avg_content:65,region:supplier.destination}
+  const past=BULK_BOOKINGS.filter(b=>b.booked_at<'2026-04-01')
+  const current=BULK_BOOKINGS.filter(b=>b.booking_reference.includes('CURR'))
+  const future=BULK_BOOKINGS.filter(b=>b.booking_reference.includes('FUT'))
+  const TABS=['overview','bookings','rates','content','trust','payments','contacts','banking','audit']
+  const submitChange=(type:string,data:any,approversNeeded:number)=>setPendingChange({type,data,approversNeeded,approvals:[],submitted:new Date().toLocaleString('en-ZA')})
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:600,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{background:T.bg2,borderBottom:`0.5px solid ${T.border}`,padding:'0 24px',display:'flex',alignItems:'center',justifyContent:'space-between',height:56,flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <button onClick={onClose} style={{background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:7,padding:'5px 12px',color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>← Back</button>
+          <div><span style={{fontSize:15,fontWeight:700,color:T.text}}>{supplier.name}</span><span style={{fontSize:11,color:T.textDim,marginLeft:10}}>{supplier.destination}</span></div>
+          <div style={{fontSize:10,padding:'2px 8px',borderRadius:20,background:'rgba(74,222,128,0.1)',color:T.green,border:'0.5px solid rgba(74,222,128,0.3)'}}>Read-only view</div>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>submitChange('general',{field:'name',current:supplier.name},1)} style={{padding:'6px 14px',borderRadius:8,border:`0.5px solid ${T.borderGold}`,background:T.goldDim,color:T.gold,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Recommend change</button>
+          <a href={`/admin/suppliers/${supplier.id}/content`} target="_blank" rel="noopener noreferrer"
+            style={{padding:'6px 14px',borderRadius:8,border:'0.5px solid rgba(96,165,250,0.3)',background:'rgba(96,165,250,0.06)',color:T.blue,fontSize:11,textDecoration:'none'}}>
+            Open CMS ↗
+          </a>
+        </div>
+      </div>
+      {pendingChange&&(
+        <div style={{background:'rgba(251,191,36,0.08)',borderBottom:`0.5px solid rgba(251,191,36,0.2)`,padding:'10px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+          <div style={{fontSize:12,color:T.amber}}>⚠ Pending change: <strong>{pendingChange.type}</strong> · Requires {pendingChange.approversNeeded} approver{pendingChange.approversNeeded>1?'s':''}</div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>setChangeApprovals(a=>[...a,{by:'Current user',at:new Date().toLocaleString('en-ZA')}])} style={{padding:'5px 12px',background:'rgba(74,222,128,0.1)',border:'0.5px solid rgba(74,222,128,0.3)',borderRadius:7,color:T.green,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Approve ({changeApprovals.length}/{pendingChange.approversNeeded})</button>
+            <button onClick={()=>{setPendingChange(null);setChangeApprovals([])}} style={{padding:'5px 12px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:7,color:T.textDim,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+        <div style={{width:160,background:T.bg2,borderRight:`0.5px solid ${T.border}`,padding:8,flexShrink:0,overflowY:'auto'}}>
+          {TABS.map(t=>(
+            <button key={t} onClick={()=>setTab(t)} style={{width:'100%',padding:'9px 12px',borderRadius:8,border:'none',background:tab===t?T.goldDim:'transparent',color:tab===t?T.gold:T.textMid,fontSize:12,cursor:'pointer',fontFamily:'inherit',textAlign:'left' as const,marginBottom:2,textTransform:'capitalize' as const}}>
+              {t==='overview'?'📊':t==='bookings'?'📋':t==='rates'?'💰':t==='content'?'📸':t==='trust'?'⭐':t==='payments'?'🏦':t==='contacts'?'👥':t==='banking'?'🔐':t==='audit'?'📝':'•'} {t}
+            </button>
+          ))}
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:24}}>
+          {tab==='overview'&&(
+            <div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:16}}>Supplier Overview</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10,marginBottom:20}}>
+                {[
+                  {l:'Trust Score',v:`${stats.trust_score}/100`,c:T.green,sub:`Peer avg: ${stats.peer_avg_trust}`},
+                  {l:'Content Score',v:`${stats.content_score}/100`,c:T.amber,sub:`Peer avg: ${stats.peer_avg_content}`},
+                  {l:'Active Campaigns',v:String(stats.active_campaigns),c:T.blue,sub:'Running now'},
+                  {l:'YTD Bookings',v:String(stats.bookings_ytd),c:T.gold,sub:'This year'},
+                  {l:'YTD Bednights',v:String(stats.bednights_ytd),c:T.blue,sub:`of ${stats.threshold_nights} threshold`},
+                  {l:'Net Commission YTD',v:fmt(stats.net_commission_ytd),c:T.green,sub:`${stats.override_pct}% override at threshold`},
+                ].map((s,i)=>(
+                  <div key={i} style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:11,padding:'14px 16px'}}>
+                    <div style={{fontSize:10,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.07em',marginBottom:5}}>{s.l}</div>
+                    <div style={{fontSize:20,fontWeight:700,color:s.c,fontFamily:"'Playfair Display',serif"}}>{s.v}</div>
+                    <div style={{fontSize:10,color:T.textDim,marginTop:3}}>{s.sub}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:11,padding:'16px 18px',marginBottom:16}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.text}}>Override / Incentive Progress</div>
+                  <div style={{fontSize:12,color:T.gold}}>{stats.bednights_ytd}/{stats.threshold_nights} nights · {stats.override_pct}% on all nights when unlocked</div>
+                </div>
+                <div style={{height:8,background:'rgba(255,255,255,0.08)',borderRadius:4,overflow:'hidden',marginBottom:6}}>
+                  <div style={{width:`${Math.min(100,Math.round((stats.bednights_ytd/stats.threshold_nights)*100))}%`,height:'100%',background:`linear-gradient(90deg,${T.gold},#f0c040)`,borderRadius:4}}/>
+                </div>
+                <div style={{fontSize:11,color:T.textDim}}>{stats.threshold_nights-stats.bednights_ytd} bednights remaining · Est. override value: {fmt(stats.bednights_ytd*28000*(stats.override_pct/100))}</div>
+              </div>
+            </div>
+          )}
+          {tab==='bookings'&&(
+            <div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:16}}>Bookings — {supplier.name}</div>
+              {[{label:'Past',data:past,color:T.textDim},{label:'Current / In-house',data:current,color:T.blue},{label:'Future',data:future,color:T.green}].map(group=>(
+                <div key={group.label} style={{marginBottom:20}}>
+                  <div style={{fontSize:11,color:group.color,textTransform:'uppercase' as const,letterSpacing:'0.08em',fontWeight:700,marginBottom:8}}>{group.label} ({group.data.length})</div>
+                  {group.data.length===0?<div style={{fontSize:12,color:T.textDim,padding:'12px 0'}}>None</div>:group.data.map((b,i)=>(
+                    <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 1.5fr 1fr 1fr 1fr',gap:8,padding:'10px 14px',background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:9,marginBottom:6,alignItems:'center'}}>
+                      <div style={{fontSize:12,fontWeight:600,color:T.gold}}>{b.booking_reference}</div>
+                      <div style={{fontSize:12,color:T.text}}>{b.lead_traveller_snapshot.name}</div>
+                      <div style={{fontSize:12,color:T.gold,fontWeight:600}}>{fmt(b.total_display_zar)}</div>
+                      <div style={{fontSize:11,color:b.total_paid_zar>=b.total_display_zar?T.green:T.amber}}>{b.total_paid_zar>=b.total_display_zar?'Paid in full':fmt(b.total_paid_zar)+' paid'}</div>
+                      <div style={{fontSize:11,color:T.textDim}}>{fmtDate(b.booked_at)}</div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
           )}
-        </div>
-        {/* RIGHT */}
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          {hasPricedItems && <div style={{ fontSize:13, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(totalZAR)}</div>}
-          <select value={currency.code} onChange={(e: any) => setCurrency(CURRENCIES.find((c: any) => c.code === e.target.value)!)} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, borderRadius:8, padding:'5px 10px', fontSize:12, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
-            {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
-          </select>
-          <button onClick={() => setChatOpen((x: boolean) => !x)} style={{ background:T.goldDim, border:`0.5px solid ${T.borderGold}`, color:T.gold, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
-            {chatOpen ? '✕ Close' : '✦ Specialists'}
-          </button>
-          <a href="/admin" style={{ background:'rgba(255,255,255,0.06)', border:`0.5px solid rgba(255,255,255,0.14)`, color:T.textMid, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', textDecoration:'none' }}>Admin →</a>
-        </div>
-      </div>
-      {editionOpen && <div style={{ position:'fixed', inset:0, zIndex:199 }} onClick={() => setEditionOpen(false)} />}
-    </nav>
-  );
-}
- 
-function StickyPrice({ totalZAR, fmt }: any) {
-  if (!totalZAR) return null;
-  return (
-    <div style={{ position:'sticky', top:58, zIndex:90, background:'rgba(10,10,10,0.96)', backdropFilter:'blur(12px)', borderBottom:`0.5px solid ${T.borderGold}`, padding:'8px 20px' }}>
-      <div style={{ maxWidth:900, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <span style={{ fontSize:12, color:T.textDim }}>Package total</span>
-        <span style={{ fontSize:20, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(totalZAR)}</span>
-      </div>
-    </div>
-  );
-}
- 
-function ChatDrawer({ msgs, input, setInput, send, loading, endRef, onClose, edition }: any) {
-  return (
-    <div style={{ position:'fixed', bottom:0, right:16, width:340, height:460, background:'rgba(14,14,14,0.98)', border:`0.5px solid rgba(255,255,255,0.1)`, borderRadius:'16px 16px 0 0', backdropFilter:'blur(20px)', display:'flex', flexDirection:'column', zIndex:200, boxShadow:'0 -4px 40px rgba(0,0,0,0.6)' }}>
-      <div style={{ padding:'14px 18px', borderBottom:`0.5px solid rgba(255,255,255,0.07)`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <div>
-          <div style={{ fontSize:14, fontWeight:600, color:T.text }}>Journey Specialists</div>
-          <div style={{ fontSize:11, color:'rgba(212,175,55,0.75)', marginTop:1 }}>✦ {edition.name}</div>
-        </div>
-        <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:'rgba(255,255,255,0.5)', width:26, height:26, borderRadius:'50%', cursor:'pointer', fontSize:15, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>×</button>
-      </div>
-      <div style={{ flex:1, overflowY:'auto', padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 }}>
-        {msgs.map((m: any, i: number) => (
-          <div key={i} style={{ display:'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-            <div style={{ maxWidth:'88%', padding:'9px 13px', borderRadius: m.role === 'user' ? '13px 13px 3px 13px' : '13px 13px 13px 3px', background: m.role === 'user' ? 'rgba(212,175,55,0.13)' : 'rgba(255,255,255,0.06)', border:`0.5px solid ${ m.role === 'user' ? 'rgba(212,175,55,0.28)' : 'rgba(255,255,255,0.07)'}`, fontSize:13, color:T.text, lineHeight:1.6 }}>{m.text}</div>
-          </div>
-        ))}
-        {loading && <div style={{ display:'flex', gap:4, padding:'8px 12px' }}>{[0,1,2].map(i => <div key={i} style={{ width:6, height:6, borderRadius:'50%', background:T.gold, animation:`pulse 1.2s ease ${i * 0.2}s infinite` }} />)}</div>}
-        <div ref={endRef} />
-      </div>
-      <div style={{ padding:'10px 14px', borderTop:`0.5px solid rgba(255,255,255,0.07)`, display:'flex', gap:8 }}>
-        <input value={input} onChange={(e: any) => setInput(e.target.value)} onKeyDown={(e: any) => e.key === 'Enter' && send()} placeholder="Ask about lodges, timing, visas..." style={{ flex:1, background:'rgba(255,255,255,0.06)', border:`0.5px solid rgba(255,255,255,0.1)`, color:T.text, borderRadius:9, padding:'9px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }} />
-        <button onClick={send} style={{ background:`linear-gradient(135deg,${T.gold},${T.goldLight})`, border:'none', color:'#0a0a0a', borderRadius:9, padding:'9px 14px', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>→</button>
-      </div>
-    </div>
-  );
-}
- 
-function SpecialistBanner({ specialist, screen: s }: any) {
-  if (!['inspire-input','inspire-research','inspire-plan','builder','my-brief'].includes(s) || !specialist) return null;
-  return (
-    <div style={{ position:'fixed', bottom:16, left:16, zIndex:200, display:'flex', alignItems:'center', gap:10, background:'rgba(10,10,10,0.95)', backdropFilter:'blur(16px)', border:`0.5px solid ${T.borderGold}`, borderRadius:16, padding:'10px 16px 10px 10px', boxShadow:'0 8px 32px rgba(0,0,0,0.6)', maxWidth:280 }}>
-      <div style={{ position:'relative', flexShrink:0 }}>
-        <img src={specialist.avatar} alt={specialist.name} style={{ width:40, height:40, borderRadius:'50%', objectFit:'cover', border:`2px solid ${T.gold}` }} />
-        <div style={{ position:'absolute', bottom:-2, right:-2, width:12, height:12, borderRadius:'50%', background:T.green, border:'2px solid #0a0a0a' }} />
-      </div>
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontSize:12, fontWeight:700, color:'#f0ede6' }}>{specialist.name}</div>
-        <div style={{ fontSize:10, color:T.gold, marginBottom:2 }}>{specialist.role}</div>
-        <div style={{ fontSize:10, color:'rgba(240,237,230,0.5)', lineHeight:1.4, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' as const }}>"{specialist.tip}"</div>
-      </div>
-    </div>
-  );
-}
- 
-function PillarCard({ item, displayRate, otaSaving, pillarColor, fmt, onPrev, onNext, isPrevDisabled, isNextDisabled, onCustomise, stackLabel }: any) {
-  return (
-    <div className="card">
-      <div style={{ position:'relative', height:185, overflow:'hidden' }}>
-        <img src={item.image} alt={item.name || item.type || item.airline} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-        <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.65) 0%,transparent 52%)' }} />
-        <div style={{ position:'absolute', top:10, right:10, display:'inline-flex', alignItems:'center', gap:4, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.25)', borderRadius:20, padding:'3px 10px', fontSize:11, color:T.green, fontWeight:600 }}>★ {item.trustScore}/100</div>
-        {otaSaving && otaSaving > 0
-          ? <div style={{ position:'absolute', bottom:10, left:10, background:'rgba(74,222,128,0.1)', border:'0.5px solid rgba(74,222,128,0.22)', borderRadius:8, padding:'4px 10px', display:'flex', gap:8, alignItems:'center' }}><span style={{ fontSize:11, color:'rgba(245,240,232,0.45)', textDecoration:'line-through' }}>{fmt(item.otaRate || 0)}</span><span style={{ fontSize:11, color:T.green, fontWeight:700 }}>Save {fmt(otaSaving)}</span></div>
-          : <div style={{ position:'absolute', bottom:10, left:10, background:'rgba(212,175,55,0.15)', border:'0.5px solid rgba(212,175,55,0.3)', borderRadius:8, padding:'4px 10px', fontSize:11, color:T.gold, fontWeight:600 }}>✦ Exclusive rate</div>
-        }
-      </div>
-      <div style={{ padding:'13px 15px' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:16, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#f5f0e8' }}>{item.name || item.type || item.airline}</div>
-            <div style={{ fontSize:12, color:'rgba(245,240,232,0.6)', marginTop:1 }}>{item.location || item.route || item.vehicle || item.duration}</div>
-          </div>
-        </div>
-        {item.funFact && <div className="fun-fact">✦ {item.funFact}</div>}
-        <div style={{ display:'flex', gap:8, marginTop:10 }}>
-          <button onClick={onPrev} disabled={isPrevDisabled} style={{ flex:1, padding:10, borderRadius:9, border:`0.5px solid ${T.border}`, background:T.bg3, color:T.textMid, cursor: isPrevDisabled ? 'not-allowed' : 'pointer', opacity: isPrevDisabled ? 0.35 : 1, fontFamily:'inherit', fontSize:12 }}>← Prev</button>
-          <button onClick={onCustomise} style={{ flex:2, padding:10, borderRadius:9, border:`1px solid ${T.borderGold}`, background:T.goldDim, color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:600 }}>Customise →</button>
-          <button onClick={onNext} disabled={isNextDisabled} style={{ flex:1, padding:10, borderRadius:9, border:`0.5px solid ${T.border}`, background:T.bg3, color:T.textMid, cursor: isNextDisabled ? 'not-allowed' : 'pointer', opacity: isNextDisabled ? 0.35 : 1, fontFamily:'inherit', fontSize:12 }}>Next →</button>
-        </div>
-        {stackLabel && <div style={{ textAlign:'center', fontSize:11, color:T.textDim, marginTop:6 }}>{stackLabel}</div>}
-      </div>
-    </div>
-  );
-}
- 
-function StepDot({ active }: { active: boolean }) {
-  return <div style={{ width:8, height:8, borderRadius:'50%', background: active ? T.gold : 'rgba(255,255,255,0.15)', transition:'all 0.3s' }} />;
-}
- 
-// ─────────────────────────────────────────────────────────────────────────────
-// HOTELS FALLBACK
-// ─────────────────────────────────────────────────────────────────────────────
-const HOTELS_FALLBACK: Hotel[] = [
-  { id: 1, edition_id: 'safari', name: 'Singita Boulders Lodge',    location: 'Kruger / Sabi Sand, South Africa',   destination: 'Kruger / Sabi Sand', subRegion: 'kruger-sabi-sand', region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 99, contentScore: 95, netRate: 56000, otaRate: 76000, marginScore: 27, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', funFact: "River-facing suites on the Sand River. Six guests per guide.", upgrades: { rooms: [{ label: 'Luxury Suite', extra: 0, tier: 0 }, { label: 'Private Villa', extra: 89000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 4200, tier: 1 }] } },
-  { id: 2, edition_id: 'safari', name: 'Londolozi Tree Camp',        location: 'Kruger / Sabi Sand, South Africa',   destination: 'Kruger / Sabi Sand', subRegion: 'kruger-sabi-sand', region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 97, contentScore: 90, netRate: 48000, otaRate: 67000, marginScore: 28, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1500491460312-c32fc2dbc751?w=800&q=80', funFact: "Treehouse suites above the Sand River. Londolozi means 'Protector of all living things'.", upgrades: { rooms: [{ label: 'Suite', extra: 0, tier: 0 }, { label: 'Private Treehouse', extra: 30000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3800, tier: 1 }] } },
-  { id: 3, edition_id: 'safari', name: 'Wilderness Mombo Camp',      location: 'Okavango Delta, Botswana',           destination: 'Okavango Delta',     subRegion: 'okavango-delta',  region: 'southern-africa', country: 'Botswana',      stars: 5, trustScore: 98, contentScore: 92, netRate: 62000, otaRate: 88000, marginScore: 30, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact: 'Chief\'s Island — the highest predator density in the Delta.', upgrades: { rooms: [{ label: 'Luxury Tent', extra: 0, tier: 0 }, { label: 'Family Tent', extra: 18000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
-  { id: 4, edition_id: 'safari', name: 'andBeyond Xaranna',          location: 'Okavango Delta, Botswana',           destination: 'Okavango Delta',     subRegion: 'okavango-delta',  region: 'southern-africa', country: 'Botswana',      stars: 5, trustScore: 95, contentScore: 88, netRate: 52000, otaRate: 74000, marginScore: 29, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', funFact: 'Xaranna means "place of star-like flowers" — on a private island in the Delta.', upgrades: { rooms: [{ label: 'Luxury Tent', extra: 0, tier: 0 }, { label: 'Honeymoon Tent', extra: 12000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3000, tier: 1 }] } },
-  { id: 5, edition_id: 'safari', name: 'Matetsi Victoria Falls',     location: 'Chobe / Victoria Falls, Zimbabwe',   destination: 'Chobe / Victoria Falls', subRegion: 'chobe-vic-falls', region: 'southern-africa', country: 'Zimbabwe',   stars: 5, trustScore: 96, contentScore: 88, netRate: 38000, otaRate: 54000, marginScore: 30, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact: 'Private 26km stretch of the Zambezi — no other camps in sight.', upgrades: { rooms: [{ label: 'River Suite', extra: 0, tier: 0 }, { label: 'Private Villa', extra: 45000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
-  { id: 6, edition_id: 'safari', name: 'Ellerman House',             location: 'Cape Town, South Africa',            destination: 'Cape Town',          subRegion: 'cape-town',      region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 94, contentScore: 91, netRate: 28000, otaRate: null,  marginScore: 27, malariaFree: true,  tags: ['malaria-free'], image: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80', funFact: 'Eleven suites overlooking the Atlantic. One of the finest wine cellars in Africa.', upgrades: { rooms: [{ label: 'Classic Suite', extra: 0, tier: 0 }, { label: 'Villa Suite', extra: 18000, tier: 1 }], basis: [{ label: 'Breakfast included', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2200, tier: 1 }] } },
-  { id: 7, edition_id: 'safari', name: 'Jamala Madikwe',             location: 'Madikwe, South Africa',              destination: 'Madikwe',            subRegion: 'madikwe',        region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 93, contentScore: 85, netRate: 28000, otaRate: 38500, marginScore: 27, malariaFree: true,  tags: ['malaria-free','family-friendly'], image: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact: 'Malaria-free Big Five. Royal suite has a private game vehicle and guide.', upgrades: { rooms: [{ label: 'Classic Suite', extra: 0, tier: 0 }, { label: 'Royal Suite', extra: 15000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2200, tier: 1 }] } },
-  { id: 8, edition_id: 'safari', name: 'Mara Plains Camp',           location: 'Masai Mara, Kenya',                 destination: 'Masai Mara',         subRegion: 'masai-mara',     region: 'east-africa',     country: 'Kenya',        stars: 5, trustScore: 96, contentScore: 91, netRate: 42000, otaRate: 58000, marginScore: 28, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80', funFact: 'Only 8 tents. Peak migration July–October.', upgrades: { rooms: [{ label: 'Classic Tent', extra: 0, tier: 0 }, { label: 'Family Tent', extra: 18000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
-  { id: 9, edition_id: 'safari', name: 'Azura Bazaruto',             location: 'Mozambique',                         destination: 'Mozambique',         subRegion: 'mozambique',     region: 'indian-ocean',    country: 'Mozambique',   stars: 5, trustScore: 92, contentScore: 84, netRate: 22000, otaRate: 32000, marginScore: 31, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80', funFact: 'Last viable dugong population in the Indian Ocean.', upgrades: { rooms: [{ label: 'Beach Villa', extra: 0, tier: 0 }, { label: 'Ocean Villa', extra: 14000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2400, tier: 1 }] } },
-];
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN COMPONENT
-// ─────────────────────────────────────────────────────────────────────────────
-export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: EditionConfig }) {
- 
-  // ── Login gate ────────────────────────────────────────────────────────────
-  const [unlocked, setUnlocked] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('tse_access') === 'safari2026';
-  });
- 
-  // ── Navigation ────────────────────────────────────────────────────────────
-  const [screen, setScreen] = useState<Screen>('landing');
-  const [inputMode, setInputMode] = useState<InputMode>('socratic');
-  const [specialist] = useState(() => SPECIALISTS[Math.floor(Math.random() * SPECIALISTS.length)] ?? SPECIALISTS[0]);
- 
-  // ── Currency ──────────────────────────────────────────────────────────────
-  const [currency, setCurrency] = useState<Currency>(() => CURRENCIES.find(c => c.code === edition.defaultCurrency) ?? CURRENCIES[0]);
-  const fmt = useMemo(() => makeFmt(currency.symbol, currency.rate), [currency]);
- 
-  // ── Trip parameters ───────────────────────────────────────────────────────
-  const [nights,     setNights]     = useState(7);
-  const [adults,     setAdults]     = useState(2);
-  const [children,   setChildren]   = useState(0);
-  const [travelDate, setTravelDate] = useState('');
-  const [flexDays,   setFlexDays]   = useState(3);
-  const totalPax = Math.max(adults + children, 1);
- 
-  // ── Inspire flow ──────────────────────────────────────────────────────────
-  const [needsIntlFlight, setNeedsIntlFlight] = useState<boolean | null>(null);
-  const [region,           setRegion]          = useState<string | null>(null);
-  const [themes,           setThemes]          = useState<string[]>([]);
-  const [budget,           setBudget]          = useState(120000);
-  const [origin,           setOrigin]          = useState('JNB');
-  const [intlOrigin,       setIntlOrigin]      = useState('LHR');
-  const [researchStep,     setResearchStep]    = useState(0);
-  const [itinerary,        setItinerary]       = useState<Itinerary | null>(null);
-  const [cityHotelIdxs,    setCityHotelIdxs]  = useState([0,1,2,3]);
- 
-  // ── Builder state ─────────────────────────────────────────────────────────
-  const [activePillars,    setActivePillars]    = useState<Pillar[]>([]);
-  const [propertyStays,    setPropertyStays]    = useState<PropertyStay[]>([{ id: 1, hotelIdx: 0, nights: 7, prefs: { rooms: 0, basis: 0, flexibility: 0 } }]);
-  const [interTransfers,   setInterTransfers]   = useState<InterTransferState[]>([]);
-  const [checkinDate,      setCheckinDate]      = useState(() => todayPlusDays(30));
-  const [flightIdx,        setFlightIdx]        = useState(0);
-  const [intlFlightIdx,    setIntlFlightIdx]    = useState(0);
-  const [transferIdx,      setTransferIdx]      = useState(0);
-  const [activityIdx,      setActivityIdx]      = useState(0);
-  const [includeIntlFlight,setIncludeIntlFlight]= useState(false);
-  const [builderIntlOrigin,setBuilderIntlOrigin]= useState('LHR');
-  const [upgrades, setUpgrades] = useState<UpgradeState>({
-    flights:    { classes: { label: 'Standard seat', extra: 0 }, baggage: { label: '15kg included', extra: 0 } },
-    intl:       { classes: { label: 'Economy',        extra: 0 }, baggage: { label: '23kg included', extra: 0 } },
-    transfers:  { vehicles: { label: 'Included',      extra: 0 }, extras:  { label: 'Standard',     extra: 0 } },
-    activities: { options:  { label: 'Included',      extra: 0 }, extras:  { label: 'Standard',     extra: 0 } },
-  });
-  const [customise, setCustomise] = useState<{ pillar: Pillar | 'intl'; stayId?: number; idx: number } | null>(null);
- 
-  // ── Availability ──────────────────────────────────────────────────────────
-  const [availMap,   setAvailMap]   = useState<Map<string, AvailResult>>(new Map());
-  const [altDates,   setAltDates]   = useState<Map<string, AltDate | null>>(new Map());
-  const [preloading, setPreloading] = useState(false);
- 
-  // ── KB ────────────────────────────────────────────────────────────────────
-  const [kbEntries,   setKbEntries]   = useState<KBEntry[]>(DEFAULT_KB);
-  const [kbSelected,  setKbSelected]  = useState(['kb-region-kruger','kb-region-okavango','kb-prop-singita-boulders','kb-prop-mombo','kb4']);
-  const [kbEditEntry, setKbEditEntry] = useState<KBEntry | null>(null);
-  const [kbNewEntry,  setKbNewEntry]  = useState(false);
- 
-  // ── Hotels ────────────────────────────────────────────────────────────────
-  const [hotels, setHotels] = useState<Hotel[]>(HOTELS_FALLBACK);
-  const hotelsByMargin = useMemo(() => [...hotels].sort((a, b) => b.marginScore - a.marginScore), [hotels]);
- 
-  useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return;
-    fetch(`${url}/rest/v1/suppliers?select=*&is_active=eq.true&order=trust_score.desc&limit=100`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-    })
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        if (!rows?.length) return;
-        const mapped = rows.filter(r => r.country && r.name).map(mapSupplierRow);
-        if (mapped.length) setHotels(mapped);
-      })
-      .catch(() => {});
-  }, [edition.id]);
- 
-  useEffect(() => {
-    setPropertyStays(prev => prev.length === 1 ? [{ ...prev[0], nights }] : prev);
-  }, [nights]);
- 
-  useEffect(() => {
-    if (screen !== 'builder') return;
-    setPreloading(true); setAvailMap(new Map()); setAltDates(new Map());
-    preloadHotels(hotelsByMargin, checkinDate, nights, totalPax, async (supplierId, result) => {
-      setAvailMap(prev => { const m = new Map(prev); m.set(supplierId, result); return m; });
-      if (!result.available) {
-        const hotel = hotelsByMargin.find(h => String(h.id) === supplierId);
-        if (hotel) {
-          const alt = await findAlternativeDate(supplierId, checkinDate, nights, totalPax, hotel.netRate);
-          setAltDates(prev => { const m = new Map(prev); m.set(supplierId, alt); return m; });
-        }
-      }
-    }).finally(() => setPreloading(false));
-  }, [screen, checkinDate, nights, adults, children]);
- 
-  // ── Chat ──────────────────────────────────────────────────────────────────
-  const [chatOpen,    setChatOpen]    = useState(false);
-  const [chatMsgs,    setChatMsgs]    = useState<ChatMessage[]>([{ role: 'assistant', text: `Welcome to ${edition.name}. How can our team help?` }]);
-  const [chatInput,   setChatInput]   = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
- 
-  const [inspireMsgs,    setInspireMsgs]    = useState<ChatMessage[]>([{ role: 'assistant', text: "We've put together your journey. Want to adjust anything?" }]);
-  const [inspireInput,   setInspireInput]   = useState('');
-  const [inspireLoading, setInspireLoading] = useState(false);
-  const inspireEndRef = useRef<HTMLDivElement>(null);
-  const FACTUAL = /visa|weather|pack|when|best time|malaria|safe|flight time|how long|currency|season/i;
- 
-  useEffect(() => { if (inspireMsgs.length > 1) inspireEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [inspireMsgs]);
- 
-  // ── Pricing ───────────────────────────────────────────────────────────────
-  const M = edition.margins;
-  const relevantIntlFlights = INTL_FLIGHTS.filter(f => f.from === builderIntlOrigin);
-  const currentIntlFlight   = relevantIntlFlights[intlFlightIdx % Math.max(relevantIntlFlights.length, 1)];
-  const upgradeSum = (p: string) => Object.values(upgrades[p] ?? {}).reduce((s, v: any) => s + (v?.extra ?? 0), 0);
- 
-  const totalHotelNet = propertyStays.reduce((sum, stay) => {
-    const hotel = hotelsByMargin[stay.hotelIdx] ?? hotelsByMargin[0];
-    if (!hotel) return sum;
-    const { resolved } = resolveHotelUpgrades(hotel, stay.prefs);
-    const extra = Object.values(resolved).reduce((s: number, v: any) => s + (v?.extra ?? 0), 0);
-    return sum + hotel.netRate * stay.nights + extra;
-  }, 0);
- 
-  const flightNet   = activePillars.includes('flights')    ? (FLIGHTS[flightIdx]?.netRate ?? 0) * totalPax + upgradeSum('flights') : 0;
-  const intlNet     = includeIntlFlight && currentIntlFlight ? currentIntlFlight.netRate * totalPax + upgradeSum('intl') : 0;
-  const transferNet = activePillars.includes('transfers')  ? (TRANSFERS[transferIdx]?.netRate ?? 0) + upgradeSum('transfers') : 0;
-  const activityNet = activePillars.includes('activities') ? (ACTIVITIES[activityIdx]?.netRate ?? 0) * totalPax + upgradeSum('activities') : 0;
-  const totalZAR    = totalHotelNet * (activePillars.includes('hotels') ? M.hotels : 0)
-    + flightNet * M.flights + intlNet * M.intl + transferNet * M.transfers + activityNet * M.activities;
- 
-  const availableHotelStack = hotelsByMargin.filter(h => {
-    const r = availMap.get(String(h.id));
-    return !r || r.available || altDates.get(String(h.id)) !== null;
-  });
- 
-  // ── Actions ───────────────────────────────────────────────────────────────
-  const togglePillar = (p: Pillar) => setActivePillars(ps => ps.includes(p) ? ps.filter(x => x !== p) : [...ps, p]);
- 
-  const handleSelect = (pillar: string, key: string, opt: any, stayId?: number) => {
-    if (pillar === 'hotels' && stayId !== undefined)
-      setPropertyStays(prev => prev.map(s => s.id === stayId ? { ...s, prefs: { ...s.prefs, [key]: opt.tier } } : s));
-    else
-      setUpgrades(u => ({ ...u, [pillar]: { ...u[pillar], [key]: { label: opt.label, extra: opt.extra } } }));
-  };
- 
-  const addPropertyStay = () => {
-    if (propertyStays.length >= 3) return;
-    const last = propertyStays[propertyStays.length - 1];
-    const take = Math.min(3, last.nights - 1);
-    if (take < 1) return;
-    const usedIdxs = propertyStays.map(s => s.hotelIdx);
-    let newIdx = 0;
-    for (let i = 0; i < hotelsByMargin.length; i++) { if (!usedIdxs.includes(i)) { newIdx = i; break; } }
-    const from = hotelsByMargin[last.hotelIdx] ?? hotelsByMargin[0];
-    const to   = hotelsByMargin[newIdx]        ?? hotelsByMargin[0];
-    const transfer = getInterTransfer(from.region, to.region);
-    setPropertyStays(prev => [...prev.slice(0, -1), { ...last, nights: last.nights - take }, { id: Date.now(), hotelIdx: newIdx, nights: take, prefs: { rooms: 0, basis: 0, flexibility: 0 } }]);
-    setInterTransfers(prev => [...prev, { transferId: transfer.id, expanded: false }]);
-  };
- 
-  const removePropertyStay = (idx: number) => {
-    if (propertyStays.length <= 1) return;
-    const n   = propertyStays[idx].nights;
-    const tgt = idx === 0 ? 1 : idx - 1;
-    const updated = propertyStays.filter((_, i) => i !== idx);
-    updated[Math.min(tgt, updated.length - 1)].nights += n;
-    setPropertyStays([...updated]);
-    const nt = [...interTransfers]; nt.splice(idx === 0 ? 0 : idx - 1, 1); setInterTransfers(nt);
-  };
- 
-  const updateStayNights = (stayIdx: number, delta: number) => {
-    setPropertyStays(prev => {
-      const stays = prev.map(s => ({ ...s }));
-      const target = stays[stayIdx];
-      if (target.nights + delta < 1) return prev;
-      const adjIdx = stayIdx === stays.length - 1 ? stayIdx - 1 : stayIdx + 1;
-      if (adjIdx >= 0 && adjIdx < stays.length) {
-        if (delta > 0 && stays[adjIdx].nights <= 1) return prev;
-        stays[adjIdx].nights -= delta;
-        if (stays[adjIdx].nights < 1) return prev;
-      }
-      target.nights += delta;
-      return stays;
-    });
-  };
- 
-  // ── Engine ────────────────────────────────────────────────────────────────
-  const runEngine = async (promptBody: string, mode: InputMode) => {
-    setInputMode(mode);
-    setScreen('inspire-research'); setResearchStep(0);
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    for (let i = 0; i < RESEARCH_STEPS.length; i++) {
-      setResearchStep(i);
-      await new Promise(r => setTimeout(r, 800));
-    }
-    track('itinerary_viewed', edition.id, { mode, nights, adults, budget });
-    const kbCtx = buildKBContext(kbEntries, kbSelected, edition.id);
-    try {
-      const result = await runPlannerEngine({ kbContext: kbCtx, promptBody, ai: edition.ai });
-      result.inputMode = mode;
-      setItinerary(result);
-      setCityHotelIdxs([0,1,2,3]);
-      setInspireMsgs([{ role: 'assistant', text: `We've put together your journey. Want to adjust anything?` }]);
-    } catch {
-      const fallback = buildFallbackItinerary(nights, budget, mode, (promptBody.match(/destinations?: ([^.\n]+)/i)||[])[1]?.trim());
-      setItinerary(fallback);
-      setInspireMsgs([{ role: 'assistant', text: `We've built your safari. Our rates save you ${fmt(fallback.totalEstimate * 0.27)} vs booking direct.` }]);
-    }
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    setScreen('inspire-plan');
-  };
- 
-  const runSocraticPlanner = () => {
-    const regionLabel = region ? REGIONS.find(r => r.id === region)?.label : 'Sub-Saharan Africa';
-    const themeLabels = themes.map(id => THEMES.find(t => t.id === id)?.label).join(', ') || 'safari';
-    const intlNote    = needsIntlFlight ? `Guest flying from ${intlOrigin} — include international flight.` : 'Guest handling own international flights.';
-    const promptBody  = `You are a luxury safari journey designer at ${edition.name}. Plan an optimised safari itinerary.\n\nGUEST INPUTS: Origin: ${origin}, ${intlNote}, Region: ${regionLabel}, Budget: R${budget.toLocaleString()}, Trip: ${nights} nights, Travellers: ${adults} adults${children > 0 ? `, ${children} children` : ''}, Themes: ${themeLabels}`;
-    track('socratic_complete', edition.id, { region: region || 'any', budget, nights });
-    runEngine(promptBody, 'socratic');
-  };
- 
-  const runBriefPlanner = (briefText: string) => {
-    // Extract explicit constraints from brief text before sending to AI
-    const nightsMatch = briefText.match(/(\d+)\s*night/i);
-    const extractedNights = nightsMatch ? parseInt(nightsMatch[1]) : nights;
- 
-    // Detect single-destination briefs
-    const singleDestinationKeywords = [
-      'cape town only', 'only cape town', 'just cape town',
-      'madikwe only', 'only madikwe', 'just madikwe',
-      'sabi sand only', 'only sabi sand', 'just sabi sand',
-      'okavango only', 'only okavango', 'just okavango',
-      'kruger only', 'only kruger', 'just kruger',
-    ];
-    const isSingleDest = singleDestinationKeywords.some(kw => briefText.toLowerCase().includes(kw));
- 
-    // Detect mentioned destinations
-    const destMap: Record<string, string> = {
-      'cape town': 'Cape Town', 'madikwe': 'Madikwe', 'sabi sand': 'Kruger / Sabi Sand',
-      'kruger': 'Kruger / Sabi Sand', 'okavango': 'Okavango Delta', 'botswana': 'Okavango Delta',
-      'victoria falls': 'Chobe / Victoria Falls', 'vic falls': 'Chobe / Victoria Falls',
-      'chobe': 'Chobe / Victoria Falls', 'phinda': 'Phinda', 'mozambique': 'Mozambique',
-    };
-    const mentionedDests = Object.entries(destMap)
-      .filter(([kw]) => briefText.toLowerCase().includes(kw))
-      .map(([, dest]) => dest);
-    const uniqueDests = [...new Set(mentionedDests)];
- 
-    const promptBody = \`You are a luxury safari journey designer at \${edition.name}.
-A traveller has written their own brief. Extract their intent and plan an optimised safari itinerary.
- 
-TRAVELLER BRIEF: "\${briefText}"
- 
-HARD CONSTRAINTS — you MUST follow these exactly, no exceptions:
-1. TOTAL NIGHTS: exactly \${extractedNights} nights total across ALL cities combined. Do not add or subtract even one night.
-2. NUMBER OF CITIES: \${isSingleDest ? '1 city only — the traveller explicitly wants a single destination' : uniqueDests.length > 0 ? \`\${Math.min(uniqueDests.length, 2)} cities — only include destinations mentioned in the brief\` : 'maximum 2 cities — do not add a third city unless the brief explicitly requests it'}.
-3. DESTINATIONS: \${uniqueDests.length > 0 ? \`Use only these destinations: \${uniqueDests.join(', ')}\` : 'Choose the best destinations for this brief'}.
-4. NIGHTS PER CITY: all city nights must add up to exactly \${extractedNights}. If 1 city, it gets all \${extractedNights} nights. If 2 cities, split them so they total \${extractedNights}.
-5. KNOWN PARAMETERS: \${adults} adults\${children > 0 ? \`, \${children} children\` : ''}.
- 
-Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, no explanation.\`;
- 
-    track('brief_submit', edition.id, { briefLength: briefText.length, nights: extractedNights, adults });
-    // Update nights state to match what was in the brief
-    if (extractedNights !== nights) setNights(extractedNights);
-    runEngine(promptBody, 'brief');
-  };
- 
-  const sendInspireChat = async () => {
-    if (!inspireInput.trim() || !itinerary) return;
-    const msg = inspireInput.trim();
-    setInspireInput('');
-    setInspireMsgs(m => [...m, { role: 'user', text: msg }]);
-    setInspireLoading(true);
-    const prev = itinerary;
-    track('chat_sent', edition.id, { screen: 'inspire-plan', msgLength: msg.length });
-    try {
-      const det = applyDeterministicChange(msg, itinerary, hotels);
-      if (det) {
-        setItinerary(det.itinerary);
-        setInspireMsgs(m => [...m, { role: 'assistant', text: det.reply, revert: prev }]);
-        setInspireLoading(false); return;
-      }
-      if (FACTUAL.test(msg)) {
-        const answer = await answerFactual(msg, itinerary.cities[0]?.city ?? 'Southern Africa', edition.ai);
-        setInspireMsgs(m => [...m, { role: 'assistant', text: answer }]);
-        setInspireLoading(false); return;
-      }
-      const diff = await applyCreativeDiff({ message: msg, itinerary, budget, nights, ai: edition.ai });
-      if (diff.cities?.length) {
-        const updatedCities = itinerary.cities.map(existing => {
-          const changed = diff.cities!.find((c: any) => c.city === existing.city);
-          return changed ? { ...existing, ...changed } : existing;
-        });
-        diff.cities.forEach((c: any) => { if (!itinerary.cities.find(e => e.city === c.city)) updatedCities.push(c); });
-        setItinerary({ ...itinerary, cities: updatedCities, totalEstimate: diff.totalEstimate ?? itinerary.totalEstimate });
-      }
-      setInspireMsgs(m => [...m, { role: 'assistant', text: diff.reply ?? 'Done.', revert: prev }]);
-    } catch {
-      setInspireMsgs(m => [...m, { role: 'assistant', text: 'Something went wrong. Please try again.', revert: prev }]);
-    }
-    setInspireLoading(false);
-  };
- 
-  const sendChat = async () => {
-    if (!chatInput.trim()) return;
-    const msg = chatInput.trim(); setChatInput('');
-    setChatMsgs(m => [...m, { role: 'user', text: msg }]);
-    setChatLoading(true);
-    track('chat_sent', edition.id, { screen, msgLength: msg.length });
-    try {
-      const reply = await chatWithSpecialist(msg, edition.ai);
-      setChatMsgs(m => [...m, { role: 'assistant', text: reply }]);
-    } catch {
-      setChatMsgs(m => [...m, { role: 'assistant', text: 'The dry season (June–Sept) is perfect — short grass, animals at water.' }]);
-    }
-    setChatLoading(false);
-  };
- 
-  const [checkoutKey]      = useState(() => generateIdempotencyKey());
-  const [checkoutLoading,  setCheckoutLoading]  = useState(false);
- 
-  const handleCheckout = async () => {
-    if (checkoutLoading) return;
-    setCheckoutLoading(true);
-    track('payment_initiated', edition.id, { totalZAR, nights, adults });
-    try {
-      const stack = availableHotelStack.length > 0 ? availableHotelStack : hotelsByMargin;
-      const components: BookingComponent[] = propertyStays.map(stay => {
-        const h = stack[Math.min(stay.hotelIdx, stack.length - 1)] ?? stack[0];
-        const { resolved } = resolveHotelUpgrades(h, stay.prefs);
-        const extra = Object.values(resolved).reduce((s: number, v: any) => s + (v?.extra ?? 0), 0);
-        return { pillar: 'hotel', name: h.name, location: h.location, nights: stay.nights, net_rate_zar: h.netRate * stay.nights + extra, display_rate_zar: Math.round((h.netRate * stay.nights + extra) * M.hotels), margin_pct: 15, inclusion_source: 'contract' as const };
-      });
-      const booking: BookingIntent = { edition_id: edition.id, idempotency_key: checkoutKey, state: 'quote', title: `${edition.name} Journey`, adults, children_count: children, nights, check_in: checkinDate, check_out: addDays(checkinDate, nights), total_display_zar: totalZAR, total_net_zar: Math.round(totalZAR / M.hotels), budget_zar: budget, components, input_mode: inputMode };
-      const res  = await fetch('/api/itinerary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(booking) });
-      const data = await res.json();
-      if (data.success && data.id) {
-        track('checkout_started', edition.id, { bookingId: data.id, totalZAR });
-        window.location.href = `/checkout?id=${data.id}`;
-      } else { alert('Could not save booking: ' + (data.error ?? 'Unknown error')); }
-    } catch (e: any) { alert('Connection error: ' + (e?.message ?? String(e))); }
-    setCheckoutLoading(false);
-  };
- 
-  const navProps = { edition, setScreen, currency, setCurrency, chatOpen, setChatOpen, totalZAR, fmt, hasPricedItems: activePillars.length > 0 || includeIntlFlight };
- 
-  // ── LOGIN GATE ────────────────────────────────────────────────────────────
-  if (!unlocked) return <LoginGate onUnlock={() => setUnlocked(true)} />;
- 
-  // ─────────────────────────────────────────────────────────────────────────
-  // SCREEN RENDERING
-  // ─────────────────────────────────────────────────────────────────────────
-  return (
-    <>
-      <style suppressHydrationWarning>{GLOBAL_CSS}</style>
- 
-      {/* ── LANDING ─────────────────────────────────────────────────────── */}
-      {screen === 'landing' && (
-        <div style={{ minHeight:'100vh', background:T.bg }}>
-          <Nav {...navProps} />
-          <div style={{ position:'relative', height:'82vh', minHeight:520, overflow:'hidden' }}>
-            <img src={edition.heroImage} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'center 40%' }} />
-            <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom,rgba(10,10,10,0.1) 0%,rgba(10,10,10,0.45) 55%,rgba(10,10,10,1) 100%)' }} />
-            <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'0 24px 52px', maxWidth:900, margin:'0 auto' }}>
-              <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.2em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:12 }}>{edition.name}</div>
-              <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(30px,5.5vw,56px)', fontWeight:700, lineHeight:1.1, marginBottom:16, color:T.text }}>Africa's finest wilderness,<br /><em style={{ color:T.gold }}>curated for you.</em></h1>
-              <p style={{ fontSize:16, color:T.textMid, lineHeight:1.7, marginBottom:28, maxWidth:500 }}>Handpicked lodges, negotiated rates, perfectly sequenced journeys — built around you.</p>
-              <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-                <button onClick={() => setScreen('inspire-input')} className="btn-gold" style={{ padding:'14px 24px', fontSize:15 }}>✦ Plan My Journey →</button>
-                <button onClick={() => { setActivePillars([]); setInputMode('builder'); setScreen('builder'); }} className="btn-ghost" style={{ padding:'14px 24px', fontSize:15 }}>Build Your Own →</button>
-                <button onClick={() => setScreen('my-brief')} className="btn-ghost" style={{ padding:'14px 24px', fontSize:15 }}>Send Us Your Brief →</button>
+          {tab==='banking'&&(
+            <div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:8}}>Banking Details</div>
+              <div style={{background:'rgba(248,113,113,0.06)',border:'0.5px solid rgba(248,113,113,0.2)',borderRadius:10,padding:'12px 16px',marginBottom:20,fontSize:12,color:T.red}}>
+                🔐 Banking details require TWO rounds of approval before any change takes effect.
               </div>
-            </div>
-          </div>
-          <div style={{ maxWidth:900, margin:'0 auto', padding:'52px 20px 80px' }}>
-            <div style={{ marginBottom:56 }}>
-              <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Curated Journeys</div>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:24, flexWrap:'wrap', gap:8 }}>
-                <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:26, fontWeight:700, color:T.text }}>Ready to book — from price</h2>
-                <span style={{ fontSize:12, color:T.textDim }}>All-inclusive · negotiated rates</span>
-              </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:18 }}>
-                {CURATED_JOURNEYS.map(j => (
-                  <div key={j.id} className="card" style={{ cursor:'pointer' }} onClick={() => { setActivePillars(['flights','hotels','transfers','activities']); setInputMode('builder'); setScreen('builder'); }}>
-                    <div style={{ position:'relative', height:195, overflow:'hidden' }}>
-                      <img src={j.image} alt={j.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 52%)' }} />
-                      <div style={{ position:'absolute', top:10, left:10, background:j.badgeColor, color:'#0a0a0a', fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20 }}>{j.badge}</div>
-                      <div style={{ position:'absolute', bottom:10, left:12, right:12 }}>
-                        <div style={{ fontSize:15, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#fff' }}>{j.name}</div>
-                        <div style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginTop:1 }}>{j.tagline}</div>
-                      </div>
-                    </div>
-                    <div style={{ padding:'14px 16px' }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
-                        <div><div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{j.nights}n · {j.pax} pax</div><div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(j.priceFrom)}</div></div>
-                        <div style={{ textAlign:'right' as const }}><div style={{ fontSize:10, color:T.textDim, marginBottom:2 }}>vs direct</div><div style={{ fontSize:13, color:T.green, fontWeight:600 }}>Save {fmt(j.otaEquivalent - j.priceFrom)}</div></div>
-                      </div>
-                      <div style={{ borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>
-                        {j.includes.slice(0,3).map((inc, i) => <div key={i} style={{ fontSize:11, color:T.textMid, display:'flex', gap:6, marginBottom:3 }}><span style={{ color:T.gold, flexShrink:0 }}>✓</span>{inc}</div>)}
-                      </div>
-                      <button className="btn-gold" style={{ width:'100%', padding:11, fontSize:13, marginTop:12 }}>View & Customise →</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:12 }}>
-              {[{ icon:'✦', title:'Negotiated rates', sub:"Contracted directly with Africa's finest lodges." }, { icon:'🛡', title:'Verified lodges', sub:'Every property vetted for service and reliability.' }, { icon:'📞', title:'Journey specialists', sub:'Real people, available before and during your trip.' }, { icon:'🔄', title:'Flexible booking', sub:'Our cancellation terms are the most generous available.' }].map(f => (
-                <div key={f.title} style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'18px 16px' }}>
-                  <div style={{ fontSize:20, marginBottom:8 }}>{f.icon}</div>
-                  <div style={{ fontSize:14, fontWeight:600, marginBottom:5, color:T.text }}>{f.title}</div>
-                  <div style={{ fontSize:12, color:T.textDim, lineHeight:1.65 }}>{f.sub}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={() => setChatOpen(false)} edition={edition} />}
-        </div>
-      )}
-
- {/* ── INSPIRE INPUT ────────────────────────────────────────────────── */}
-      {screen === 'inspire-input' && (
-        <div style={{ minHeight:'100vh', background:T.bg }}>
-          <Nav {...navProps} />
-          <div className="fade-up" style={{ maxWidth:660, margin:'0 auto', padding:'32px 20px 80px' }}>
-            <button onClick={() => setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>← Back</button>
-            <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Journey Planner</div>
-            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us about your dream safari</h2>
-            <p style={{ fontSize:14, color:T.textMid, marginBottom:28, lineHeight:1.65 }}>Five questions. Our AI builds a fully-priced, bookable itinerary in under 30 seconds.</p>
- 
-            <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'16px 18px', marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:12 }}>Do you need international flights included?</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom: needsIntlFlight === true ? 12 : 0 }}>
-                {[{ val: true, label:"Yes — include from my home country", icon:'✈' }, { val: false, label:"No — I'll arrange my own flights", icon:'🏠' }].map(opt => (
-                  <button key={String(opt.val)} onClick={() => setNeedsIntlFlight(opt.val)} style={{ padding:'12px 14px', borderRadius:10, border:`1.5px solid ${needsIntlFlight === opt.val ? T.gold : T.border}`, background: needsIntlFlight === opt.val ? T.goldDim : T.bg3, color: needsIntlFlight === opt.val ? T.gold : T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const, display:'flex', alignItems:'flex-start', gap:8 }}>
-                    <span style={{ fontSize:16, flexShrink:0 }}>{opt.icon}</span><span style={{ lineHeight:1.4 }}>{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-              {needsIntlFlight === true && (
-                <div>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Flying from</div>
-                  <select value={intlOrigin} onChange={e => setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
-                    {INTERNATIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                  </select>
-                </div>
-              )}
-              {needsIntlFlight === false && (
-                <div style={{ marginTop:12 }}>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Arriving into</div>
-                  <select value={origin} onChange={e => setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
-                    {REGIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                  </select>
-                </div>
-              )}
-            </div>
- 
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:8 }}>Destination region</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                {REGIONS.map(r => (
-                  <button key={r.id} onClick={() => setRegion(region === r.id ? null : r.id)} style={{ padding:'12px 14px', borderRadius:10, border:`1.5px solid ${region === r.id ? T.gold : T.border}`, background: region === r.id ? T.goldDim : T.surface, color: region === r.id ? T.gold : T.textMid, fontSize:13, fontWeight: region === r.id ? 600 : 400, cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontFamily:'inherit' }}>
-                    <span>{r.icon}</span>{r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
- 
-            <div style={{ marginBottom:16 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-                <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const }}>Total budget</div>
-                <div style={{ fontSize:15, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(budget)}</div>
-              </div>
-              <input type="range" min={20000} max={2000000} step={10000} value={budget} onChange={e => setBudget(+e.target.value)} />
-              <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}><span style={{ fontSize:10, color:T.textDim }}>{fmt(20000)}</span><span style={{ fontSize:10, color:T.textDim }}>{fmt(2000000)}</span></div>
-            </div>
- 
-            <div style={{ marginBottom:16 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-                <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const }}>Trip length</div>
-                <div style={{ fontSize:14, fontWeight:600, color:T.text }}>{nights} nights</div>
-              </div>
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                {[5,7,10,12,14,21].map(n => (
-                  <button key={n} onClick={() => setNights(n)} style={{ padding:'7px 14px', borderRadius:8, border:`1.5px solid ${nights === n ? T.gold : T.border}`, background: nights === n ? T.goldDim : 'transparent', color: nights === n ? T.gold : T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>{n}n</button>
-                ))}
-              </div>
-            </div>
- 
-            <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'16px 18px', marginBottom:24, display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-              {[{ label:'Adults', value:adults, set:setAdults, min:1 }, { label:'Children', value:children, set:setChildren, min:0 }].map(p => (
-                <div key={p.label}>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:8 }}>{p.label}</div>
-                  <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                    <button onClick={() => p.set(Math.max(p.min, p.value - 1))} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, width:28, height:28, borderRadius:7, cursor:'pointer', fontSize:16, fontFamily:'inherit' }}>−</button>
-                    <span style={{ fontSize:16, fontWeight:700, color:T.text, minWidth:24, textAlign:'center' as const }}>{p.value}</span>
-                    <button onClick={() => p.set(p.value + 1)} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, width:28, height:28, borderRadius:7, cursor:'pointer', fontSize:16, fontFamily:'inherit' }}>+</button>
-                  </div>
-                </div>
-              ))}
-            </div>
- 
-            <button className="btn-gold" style={{ width:'100%', padding:16, fontSize:15 }} onClick={runSocraticPlanner}>✦ Build My Itinerary →</button>
-            <p style={{ textAlign:'center' as const, fontSize:12, color:T.textDim, marginTop:10 }}>Usually ready in under 30 seconds</p>
-          </div>
-          <SpecialistBanner specialist={specialist} screen={screen} />
-          {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={() => setChatOpen(false)} edition={edition} />}
-        </div>
-      )}
- 
-      {/* ── INSPIRE RESEARCH ─────────────────────────────────────────────── */}
-      {screen === 'inspire-research' && (
-        <div style={{ minHeight:'100vh', background:T.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:40 }}>
-          <div style={{ marginBottom:32, display:'flex', gap:6 }}>
-            {RESEARCH_STEPS.map((_, i) => <StepDot key={i} active={i <= researchStep} />)}
-          </div>
-          <Spinner />
-          <div style={{ fontSize:14, color:T.textMid, textAlign:'center' as const, marginTop:20, maxWidth:360 }}>{RESEARCH_STEPS[researchStep]}</div>
-          <div style={{ fontSize:12, color:T.textDim, marginTop:8 }}>Searching live conditions · Checking lodge availability</div>
-        </div>
-      )}
- 
-      {/* ── INSPIRE PLAN ─────────────────────────────────────────────────── */}
-      {screen === 'inspire-plan' && itinerary && (
-        <div style={{ minHeight:'100vh', background:T.bg }}>
-          <Nav {...navProps} />
-          <div className="fade-up" style={{ maxWidth:660, margin:'0 auto', padding:'28px 20px 80px' }}>
-            <div style={{ marginBottom:20 }}>
-              <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Your Journey</div>
-              <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:26, fontWeight:700, marginBottom:8, color:T.text }}>{itinerary.title}</h2>
-              <p style={{ fontSize:14, color:T.textMid, lineHeight:1.65 }}>{itinerary.summary}</p>
-              {itinerary.briefInterpretation && <div style={{ background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:10, padding:'10px 14px', fontSize:12, color:T.gold, marginTop:10 }}>✦ {itinerary.briefInterpretation}</div>}
-            </div>
- 
-            <div style={{ background:T.surface, border:`0.5px solid ${T.borderGold}`, borderRadius:14, padding:'16px 18px', marginBottom:20, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div><div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', marginBottom:4 }}>Total estimate · {itinerary.cities.reduce((s, c) => s + c.nights, 0)} nights</div><div style={{ fontSize:28, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(itinerary.totalEstimate)}</div></div>
-              <div style={{ textAlign:'right' as const }}><div style={{ fontSize:11, color:T.textDim, marginBottom:4 }}>Routing</div><div style={{ fontSize:12, color:T.textMid }}>{itinerary.routing}</div></div>
-            </div>
- 
-            {/* City cards with region images */}
-            {itinerary.cities.map((city, i) => {
-              const cityName = city.city.toLowerCase();
-              const destinationStack = hotelsByMargin.filter(h => {
-                const dest = (h.destination ?? '').toLowerCase();
-                const sub  = (h.subRegion ?? '').toLowerCase();
-                const name = (h.name ?? '').toLowerCase();
-                return dest.includes(cityName) || cityName.includes(dest) ||
-                       sub.includes(cityName)  || cityName.includes(sub)  ||
-                       name.includes(cityName) || cityName.includes(name);
-              });
-              const cityRegion = COUNTRY_REGION[city.country] ?? 'southern-africa';
-              const regionStack = hotelsByMargin.filter(h => h.region === cityRegion);
-              const stack = destinationStack.length > 0 ? destinationStack : regionStack.length > 0 ? regionStack : hotelsByMargin;
-              const hotelIdx = Math.min(cityHotelIdxs[i] ?? 0, stack.length - 1);
-              const hotel = stack[hotelIdx] ?? hotelsByMargin[0];
-              const stackSize = stack.length;
- 
-              return (
-                <div key={i} className="city-card" style={{ padding:0, overflow:'hidden', marginBottom:12 }}>
-                  {hotel?.image && (
-                    <div style={{ position:'relative', height:130, overflow:'hidden' }}>
-                      <img src={hotel.image} alt={city.city} style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'center 40%' }} />
-                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.78) 0%,transparent 55%)' }} />
-                      <div style={{ position:'absolute', bottom:10, left:14, right:14, display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
-                        <div>
-                          <div style={{ fontSize:18, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#fff' }}>{city.city}</div>
-                          <div style={{ fontSize:11, color:'rgba(255,255,255,0.65)' }}>{city.country} · {city.nights} night{city.nights !== 1 ? 's' : ''}</div>
-                        </div>
-                        <div style={{ textAlign:'right' as const }}>
-                          <div style={{ fontSize:16, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(city.estimatedCost)}</div>
-                          <div style={{ fontSize:10, color:'rgba(255,255,255,0.45)' }}>est. total</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  <div style={{ padding:'12px 16px' }}>
-                    {!hotel?.image && (
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
-                        <div>
-                          <div style={{ fontSize:16, fontWeight:700, fontFamily:"'Playfair Display',serif", color:T.text }}>{city.city}</div>
-                          <div style={{ fontSize:12, color:T.textMid }}>{city.country} · {city.nights} night{city.nights !== 1 ? 's' : ''}</div>
-                        </div>
-                        <div style={{ textAlign:'right' as const }}>
-                          <div style={{ fontSize:17, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(city.estimatedCost)}</div>
-                          <div style={{ fontSize:10, color:T.textDim }}>est. total</div>
-                        </div>
-                      </div>
-                    )}
-                    <div style={{ fontSize:12, color:T.textMid, marginBottom:10, lineHeight:1.6 }}>{city.why}</div>
-                    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
-                      {city.highlights.filter(Boolean).map((h: string, hi: number) => <span key={hi} style={{ fontSize:11, color:T.textDim, background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'3px 10px' }}>✦ {h}</span>)}
-                    </div>
-                    {hotel && (
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:10, borderTop:`0.5px solid ${T.border}` }}>
-                        <div style={{ fontSize:12, color:T.textMid }}>Suggested: <span style={{ color:T.text, fontWeight:600 }}>{hotel.name}</span></div>
-                        <div style={{ display:'flex', gap:6 }}>
-                          <button onClick={() => setCityHotelIdxs(prev => { const n=[...prev]; n[i]=Math.max(0,(n[i]??0)-1); return n; })} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.textMid, width:24, height:24, borderRadius:6, cursor:'pointer', fontSize:12, fontFamily:'inherit' }}>←</button>
-                          <button onClick={() => setCityHotelIdxs(prev => { const n=[...prev]; n[i]=Math.min(stackSize-1,(n[i]??0)+1); return n; })} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.textMid, width:24, height:24, borderRadius:6, cursor:'pointer', fontSize:12, fontFamily:'inherit' }}>→</button>
-                        </div>
-                      </div>
-                    )}
-                    {city.arrivalGap && <div style={{ fontSize:11, color:T.textDim, marginTop:6 }}>🕐 {city.arrivalGap}</div>}
-                  </div>
-                </div>
-              );
-            })}
- 
-            {itinerary.aiInsights?.filter(Boolean).length > 0 && (
-              <div style={{ background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:14, padding:'16px 18px', marginBottom:16 }}>
-                <div style={{ fontSize:11, color:'rgba(212,175,55,0.7)', fontWeight:600, letterSpacing:'0.07em', textTransform:'uppercase' as const, marginBottom:10 }}>Rate insights</div>
-                {itinerary.aiInsights.filter(Boolean).map((ins: string, i: number) => <div key={i} style={{ display:'flex', gap:8, marginBottom:6, fontSize:12, color:T.textMid, lineHeight:1.55 }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{ins}</div>)}
-              </div>
-            )}
- 
-            {itinerary.warnings?.filter(Boolean).length > 0 && (
-              <div style={{ background:'rgba(251,146,60,0.07)', border:'0.5px solid rgba(251,146,60,0.22)', borderRadius:12, padding:'12px 16px', marginBottom:16 }}>
-                {itinerary.warnings.filter(Boolean).map((w: string, i: number) => <div key={i} style={{ fontSize:12, color:'rgba(251,146,60,0.9)', lineHeight:1.55 }}>⚠ {w}</div>)}
-              </div>
-            )}
- 
-            <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'12px 16px', marginBottom:20, fontSize:12, color:T.textMid, lineHeight:1.6 }}>
-              🗓 <strong style={{ color:T.text }}>Best timing:</strong> {itinerary.bestTiming}
-            </div>
- 
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:24 }}>
-              <button className="btn-gold" style={{ padding:16, fontSize:15 }} onClick={() => {
-                track('price_and_book_clicked', edition.id, { totalEstimate: itinerary.totalEstimate });
-                if (itinerary.cities.length > 0) {
-                  const newStays = itinerary.cities.map((city, i) => ({
-                    id: i + 1, hotelIdx: cityHotelIdxs[i] ?? i % hotelsByMargin.length,
-                    nights: city.nights || 3, prefs: { rooms: 0, basis: 0, flexibility: 0 },
-                  }));
-                  setPropertyStays(newStays);
-                  setNights(newStays.reduce((s, s2) => s + s2.nights, 0));
-                }
-                setActivePillars(['flights','hotels','transfers','activities']);
-                setInputMode('builder');
-                setCustomise(null);
-                setScreen('builder');
-              }}>Price & Book This →</button>
-              <button onClick={runSocraticPlanner} className="btn-ghost" style={{ padding:16, fontSize:14 }}>🔄 Rebuild itinerary</button>
-            </div>
- 
-            <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:16, overflow:'hidden', marginBottom:24 }}>
-              <div style={{ padding:'14px 18px', borderBottom:`0.5px solid ${T.border}`, display:'flex', alignItems:'center', gap:10 }}>
-                <div style={{ width:30, height:30, borderRadius:8, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, display:'flex', alignItems:'center', justifyContent:'center' }}>✦</div>
-                <div><div style={{ fontSize:13, fontWeight:600, color:T.text }}>Adjust your journey</div><div style={{ fontSize:11, color:T.textDim }}>The itinerary updates live</div></div>
-              </div>
-              <div style={{ padding:'8px 16px 0', borderBottom:`0.5px solid ${T.border}`, display:'flex', gap:6, flexWrap:'wrap', paddingBottom:10 }}>
-                {['Make it cheaper','Extend by 2 nights','Add a beach stop','Fewer destinations','Best time to go?','What visas do I need?'].map(q => (
-                  <button key={q} onClick={() => { setInspireInput(q); setTimeout(() => document.getElementById('inspire-send')?.click(), 50); }} style={{ fontSize:11, padding:'4px 10px', borderRadius:20, border:`0.5px solid ${T.border}`, background:'rgba(255,255,255,0.04)', color:T.textMid, cursor:'pointer', fontFamily:'inherit' }}>{q}</button>
-                ))}
-              </div>
-              <div style={{ maxHeight:220, overflowY:'auto', padding:'14px 16px', display:'flex', flexDirection:'column', gap:10 }}>
-                {inspireMsgs.map((m: any, i: number) => (
-                  <div key={i} style={{ display:'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                    <div style={{ maxWidth:'88%', padding:'9px 13px', borderRadius: m.role === 'user' ? '13px 13px 3px 13px' : '13px 13px 13px 3px', background: m.role === 'user' ? 'rgba(212,175,55,0.1)' : T.surface, border:`0.5px solid ${ m.role === 'user' ? T.borderGold : T.border}`, fontSize:13, color:T.text, lineHeight:1.6 }}>
-                      {m.text}
-                      {m.revert && <button onClick={() => { setItinerary(m.revert!); setInspireMsgs((msgs: any) => [...msgs, { role:'assistant', text:"Restored your previous itinerary." }]); }} style={{ display:'block', marginTop:8, background:'rgba(255,255,255,0.06)', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:7, padding:'4px 10px', fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>↩ Revert</button>}
-                    </div>
-                  </div>
-                ))}
-                {inspireLoading && <div style={{ display:'flex', gap:4, padding:'8px 12px' }}>{[0,1,2].map(i => <div key={i} style={{ width:6, height:6, borderRadius:'50%', background:T.gold, animation:`pulse 1.2s ease ${i * 0.2}s infinite` }} />)}</div>}
-                <div ref={inspireEndRef} />
-              </div>
-              <div style={{ padding:'10px 14px', borderTop:`0.5px solid ${T.border}`, display:'flex', gap:8 }}>
-                <input value={inspireInput} onChange={e => setInspireInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendInspireChat()} placeholder="e.g. Make it cheaper · Add gorilla trekking · Swap Sabi Sand for Okavango..." style={{ flex:1, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:9, padding:'9px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }} />
-                <button id="inspire-send" onClick={sendInspireChat} className="btn-gold" style={{ padding:'9px 14px', fontSize:13 }}>→</button>
-              </div>
-            </div>
-          </div>
-          <SpecialistBanner specialist={specialist} screen={screen} />
-          {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={() => setChatOpen(false)} edition={edition} />}
-        </div>
-      )}
- 
-      {/* ── MY BRIEF ─────────────────────────────────────────────────────── */}
-      {screen === 'my-brief' && (
-        <div style={{ minHeight:'100vh', background:T.bg }}>
-          <Nav {...navProps} />
-          <div style={{ maxWidth:660, margin:'0 auto', padding:'32px 20px 80px' }}>
-            <button onClick={() => setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>← Back</button>
-            <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Your Brief</div>
-            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us what you're dreaming of</h2>
-            <p style={{ fontSize:14, color:T.textMid, marginBottom:24, lineHeight:1.65 }}>Write anything — we'll read it and build your journey around it.</p>
-            <BriefScreen nights={nights} setNights={setNights} adults={adults} setAdults={setAdults} children={children} setChildren={setChildren} onBuild={(text: string) => { setScreen('inspire-research'); runBriefPlanner(text); }} />
-          </div>
-          <SpecialistBanner specialist={specialist} screen={screen} />
-        </div>
-      )}
- 
-      {/* ── BUILDER ──────────────────────────────────────────────────────── */}
-      {screen === 'builder' && (
-        <div style={{ minHeight:'100vh', background:T.bg }}>
-          <Nav {...navProps} />
-          <StickyPrice totalZAR={(activePillars.length > 0 || includeIntlFlight) ? totalZAR : 0} fmt={fmt} />
-          <SpecialistBanner specialist={specialist} screen={screen} />
-          <div style={{ maxWidth:900, margin:'0 auto', padding:'28px 20px 80px' }}>
- 
-            <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'16px 18px', marginBottom:22 }}>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, alignItems:'center' }}>
-                {[{ label:'Nights', value:nights, dec:() => { const n=Math.max(1,nights-1); setNights(n); if(propertyStays.length===1) setPropertyStays([{...propertyStays[0],nights:n}]); }, inc:() => { const n=nights+1; setNights(n); if(propertyStays.length===1) setPropertyStays([{...propertyStays[0],nights:n}]); } }, { label:'Adults', value:adults, dec:()=>setAdults(a=>Math.max(1,a-1)), inc:()=>setAdults(a=>a+1) }, { label:'Children', value:children, dec:()=>setChildren(c=>Math.max(0,c-1)), inc:()=>setChildren(c=>c+1) }].map(p => (
-                  <div key={p.label}>
-                    <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:6 }}>{p.label}</div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <button onClick={p.dec} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, width:26, height:26, borderRadius:6, cursor:'pointer', fontSize:14, fontFamily:'inherit' }}>−</button>
-                      <span style={{ fontSize:16, fontWeight:700, color:T.text, minWidth:28, textAlign:'center' as const }}>{p.value}</span>
-                      <button onClick={p.inc} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, width:26, height:26, borderRadius:6, cursor:'pointer', fontSize:14, fontFamily:'inherit' }}>+</button>
-                    </div>
-                  </div>
-                ))}
-                <div>
-                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:6 }}>Currency</div>
-                  <select value={currency.code} onChange={e => setCurrency(CURRENCIES.find(c => c.code === e.target.value)!)} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, borderRadius:8, padding:'5px 10px', fontSize:13, outline:'none', fontFamily:'inherit', width:'100%' }}>
-                    {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}`, flexWrap:'wrap' }}>
-                <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600 }}>Check-in</div>
-                <input type="date" value={checkinDate} onChange={e => setCheckinDate(e.target.value || todayPlusDays(30))} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, borderRadius:8, padding:'5px 10px', fontSize:12, outline:'none', fontFamily:'inherit' }} />
-                <button onClick={() => setIncludeIntlFlight(x => !x)} style={{ padding:'5px 12px', borderRadius:8, border:`1.5px solid ${includeIntlFlight ? T.gold : T.border}`, background: includeIntlFlight ? T.goldDim : T.bg3, color: includeIntlFlight ? T.gold : T.textMid, fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>{includeIntlFlight ? '✓ Intl flights' : '+ Add intl flights'}</button>
-                {preloading && <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:T.textDim }}><Spinner /> Checking availability...</div>}
-              </div>
-              {includeIntlFlight && (
-                <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}` }}>
-                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:6 }}>Flying from</div>
-                  <select value={builderIntlOrigin} onChange={e => { setBuilderIntlOrigin(e.target.value); setIntlFlightIdx(0); }} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
-                    {INTERNATIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                  </select>
-                </div>
-              )}
-            </div>
- 
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:10 }}>Select components</div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
-                {([{ id:'flights', label:'Flights', icon:'✈', desc:'Charter & regional' }, { id:'hotels', label:'Lodges', icon:'🏕', desc:'Split across properties' }, { id:'transfers', label:'Transfers', icon:'🚗', desc:'Ground & game drives' }, { id:'activities', label:'Activities', icon:'🦁', desc:'Paid add-ons only' }] as const).map(p => (
-                  <button key={p.id} onClick={() => togglePillar(p.id)} style={{ padding:'14px 8px', borderRadius:12, border:`1.5px solid ${activePillars.includes(p.id) ? T.gold : T.border}`, background: activePillars.includes(p.id) ? T.goldDim : T.surface, cursor:'pointer', fontFamily:'inherit', position:'relative', textAlign:'center' as const }}>
-                    {activePillars.includes(p.id) && <div style={{ position:'absolute', top:6, right:6, width:14, height:14, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#0a0a0a', fontWeight:800 }}>✓</div>}
-                    <div style={{ fontSize:20, marginBottom:4 }}>{p.icon}</div>
-                    <div style={{ fontSize:12, fontWeight:600, color: activePillars.includes(p.id) ? T.gold : T.text }}>{p.label}</div>
-                    <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>{p.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
- 
-            {includeIntlFlight && relevantIntlFlights.length > 0 && (() => {
-              const fl = relevantIntlFlights[intlFlightIdx % relevantIntlFlights.length];
-              const display = Math.round((fl.netRate * totalPax + upgradeSum('intl')) * M.intl);
-              const saving  = fl.otaRate ? Math.round(fl.otaRate * totalPax - display) : null;
-              return (
-                <div style={{ marginBottom:20 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                    <div style={{ fontSize:11, color:'#60a5fa', fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const }}>✈ International · {builderIntlOrigin} → JNB</div>
-                    <div style={{ fontSize:11, color:T.textDim }}>{intlFlightIdx % relevantIntlFlights.length + 1}/{relevantIntlFlights.length}</div>
-                  </div>
-                  <PillarCard item={{ ...fl, location:`${fl.from} → ${fl.to}` }} displayRate={display} otaSaving={saving} pillarColor="#60a5fa" fmt={fmt} onPrev={() => setIntlFlightIdx(i => Math.max(0,i-1))} onNext={() => setIntlFlightIdx(i => Math.min(relevantIntlFlights.length-1,i+1))} isPrevDisabled={intlFlightIdx===0} isNextDisabled={intlFlightIdx>=relevantIntlFlights.length-1} onCustomise={() => setCustomise({ pillar:'intl', idx:intlFlightIdx })} stackLabel={null} />
-                </div>
-              );
-            })()}
- 
-            {activePillars.includes('flights') && (() => {
-              const fl = FLIGHTS[flightIdx];
-              const display = Math.round((fl.netRate * totalPax + upgradeSum('flights')) * M.flights);
-              const saving  = fl.otaRate ? Math.round(fl.otaRate * totalPax - display) : null;
-              return (
-                <div style={{ marginBottom:20 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                    <div style={{ fontSize:11, color:T.pillar.flights, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const }}>✈ Flights</div>
-                    <div style={{ fontSize:11, color:T.textDim }}>{flightIdx+1}/{FLIGHTS.length}</div>
-                  </div>
-                  <PillarCard item={fl} displayRate={display} otaSaving={saving} pillarColor={T.pillar.flights} fmt={fmt} onPrev={() => setFlightIdx(i => Math.max(0,i-1))} onNext={() => setFlightIdx(i => Math.min(FLIGHTS.length-1,i+1))} isPrevDisabled={flightIdx===0} isNextDisabled={flightIdx===FLIGHTS.length-1} onCustomise={() => setCustomise({ pillar:'flights', idx:flightIdx })} stackLabel={null} />
-                </div>
-              );
-            })()}
- 
-            {activePillars.includes('hotels') && (
-              <div style={{ marginBottom:20 }}>
-                <div style={{ fontSize:11, color:T.pillar.hotels, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const, marginBottom:10 }}>🏕 Lodges · {propertyStays.length} propert{propertyStays.length===1?'y':'ies'}</div>
-                {propertyStays.map((stay, stayIdx) => {
-                  const stack = availableHotelStack.length > 0 ? availableHotelStack : hotelsByMargin;
-                  const hotel = stack[Math.min(stay.hotelIdx, stack.length-1)] ?? stack[0];
-                  if (!hotel) return null;
-                  const { resolved, mismatches } = resolveHotelUpgrades(hotel, stay.prefs);
-                  const upgradeExtra = Object.values(resolved).reduce((s: number, v: any) => s + (v?.extra ?? 0), 0);
-                  const display = Math.round((hotel.netRate * stay.nights + upgradeExtra) * M.hotels);
-                  const saving  = hotel.otaRate ? Math.round(hotel.otaRate * stay.nights - display) : null;
-                  const avail   = availMap.get(String(hotel.id));
-                  const altDate = altDates.get(String(hotel.id));
-                  return (
-                    <div key={stay.id} className="property-card" style={{ marginBottom:12 }}>
-                      <div style={{ padding:'12px 14px', borderBottom:`0.5px solid ${T.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:T.gold }}>Property {stayIdx+1}</div>
-                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                          <button onClick={() => updateStayNights(stayIdx,-1)} disabled={stay.nights<=1} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, width:22, height:22, borderRadius:5, cursor:'pointer', fontSize:12, fontFamily:'inherit', opacity: stay.nights<=1 ? 0.35 : 1 }}>−</button>
-                          <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:54, textAlign:'center' as const }}>{stay.nights} night{stay.nights!==1?'s':''}</span>
-                          <button onClick={() => updateStayNights(stayIdx,1)} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, width:22, height:22, borderRadius:5, cursor:'pointer', fontSize:12, fontFamily:'inherit' }}>+</button>
-                          {propertyStays.length>1 && <button onClick={() => removePropertyStay(stayIdx)} style={{ background:'rgba(248,113,113,0.08)', border:'0.5px solid rgba(248,113,113,0.2)', color:T.red, borderRadius:5, padding:'3px 8px', fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>Remove</button>}
-                        </div>
-                      </div>
-                      {avail && !avail.available && altDate && (
-                        <div style={{ margin:'8px 14px 0', background:'rgba(251,146,60,0.08)', border:'0.5px solid rgba(251,146,60,0.22)', borderRadius:8, padding:'8px 12px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                          <span style={{ fontSize:12, color:'rgba(251,146,60,0.9)' }}>Not available — closest: {altDate.date} ({altDate.delta>0?'+':''}{altDate.delta} days)</span>
-                          <button onClick={() => { setCheckinDate(altDate.date); const m=new Map(altDates); m.delete(String(hotel.id)); setAltDates(m); }} style={{ background:'rgba(251,146,60,0.15)', border:'0.5px solid rgba(251,146,60,0.3)', color:'rgba(251,146,60,0.9)', borderRadius:6, padding:'3px 10px', fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>Accept</button>
-                        </div>
-                      )}
-                      {mismatches.length>0 && <div style={{ margin:'8px 14px 0', fontSize:11, color:T.amber }}>⚠ Your upgrade preference isn't available — showing closest match.</div>}
-                      <PillarCard item={{ ...hotel }} displayRate={display} otaSaving={saving} pillarColor={T.pillar.hotels} fmt={fmt} onPrev={() => setPropertyStays(prev => { const s=prev.map(x=>({...x})); s[stayIdx].hotelIdx=Math.max(0,s[stayIdx].hotelIdx-1); return s; })} onNext={() => setPropertyStays(prev => { const s=prev.map(x=>({...x})); s[stayIdx].hotelIdx=Math.min(hotelsByMargin.length-1,s[stayIdx].hotelIdx+1); return s; })} isPrevDisabled={stay.hotelIdx===0} isNextDisabled={stay.hotelIdx>=hotelsByMargin.length-1} onCustomise={() => setCustomise({ pillar:'hotels', stayId:stay.id, idx:stay.hotelIdx })} stackLabel={`${stay.hotelIdx+1}/${hotelsByMargin.length} properties`} />
-                      {stayIdx < propertyStays.length-1 && interTransfers[stayIdx] && (() => {
-                        const nextHotel = hotelsByMargin[propertyStays[stayIdx+1].hotelIdx] ?? hotelsByMargin[0];
-                        const xfer = getInterTransfer(hotel.region, nextHotel.region);
-                        return (
-                          <div className="inter-transfer" onClick={() => setInterTransfers(prev => prev.map((t,i) => i===stayIdx ? {...t,expanded:!t.expanded} : t))} style={{ margin:'8px 14px 14px' }}>
-                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                              <div style={{ fontSize:12, color:'#60a5fa', fontWeight:600 }}>{xfer.icon} {xfer.label}</div>
-                              <div style={{ fontSize:12, color:T.textMid }}>{fmt(xfer.netRate * M.transfers)} · {xfer.duration}</div>
-                            </div>
-                            {interTransfers[stayIdx].expanded && <div style={{ fontSize:12, color:T.textDim, marginTop:6 }}>{xfer.note}</div>}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  );
-                })}
-                {propertyStays.length < 3 && (
-                  <button onClick={addPropertyStay} style={{ width:'100%', padding:13, borderRadius:12, border:`1.5px dashed ${T.borderGold}`, background:'transparent', color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, marginTop:8 }} onMouseEnter={e => (e.currentTarget.style.background=T.goldDim)} onMouseLeave={e => (e.currentTarget.style.background='transparent')}>
-                    + Add property ({propertyStays.length}/3)
-                  </button>
-                )}
-              </div>
-            )}
- 
-            {activePillars.includes('transfers') && (() => {
-              const item = TRANSFERS[transferIdx];
-              const display = Math.round((item.netRate + upgradeSum('transfers')) * M.transfers);
-              const saving  = item.otaRate ? Math.round(item.otaRate - display) : null;
-              return (
-                <div style={{ marginBottom:20 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                    <div style={{ fontSize:11, color:T.pillar.transfers, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const }}>🚗 Transfers</div>
-                    <div style={{ fontSize:11, color:T.textDim }}>{transferIdx+1}/{TRANSFERS.length}</div>
-                  </div>
-                  <PillarCard item={item} displayRate={display} otaSaving={saving} pillarColor={T.pillar.transfers} fmt={fmt} onPrev={() => setTransferIdx(i => Math.max(0,i-1))} onNext={() => setTransferIdx(i => Math.min(TRANSFERS.length-1,i+1))} isPrevDisabled={transferIdx===0} isNextDisabled={transferIdx===TRANSFERS.length-1} onCustomise={() => setCustomise({ pillar:'transfers', idx:transferIdx })} stackLabel={null} />
-                </div>
-              );
-            })()}
- 
-            {activePillars.includes('activities') && (() => {
-              const item = ACTIVITIES[activityIdx];
-              const display = Math.round((item.netRate * totalPax + upgradeSum('activities')) * M.activities);
-              const saving  = item.otaRate ? Math.round(item.otaRate * totalPax - display) : null;
-              return (
-                <div style={{ marginBottom:20 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                    <div style={{ fontSize:11, color:T.pillar.activities, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const }}>🦁 Activities (paid add-ons)</div>
-                    <div style={{ fontSize:11, color:T.textDim }}>{activityIdx+1}/{ACTIVITIES.length}</div>
-                  </div>
-                  <PillarCard item={item} displayRate={display} otaSaving={saving} pillarColor={T.pillar.activities} fmt={fmt} onPrev={() => setActivityIdx(i => Math.max(0,i-1))} onNext={() => setActivityIdx(i => Math.min(ACTIVITIES.length-1,i+1))} isPrevDisabled={activityIdx===0} isNextDisabled={activityIdx===ACTIVITIES.length-1} onCustomise={() => setCustomise({ pillar:'activities', idx:activityIdx })} stackLabel={null} />
-                </div>
-              );
-            })()}
- 
-            {(activePillars.length > 0 || includeIntlFlight) && (
-              <div style={{ background:T.surface, border:`0.5px solid ${T.borderGold}`, borderRadius:16, padding:20, marginTop:8 }}>
-                <div style={{ fontSize:13, fontWeight:600, marginBottom:14, color:T.text }}>Package summary</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
-                  {propertyStays.map((stay,i) => { const h=(availableHotelStack.length>0?availableHotelStack:hotelsByMargin)[Math.min(stay.hotelIdx,hotelsByMargin.length-1)]??hotelsByMargin[0]; return h ? <div key={i} style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:T.textMid }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{h.name} · {stay.nights} night{stay.nights!==1?'s':''}</div> : null; })}
-                  {activePillars.includes('flights') && <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:T.textMid }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{FLIGHTS[flightIdx].airline} · {FLIGHTS[flightIdx].route}</div>}
-                  {includeIntlFlight && currentIntlFlight && <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:T.textMid }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{currentIntlFlight.airline} · {builderIntlOrigin} → JNB</div>}
-                  {activePillars.includes('transfers') && <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:T.textMid }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{TRANSFERS[transferIdx].type}</div>}
-                  {activePillars.includes('activities') && <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:T.textMid }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{ACTIVITIES[activityIdx].name}</div>}
-                </div>
-                <div style={{ borderTop:`0.5px solid ${T.borderGold}`, paddingTop:14 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
-                    <div><div style={{ fontSize:13, fontWeight:700, color:T.text }}>Total package</div><div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>All flights, lodges & transfers</div></div>
-                    <span style={{ fontSize:26, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(totalZAR)}</span>
-                  </div>
-                </div>
-                <button className="btn-gold" style={{ width:'100%', padding:15, fontSize:15, marginTop:16 }} onClick={handleCheckout} disabled={checkoutLoading}>
-                  {checkoutLoading ? 'Saving...' : 'Confirm & Proceed to Payment →'}
-                </button>
-                <div style={{ textAlign:'center' as const, fontSize:11, color:T.textDim, marginTop:8 }}>PayFast (ZAR) · Stripe (international) · Free cancellation on selected rates</div>
-              </div>
-            )}
-          </div>
- 
-          {customise && (() => {
-            const { pillar, stayId, idx } = customise;
-            const pColor = pillar === 'intl' ? '#60a5fa' : (T.pillar as any)[pillar] ?? T.gold;
-            let item: any, sections: any[], currentResolved: any, stayPrefs: any = {};
-            if (pillar === 'hotels' && stayId !== undefined) {
-              const stay = propertyStays.find(s => s.id === stayId)!;
-              item = hotelsByMargin[stay.hotelIdx] ?? hotelsByMargin[0];
-              const { resolved } = resolveHotelUpgrades(item, stay.prefs);
-              currentResolved = resolved; stayPrefs = stay.prefs;
-            } else if (pillar === 'flights') { item = FLIGHTS[idx]; currentResolved = upgrades.flights; }
-            else if (pillar === 'intl') { item = relevantIntlFlights[idx % relevantIntlFlights.length]; currentResolved = upgrades.intl; }
-            else if (pillar === 'transfers') { item = TRANSFERS[idx]; currentResolved = upgrades.transfers; }
-            else { item = ACTIVITIES[idx]; currentResolved = upgrades.activities; }
-            sections = Object.entries(item?.upgrades ?? {});
-            return (
-              <div className="overlay" onClick={e => { if (e.target === e.currentTarget) setCustomise(null); }}>
-                <div style={{ background:'#141414', border:`0.5px solid ${T.border}`, borderRadius:'20px 20px 0 0', width:'100%', maxWidth:600, maxHeight:'88vh', overflowY:'auto', padding:'24px 20px 40px', animation:'slideUp 0.3s ease' }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
-                    <div><div style={{ fontSize:17, fontWeight:700, color:T.text }}>Customise</div><div style={{ fontSize:13, color:T.textMid, marginTop:2 }}>{item?.name || item?.airline || item?.type}</div></div>
-                    <button onClick={() => setCustomise(null)} style={{ background:'rgba(255,255,255,0.08)', border:'none', color:T.textMid, width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>×</button>
-                  </div>
-                  {sections.map(([key, options]: any) => (
-                    <div key={key} style={{ marginBottom:20 }}>
-                      <div style={{ fontSize:11, fontWeight:600, color:T.textDim, letterSpacing:'0.07em', textTransform:'uppercase' as const, marginBottom:10 }}>{SECTION_LABELS[key] ?? key}</div>
-                      <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-                        {options.map((opt: any) => {
-                          const sel = pillar === 'hotels' ? opt.tier !== undefined && opt.tier === stayPrefs[key] : currentResolved[key]?.label === opt.label;
-                          return (
-                            <button key={opt.label} onClick={() => handleSelect(pillar, key, opt, stayId)} style={{ background: sel ? `${pColor}14` : 'rgba(255,255,255,0.04)', border:`1.5px solid ${sel ? pColor : T.border}`, borderRadius:11, padding:'11px 14px', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'inherit', textAlign:'left' as const }}>
-                              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                                <div style={{ width:16, height:16, borderRadius:4, border:`1.5px solid ${sel ? pColor : 'rgba(255,255,255,0.22)'}`, background: sel ? pColor : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:10, color:'#0a0a0a', fontWeight:800 }}>{sel ? '✓' : ''}</div>
-                                <div style={{ fontSize:13, fontWeight: sel ? 600 : 400, color: sel ? T.text : T.textMid }}>{opt.label}</div>
-                              </div>
-                              <div style={{ fontSize:13, fontWeight:600, color: opt.extra === 0 ? T.textDim : opt.extra < 0 ? T.green : pColor, whiteSpace:'nowrap', marginLeft:8 }}>{opt.extra === 0 ? 'Included' : opt.extra < 0 ? `Save ${fmt(Math.abs(opt.extra))}` : `+${fmt(opt.extra)}`}</div>
-                            </button>
-                          );
-                        })}
-                      </div>
+              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:11,padding:'18px'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+                  {[['Bank name','FNB (First National Bank)'],['Account name','Singita Sabi Sand (Pty) Ltd'],['Account number','62•••••••89'],['Branch code','250655'],['Account type','Business Cheque'],['SWIFT code','FIRNZAJJ']].map(([l,v])=>(
+                    <div key={l} style={{background:T.bg,borderRadius:8,padding:'10px 12px'}}>
+                      <div style={{fontSize:10,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.06em',marginBottom:3}}>{l}</div>
+                      <div style={{fontSize:13,color:T.text,fontWeight:600}}>{v}</div>
                     </div>
                   ))}
-                  <button className="btn-gold" style={{ width:'100%', padding:14, fontSize:15, marginTop:8 }} onClick={() => setCustomise(null)}>Confirm selections →</button>
                 </div>
+                <button onClick={()=>submitChange('banking',{reason:'Bank account change request'},2)} style={{padding:'9px 18px',background:'rgba(248,113,113,0.08)',border:'0.5px solid rgba(248,113,113,0.3)',borderRadius:8,color:T.red,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Request banking detail change (requires 2 approvals)</button>
               </div>
-            );
-          })()}
- 
-          {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={() => setChatOpen(false)} edition={edition} />}
-        </div>
-      )}
-    </>
-  );
-}
- 
-// ─────────────────────────────────────────────────────────────────────────────
-// BRIEF SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
-function BriefScreen({ nights, setNights, adults, setAdults, children, setChildren, onBuild }: any) {
-  const [brief, setBrief] = useState('');
-  const maxLen = 1000;
-  const ready = brief.trim().length >= 30;
-  const hasDestination = /sabi|kruger|okavango|botswana|kenya|tanzania|zimbabwe|zambia|south africa|victoria falls|mara|serengeti|rwanda|uganda/i.test(brief);
-  const hasTheme       = /honeymoon|anniversary|family|romantic|adventure|wildlife|beach|gorilla|balloon|dive/i.test(brief);
-  const hasDate        = /january|february|march|april|may|june|july|august|september|october|november|december|summer|winter|christmas|school holiday/i.test(brief);
-  const hasBudget      = /R\s?\d|budget|afford|spend|cost/i.test(brief);
-  const PROMPTS = [
-    "I'd love a honeymoon in the Okavango — very private, great food, not up at 5am every day.",
-    "10-day family safari with kids aged 8 and 12. Malaria-free preferred. Budget around R250,000.",
-    "We've done Kenya twice. Want to explore southern Africa — Zimbabwe, Zambia, maybe Botswana.",
-    "First safari. Two of us. No idea where to go but we want the Big Five and a wow moment.",
-  ];
-  return (
-    <div>
-      <div style={{ position:'relative', marginBottom:16 }}>
-        <textarea value={brief} onChange={e => setBrief(e.target.value.slice(0,maxLen))} placeholder="e.g. We're celebrating our 20th anniversary. We've always wanted to see the Okavango from the air and spend time somewhere very private..." rows={8} style={{ width:'100%', background:T.surface, border:`1.5px solid ${brief.length>0?T.borderGold:T.border}`, borderRadius:14, padding:'18px 20px', fontSize:14, color:T.text, outline:'none', fontFamily:"'DM Sans', sans-serif", lineHeight:1.7, resize:'vertical' as const }} />
-        <div style={{ position:'absolute', bottom:10, right:14, fontSize:11, color:T.textDim }}>{brief.length}/{maxLen}</div>
-      </div>
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:20 }}>
-        {[{ label:'Destination', detected:hasDestination, hint:'Where in Africa?' }, { label:'Occasion / theme', detected:hasTheme, hint:'What kind of trip?' }, { label:'Travel dates', detected:hasDate, hint:'When are you thinking?' }, { label:'Budget', detected:hasBudget, hint:"What's your budget?" }].map(tag => (
-          <div key={tag.label} style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 12px', borderRadius:20, border:`0.5px solid ${tag.detected?T.borderGold:T.border}`, background: tag.detected?T.goldDim:'transparent', fontSize:12, color: tag.detected?T.gold:T.textDim }}>
-            <span>{tag.detected?'✓':'·'}</span>{tag.detected?tag.label:tag.hint}
-          </div>
-        ))}
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:24 }}>
-        {[{ label:'Nights', value:nights, options:[5,7,10,12,14,21], onChange:setNights, suffix:'n' }, { label:'Adults', value:adults, options:[1,2,3,4,6], onChange:setAdults, suffix:'' }, { label:'Children', value:children, options:[0,1,2,3,4], onChange:setChildren, suffix:'' }].map(p => (
-          <div key={p.label} style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'14px 16px' }}>
-            <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:8 }}>{p.label}</div>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {p.options.map(o => (
-                <button key={o} onClick={() => p.onChange(o)} style={{ padding:'5px 10px', borderRadius:8, border:`0.5px solid ${p.value===o?T.borderGold:T.border}`, background: p.value===o?T.goldDim:'transparent', color: p.value===o?T.gold:T.textDim, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
-                  {o}{p.suffix}
-                </button>
-              ))}
             </div>
-          </div>
-        ))}
-      </div>
-      {brief.length < 10 && (
-        <div style={{ marginBottom:24 }}>
-          <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', marginBottom:10 }}>Examples — tap to use</div>
-          {PROMPTS.map((p,i) => (
-            <button key={i} onClick={() => setBrief(p)} style={{ display:'block', width:'100%', textAlign:'left' as const, padding:'12px 16px', background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:10, color:T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit', lineHeight:1.5, marginBottom:8 }}>"{p}"</button>
-          ))}
+          )}
+          {tab==='audit'&&(
+            <div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:16}}>Audit Log</div>
+              <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:11,overflow:'hidden'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1.5fr 2fr 1fr 1fr',gap:8,padding:'9px 14px',borderBottom:`0.5px solid ${T.border}`,fontSize:9,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.07em'}}>
+                  <div>Action</div><div>Detail</div><div>By</div><div>Date</div>
+                </div>
+                {[
+                  {action:'Profile viewed',detail:'Full supplier dashboard opened',by:'JD (Admin)',date:'2026-04-28'},
+                  {action:'Content score updated',detail:'Score moved from 82 to 88',by:'System',date:'2026-04-15'},
+                  {action:'Booking confirmed',detail:'TSE-FUT001 — Van der Berg',by:'Sarah Mitchell',date:'2026-04-01'},
+                  {action:'Bank details verified',detail:'FNB account confirmed',by:'Tom van der Berg',date:'2026-03-11'},
+                ].map((a,i)=>(
+                  <div key={i} style={{display:'grid',gridTemplateColumns:'1.5fr 2fr 1fr 1fr',gap:8,padding:'10px 14px',borderBottom:`0.5px solid ${T.border}`,background:i%2===1?'rgba(255,255,255,0.01)':'transparent',alignItems:'center'}}>
+                    <div style={{fontSize:12,color:T.text,fontWeight:600}}>{a.action}</div>
+                    <div style={{fontSize:11,color:T.textMid}}>{a.detail}</div>
+                    <div style={{fontSize:11,color:T.textDim}}>{a.by}</div>
+                    <div style={{fontSize:10,color:T.textDim}}>{a.date}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!['overview','bookings','banking','audit'].includes(tab)&&(
+            <div style={{textAlign:'center',padding:'60px 20px'}}>
+              <div style={{fontSize:32,marginBottom:12}}>{tab==='rates'?'💰':tab==='content'?'📸':tab==='trust'?'⭐':tab==='payments'?'🏦':tab==='contacts'?'👥':'📋'}</div>
+              <div style={{fontSize:16,fontWeight:600,color:T.text,marginBottom:8,textTransform:'capitalize' as const}}>{tab} — Managed in CMS</div>
+              <div style={{fontSize:13,color:T.textMid,marginBottom:20,maxWidth:400,margin:'0 auto 20px'}}>The full {tab} module is managed in the Content CMS. All edits go through the approval workflow.</div>
+              <div style={{display:'flex',gap:10,justifyContent:'center'}}>
+                <a href={`/admin/suppliers/${supplier.id}/content`} target="_blank" rel="noopener noreferrer"
+                  style={{padding:'10px 22px',background:`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:9,color:'#0a0a0a',fontSize:13,fontWeight:700,textDecoration:'none'}}>
+                  Open {tab} in CMS ↗
+                </a>
+                <button onClick={()=>submitChange(tab,{},1)} style={{padding:'10px 22px',background:T.goldDim,border:`0.5px solid ${T.borderGold}`,borderRadius:9,color:T.gold,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Recommend change</button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-      <button onClick={() => { if (ready) onBuild(brief + (nights>0?` Trip length: ${nights} nights.`:'') + (adults>0?` Travellers: ${adults} adults${children>0?`, ${children} children`:''}.`:'')); }} disabled={!ready} style={{ width:'100%', padding:18, background: ready?`linear-gradient(135deg,${T.gold},${T.goldLight})`:'rgba(255,255,255,0.06)', border:'none', borderRadius:12, color: ready?'#0a0a0a':T.textDim, fontSize:16, fontWeight:700, cursor: ready?'pointer':'not-allowed', fontFamily:'inherit' }}>
-        {ready ? '✦ Build My Journey →' : `Write at least ${30-brief.trim().length} more characters to continue`}
-      </button>
+      </div>
     </div>
-  );
+  )
 }
-ENDOFPART2
-echo "Part 3 written: $(wc -l < /home/claude/page_part3.tsx) lines"
+
+export default function AdminPage(){
+  const [authed,setAuthed]=useState(false)
+  const [active,setActive]=useState('dashboard')
+  const [userName,setUserName]=useState('Admin')
+  const [viewingSupplier,setViewingSupplier]=useState<any>(null)
+  useEffect(()=>{
+    try{
+      const sess=sessionStorage.getItem('tse_session')
+      if(sess){
+        const s=JSON.parse(sess)
+        if(s.type==='edition'){localStorage.setItem('tse_session',sess);setUserName(s.name);setAuthed(true)}
+        else if(s.type==='supplier'){window.location.href='/supplier'}
+      }
+    }catch{}
+  },[])
+  if(!authed)return <Login onLogin={(name:string)=>{setUserName(name);setAuthed(true)}}/>
+  const panels:Record<string,JSX.Element>={
+    dashboard:<Dashboard setActive={setActive} userName={userName}/>,
+    bookings:<Bookings/>,
+    suppliers:<Suppliers onViewSupplier={setViewingSupplier}/>,
+    stack:<StackManager/>,
+    knowledge:<KnowledgeBase/>,
+    itineraries:<Itineraries/>,
+    users:<UserManagement/>
+  }
+  return(
+    <div style={{minHeight:'100vh',background:T.bg,display:'flex',fontFamily:'Arial,sans-serif',color:T.text}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap');*{box-sizing:border-box}`}</style>
+      {viewingSupplier&&<SupplierDashboard supplier={viewingSupplier} onClose={()=>setViewingSupplier(null)}/>}
+      <div style={{width:220,background:T.bg2,borderRight:`0.5px solid ${T.border}`,display:'flex',flexDirection:'column',flexShrink:0,position:'sticky',top:0,height:'100vh',overflowY:'auto'}}>
+        <div style={{padding:'20px 16px',borderBottom:`0.5px solid ${T.border}`}}>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:16,color:T.gold,fontWeight:700}}>✦ The Safari Edition</div>
+          <div style={{fontSize:11,color:T.textDim,marginTop:3}}>Admin Portal</div>
+        </div>
+        <nav style={{padding:'8px',flex:1}}>
+          {NAV.map(n=>(
+            <button key={n.id} onClick={()=>setActive(n.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:9,border:'none',background:active===n.id?T.goldDim:'transparent',color:active===n.id?T.gold:T.textMid,fontSize:13,cursor:'pointer',fontFamily:'inherit',textAlign:'left',marginBottom:2}}>
+              <span style={{fontSize:16}}>{n.icon}</span>{n.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{padding:'16px',borderTop:`0.5px solid ${T.border}`,display:'flex',flexDirection:'column',gap:8}}>
+          <div style={{fontSize:11,color:T.textDim}}>Signed in as <span style={{color:T.text}}>{userName}</span></div>
+          <a href="/" style={{fontSize:12,color:T.textDim,textDecoration:'none'}}>← Back to site</a>
+          <button onClick={()=>{sessionStorage.removeItem('tse_session');setAuthed(false)}} style={{padding:'6px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:7,color:T.textDim,fontSize:11,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>Sign out</button>
+        </div>
+      </div>
+      <div style={{flex:1,overflow:'auto',padding:'28px 32px'}}>{panels[active]}</div>
+    </div>
+  )
+}
