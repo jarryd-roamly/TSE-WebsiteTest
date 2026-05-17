@@ -1033,8 +1033,8 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
           {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={() => setChatOpen(false)} edition={edition} />}
         </div>
       )}
-
-     {/* ── INSPIRE INPUT ────────────────────────────────────────────────── */}
+ 
+      {/* ── INSPIRE INPUT ────────────────────────────────────────────────── */}
       {screen === 'inspire-input' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
           <Nav {...navProps} />
@@ -1055,7 +1055,7 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
               </div>
               {needsIntlFlight === true && (
                 <div>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Flying from</div>
+                             <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Flying from</div>
                   <select value={intlOrigin} onChange={e => setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
                     {INTERNATIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
                   </select>
