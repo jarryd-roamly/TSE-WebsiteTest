@@ -862,9 +862,7 @@ function Suppliers({onViewSupplier}:{onViewSupplier:(s:any)=>void}){
               style={{width:36,height:20,borderRadius:10,border:'none',background:s.is_active?T.green:'rgba(255,255,255,0.1)',cursor:'pointer',position:'relative' as const,transition:'background 0.2s'}}>
               <div style={{position:'absolute' as const,top:2,left:s.is_active?18:2,width:16,height:16,borderRadius:'50%',background:'white',transition:'left 0.2s'}}/>
             </button>
-            <a href="/supplier" target="_blank" rel="noopener noreferrer"
-              style={{fontSize:11,color:T.blue,textDecoration:'none',padding:'4px 8px',border:'0.5px solid rgba(96,165,250,0.25)',borderRadius:6,background:'rgba(96,165,250,0.06)',textAlign:'center' as const,display:'block'}}>
-              Portal ↗
+            <a href={`/admin/suppliers/${s.id}/content`} target="_blank" rel="noopener noreferrer"
             </a>
           </div>
         ))}
@@ -1319,7 +1317,7 @@ function SupplierDashboard({supplier, onClose}:{supplier:any, onClose:()=>void})
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>submitChange('general',{field:'name',current:supplier.name},1)}
             style={{padding:'6px 14px',borderRadius:8,border:`0.5px solid ${T.borderGold}`,background:T.goldDim,color:T.gold,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Recommend change</button>
-          <a href="/supplier" target="_blank" rel="noopener noreferrer"
+          <a href={`/admin/suppliers/${supplier.id}/content`} target="_blank" rel="noopener noreferrer"
             style={{padding:'6px 14px',borderRadius:8,border:'0.5px solid rgba(96,165,250,0.3)',background:'rgba(96,165,250,0.06)',color:T.blue,fontSize:11,textDecoration:'none'}}>
             Open supplier portal ↗
           </a>
@@ -1510,9 +1508,7 @@ function SupplierDashboard({supplier, onClose}:{supplier:any, onClose:()=>void})
                 The full {tab} module is managed by the supplier in their portal. You can view and recommend changes, but all edits go through the approval workflow.
               </div>
               <div style={{display:'flex',gap:10,justifyContent:'center'}}>
-                <a href="/supplier" target="_blank" rel="noopener noreferrer"
-                  style={{padding:'10px 22px',background:`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:9,color:'#0a0a0a',fontSize:13,fontWeight:700,textDecoration:'none'}}>
-                  Open {tab} in Supplier Portal ↗
+                href={`/admin/suppliers/${supplier.id}/content`}
                 </a>
                 <button onClick={()=>submitChange(tab,{},1)}
                   style={{padding:'10px 22px',background:T.goldDim,border:`0.5px solid ${T.borderGold}`,borderRadius:9,color:T.gold,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
