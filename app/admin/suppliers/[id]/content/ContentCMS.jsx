@@ -328,6 +328,9 @@ function OverviewTile({ supplier, scoreData, onUpdate, uploadedBy, onFlash }) {
   const [editing, setEditing] = useState(null);
   const [descChecking, setDescChecking] = useState(false);
   const [descCheckResult, setDescCheckResult] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const heroImgRef = useRef();
+  const heroReelRef = useRef();
   const isAdmin = uploadedBy === "admin";
   const primaryImg = (supplier.images??[]).find(i=>i.is_primary)??(supplier.images??[])[0];
   const approvedReel = (supplier.reels??[]).find(r=>r.status==="approved");
@@ -345,16 +348,78 @@ function OverviewTile({ supplier, scoreData, onUpdate, uploadedBy, onFlash }) {
     setDescCheckResult(r); setDescChecking(false);
   };
 
+  // Upload hero image — sets as primary, room_type: exterior
+  const handleHeroImage = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    onFlash("⟳ Uploading hero image…");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("supplier_id", supplier.id);
+      fd.append("media_type", "images");
+      fd.append("caption", "Hero image");
+      fd.append("room_type", "exterior");
+      fd.append("is_primary", "true");
+      fd.append("uploaded_by", uploadedBy);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.success) {
+        const dims = await new Promise(resolve => { const img = new window.Image(); img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight }); img.onerror = () => resolve({ width: 0, height: 0 }); img.src = data.url; });
+        const newImg = { id: data.image_id, url: data.url, path: data.path, caption: "Hero image", room_type: "exterior", is_primary: true, order: 0, status: isAdmin ? "approved" : "pending", ...dims };
+        const updatedImages = (supplier.images ?? []).map(i => ({ ...i, is_primary: false }));
+        updatedImages.unshift(newImg);
+        onUpdate({ images: updatedImages });
+        onFlash(isAdmin ? "✓ Hero image uploaded and live" : "✓ Hero image uploaded — pending review");
+      } else { onFlash("✗ " + (data.error ?? "Upload failed")); }
+    } catch { onFlash("✗ Upload error — try again"); }
+    setUploading(false);
+  };
+
+  // Upload hero reel — sets as arrival reel
+  const handleHeroReel = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    onFlash("⟳ Uploading reel…");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("supplier_id", supplier.id);
+      fd.append("media_type", "reels");
+      fd.append("caption", "Property reel");
+      fd.append("reel_type", "arrival");
+      fd.append("uploaded_by", uploadedBy);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.success) {
+        const duration = await new Promise(resolve => { const v = document.createElement("video"); v.preload = "metadata"; v.onloadedmetadata = () => { URL.revokeObjectURL(v.src); resolve(v.duration); }; v.onerror = () => resolve(0); v.src = URL.createObjectURL(file); });
+        const newReel = { id: data.reel_id, url: data.url, path: data.path, thumbnail: null, type: "arrival", caption: "Property reel", approved: isAdmin, duration_s: Math.round(duration), status: isAdmin ? "approved" : "pending" };
+        onUpdate({ reels: [...(supplier.reels ?? []), newReel] });
+        onFlash(isAdmin ? "✓ Reel uploaded and live" : "✓ Reel uploaded — pending review");
+      } else { onFlash("✗ " + (data.error ?? "Upload failed")); }
+    } catch { onFlash("✗ Upload error — try again"); }
+    setUploading(false);
+  };
+
   return (
     <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,overflow:"hidden",marginBottom:16}}>
       {/* Hero + reel */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 260px",height:210}}>
+        {/* Hero image slot */}
         <div style={{position:"relative",overflow:"hidden",background:T.bg2}}>
           {primaryImg
             ? <img src={primaryImg.url} alt={supplier.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
             : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:8}}><div style={{fontSize:32}}>🏕</div><div style={{fontSize:12,color:T.textDim}}>No primary image</div></div>
           }
           <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(7,8,15,0.92) 0%,rgba(7,8,15,0.15) 55%,transparent 100%)"}}/>
+          {/* Upload button — top right of hero */}
+          <div style={{position:"absolute",top:10,right:10}}>
+            <button onClick={() => heroImgRef.current?.click()} disabled={uploading}
+              style={{padding:"5px 10px",background:"rgba(0,0,0,0.6)",border:`0.5px solid ${T.borderGold}`,borderRadius:7,color:T.gold,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(8px)"}}>
+              {uploading ? "⟳" : "📸 Change hero"}
+            </button>
+            <input ref={heroImgRef} type="file" accept="image/*" style={{display:"none"}} onChange={e => { if (e.target.files[0]) handleHeroImage(e.target.files[0]); e.target.value = ""; }}/>
+          </div>
           <div style={{position:"absolute",bottom:14,left:16,right:16,display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
             <div>
               <div style={{fontSize:20,fontWeight:700,color:"#fff",fontFamily:"'Playfair Display',serif",lineHeight:1.2}}>{supplier.name}</div>
@@ -363,7 +428,16 @@ function OverviewTile({ supplier, scoreData, onUpdate, uploadedBy, onFlash }) {
             <ScoreRing score={scoreData.total} size={56}/>
           </div>
         </div>
+        {/* Reel slot */}
         <div style={{background:T.bg2,position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderLeft:`0.5px solid ${T.border}`}}>
+          {/* Upload reel button — top right of reel slot */}
+          <div style={{position:"absolute",top:10,right:10,zIndex:10}}>
+            <button onClick={() => heroReelRef.current?.click()} disabled={uploading}
+              style={{padding:"5px 10px",background:"rgba(0,0,0,0.6)",border:`0.5px solid ${T.borderGold}`,borderRadius:7,color:T.gold,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(8px)"}}>
+              {uploading ? "⟳" : "🎬 Upload reel"}
+            </button>
+            <input ref={heroReelRef} type="file" accept="video/*" style={{display:"none"}} onChange={e => { if (e.target.files[0]) handleHeroReel(e.target.files[0]); e.target.value = ""; }}/>
+          </div>
           {approvedReel?.thumbnail ? (
             <div style={{position:"relative",width:"100%",height:"100%"}}>
               <img src={approvedReel.thumbnail} alt="Reel" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
@@ -441,7 +515,7 @@ function OverviewTile({ supplier, scoreData, onUpdate, uploadedBy, onFlash }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ROOM TYPE TILE
 // ─────────────────────────────────────────────────────────────────────────────
-function RoomTile({ room, onUpdate, onRemove, uploadedBy, onFlash }) {
+function RoomTile({ room, supplierId, onUpdate, onRemove, uploadedBy, onFlash }) {
   const [editingField, setEditingField] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const isAdmin = uploadedBy === "admin";
@@ -461,9 +535,9 @@ function RoomTile({ room, onUpdate, onRemove, uploadedBy, onFlash }) {
     for (const file of files) {
       try {
         const fd = new FormData();
-        fd.append("file",file); fd.append("supplier_id",room.id);
+        fd.append("file",file); fd.append("supplier_id", supplierId);
         fd.append("media_type","images"); fd.append("caption",file.name.replace(/\.[^.]+$/,"").replace(/[-_]/g," "));
-        fd.append("room_type",room.category); fd.append("is_primary",String(room.images.length===0&&uploaded.length===0));
+        fd.append("room_type",room.category); fd.append("is_primary",String((room.images??[]).length===0&&uploaded.length===0));
         fd.append("uploaded_by",uploadedBy);
         const res = await fetch("/api/upload",{method:"POST",body:fd});
         const data = await res.json();
@@ -565,7 +639,7 @@ function RoomTile({ room, onUpdate, onRemove, uploadedBy, onFlash }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ACTIVITY TILE
 // ─────────────────────────────────────────────────────────────────────────────
-function ActivityTile({ activity, onUpdate, onRemove, uploadedBy, onFlash }) {
+function ActivityTile({ activity, supplierId, onUpdate, onRemove, uploadedBy, onFlash }) {
   const [editingField, setEditingField] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const isAdmin = uploadedBy === "admin";
@@ -583,7 +657,7 @@ function ActivityTile({ activity, onUpdate, onRemove, uploadedBy, onFlash }) {
     for (const file of files) {
       try {
         const fd = new FormData();
-        fd.append("file",file); fd.append("supplier_id",activity.id);
+        fd.append("file",file); fd.append("supplier_id", supplierId);
         fd.append("media_type","images"); fd.append("caption",file.name.replace(/\.[^.]+$/,"").replace(/[-_]/g," "));
         fd.append("room_type","activity"); fd.append("uploaded_by",uploadedBy);
         const res = await fetch("/api/upload",{method:"POST",body:fd});
@@ -669,10 +743,51 @@ function ActivityTile({ activity, onUpdate, onRemove, uploadedBy, onFlash }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function SupplierContentPanel({ uploadedBy = "supplier" }) {
   const [supplier, setSupplier] = useState(DEMO_SUPPLIER);
+  const [loading, setLoading] = useState(true);
   const [flash, setFlash] = useState("");
   const [section, setSection] = useState("tiles");
   const isAdmin = uploadedBy === "admin";
   const reelInputRef = useRef();
+
+  // Load real supplier from URL — /admin/suppliers/[uuid]/content
+  useEffect(() => {
+    const parts = window.location.pathname.split("/");
+    const idx = parts.indexOf("suppliers");
+    const supplierId = idx !== -1 ? parts[idx + 1] : null;
+    if (!supplierId || supplierId.length < 10) { setLoading(false); return; }
+    fetch(`${SB_URL}/rest/v1/suppliers?id=eq.${supplierId}&select=*`, {
+      headers: {
+        apikey: SB_KEY,
+        Authorization: `Bearer ${SB_KEY}`,
+      }
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data?.[0]) {
+        const s = data[0];
+        setSupplier({
+          ...DEMO_SUPPLIER,
+          id:          s.id,
+          name:        s.name         ?? DEMO_SUPPLIER.name,
+          region_slug: s.region_slug  ?? DEMO_SUPPLIER.region_slug,
+          short_tagline:       s.short_tagline ?? "",
+          description:         s.description  ?? "",
+          images:   Array.isArray(s.images) ? s.images : [],
+          reels:    Array.isArray(s.reels)  ? s.reels  : [],
+          room_types:  Array.isArray(s.room_types)  ? s.room_types  : DEMO_SUPPLIER.room_types,
+          activities:  Array.isArray(s.activities)   ? s.activities  : DEMO_SUPPLIER.activities,
+          keywords:    s.tags ?? [],
+          social:      s.social ?? { instagram: "", facebook: "", youtube: "" },
+          experience_tags: s.experience_tags ?? [],
+          traveller_tags:  s.traveller_tags  ?? [],
+          theme_tags:      s.theme_tags      ?? [],
+          last_content_update: s.updated_at ?? null,
+        });
+      }
+    })
+    .catch(console.error)
+    .finally(() => setLoading(false));
+  }, []);
 
   const onFlash = (msg) => { setFlash(msg); setTimeout(()=>setFlash(""),3000); };
   const update = (patch) => setSupplier(s=>({...s,...patch,last_content_update:new Date().toISOString()}));
@@ -739,6 +854,7 @@ function SupplierContentPanel({ uploadedBy = "supplier" }) {
         </div>
       </div>
 
+      {loading&&<div style={{fontSize:13,color:T.textDim,padding:"20px 0",textAlign:"center"}}>⟳ Loading supplier…</div>}
       {flash&&<div style={{background:T.greenDim,border:"0.5px solid rgba(74,222,128,0.3)",borderRadius:9,padding:"10px 16px",marginBottom:14,fontSize:13,color:T.green}}>{flash}</div>}
 
       {/* Section nav */}
@@ -764,7 +880,7 @@ function SupplierContentPanel({ uploadedBy = "supplier" }) {
             <button onClick={addRoom} style={{padding:"6px 14px",background:`linear-gradient(135deg,${T.gold},#f0c040)`,border:"none",borderRadius:8,color:"#0a0a0a",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add room</button>
           </div>
           {supplier.room_types.map(room=>(
-            <RoomTile key={room.id} room={room} onUpdate={updateRoom} onRemove={removeRoom} uploadedBy={uploadedBy} onFlash={onFlash}/>
+            <RoomTile key={room.id} room={room} supplierId={supplier.id} onUpdate={updateRoom} onRemove={removeRoom} uploadedBy={uploadedBy} onFlash={onFlash}/>
           ))}
           {supplier.room_types.length===0&&<div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"24px",textAlign:"center",fontSize:13,color:T.textDim}}>No room types added yet.</div>}
 
@@ -776,7 +892,7 @@ function SupplierContentPanel({ uploadedBy = "supplier" }) {
             <button onClick={addActivity} style={{padding:"6px 14px",background:`linear-gradient(135deg,${T.gold},#f0c040)`,border:"none",borderRadius:8,color:"#0a0a0a",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add activity</button>
           </div>
           {supplier.activities.map(act=>(
-            <ActivityTile key={act.id} activity={act} onUpdate={updateActivity} onRemove={removeActivity} uploadedBy={uploadedBy} onFlash={onFlash}/>
+            <ActivityTile key={act.id} activity={act} supplierId={supplier.id} onUpdate={updateActivity} onRemove={removeActivity} uploadedBy={uploadedBy} onFlash={onFlash}/>
           ))}
           {supplier.activities.length===0&&<div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"24px",textAlign:"center",fontSize:13,color:T.textDim}}>No paid activities added yet.</div>}
         </div>
