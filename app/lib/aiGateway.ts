@@ -72,7 +72,13 @@ export async function runPlannerEngine(params: {
   const content = await callAI({
     model: ai.plannerModel,
     max_tokens: ai.maxPlanTokens,
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    system: `You are a luxury safari journey designer. You follow instructions exactly.
+CRITICAL RULES — never break these:
+1. When a specific destination or region is provided, use ONLY that destination. Never add extra destinations.
+2. Use ONLY the property names from the supplier list provided. Never invent or substitute properties.
+3. Total nights across all cities must exactly match the number specified. Not one more, not one less.
+4. If one destination is specified, that destination gets ALL the nights. One city in the response.
+5. Respond ONLY with the requested JSON structure. No markdown, no backticks, no explanation, no preamble.`,
     messages: [{
       role: 'user',
       content: `${params.kbContext}${params.promptBody}
