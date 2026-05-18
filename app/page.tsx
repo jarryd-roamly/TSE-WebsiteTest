@@ -2,7 +2,7 @@
  
 // ═══════════════════════════════════════════════════════════════════════════════
 // THE TRAVEL CATALOGUE — page.tsx
-// Safari Edition · v3.1 · Login gate + Edition dropdown + Region images + KB expanded
+// Safari Edition · v3.2 · Supabase regions + brief planner fix + slug matching
 // ═══════════════════════════════════════════════════════════════════════════════
  
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -65,12 +65,48 @@ const OTHER_EDITIONS = [
   { id:'city',      name:'The City Edition',      icon:'🌆', color:'#fb923c', desc:'New York · Tokyo · Paris' },
 ];
  
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH 1 — REGIONS: Now uses actual Supabase region slugs
+// ─────────────────────────────────────────────────────────────────────────────
 const REGIONS = [
-  { id: 'southern-africa', label: 'Southern Africa', icon: '🌍' },
-  { id: 'east-africa',     label: 'East Africa',     icon: '🦒' },
-  { id: 'indian-ocean',    label: 'Indian Ocean',    icon: '🌊' },
-  { id: 'inspire-me',      label: 'Inspire Me',      icon: '✨' },
+  { id: 'kruger',       label: 'Kruger / Sabi Sand',  icon: '🐆', slug: 'kruger-sabi-sand' },
+  { id: 'okavango',     label: 'Okavango Delta',       icon: '🛶', slug: 'okavango-delta'   },
+  { id: 'cape-town',    label: 'Cape Town',            icon: '🏔', slug: 'cape-town'        },
+  { id: 'madikwe',      label: 'Madikwe',              icon: '🦏', slug: 'madikwe'          },
+  { id: 'chobe',        label: 'Chobe / Vic Falls',    icon: '🌊', slug: 'chobe-vic-falls'  },
+  { id: 'masai-mara',   label: 'Masai Mara',           icon: '🦒', slug: 'masai-mara'       },
+  { id: 'inspire-me',   label: 'Inspire Me',           icon: '✨', slug: null               },
 ];
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH 3 — SLUG DICTIONARY: deterministic city → region_slug mapping
+// ─────────────────────────────────────────────────────────────────────────────
+const CITY_TO_SLUG: Record<string, string> = {
+  'kruger':                    'kruger-sabi-sand',
+  'sabi sand':                 'kruger-sabi-sand',
+  'kruger / sabi sand':        'kruger-sabi-sand',
+  'kruger/sabi sand':          'kruger-sabi-sand',
+  'sabi sands':                'kruger-sabi-sand',
+  'okavango':                  'okavango-delta',
+  'okavango delta':            'okavango-delta',
+  'cape town':                 'cape-town',
+  'madikwe':                   'madikwe',
+  'chobe':                     'chobe-vic-falls',
+  'victoria falls':            'chobe-vic-falls',
+  'chobe / victoria falls':    'chobe-vic-falls',
+  'chobe/victoria falls':      'chobe-vic-falls',
+  'vic falls':                 'chobe-vic-falls',
+  'victoria falls, zimbabwe':  'chobe-vic-falls',
+  'masai mara':                'masai-mara',
+  'masai mara, kenya':         'masai-mara',
+  'the masai mara':            'masai-mara',
+  'phinda':                    'phinda',
+  'mozambique':                'mozambique',
+  'bazaruto':                  'mozambique',
+  'bwindi':                    'bwindi',
+  'bwindi, uganda':            'bwindi',
+  'kalahari':                  'kalahari',
+};
  
 const THEMES = [
   { id: 'safari',    label: 'Big Five Safari',  icon: '🦁' },
@@ -138,7 +174,6 @@ const TRANSFERS = [
   { id: 4, type: 'Helicopter Transfer',          vehicle: 'Robinson R44 or similar',   trustScore: 96, netRate: 8500, otaRate: null,  image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact: 'Arrive in style — aerial views before you land.', upgrades: { vehicles: [{ label: 'Shared helicopter', extra: 0 }, { label: 'Private charter', extra: 6500 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Champagne on arrival', extra: 480 }] } },
 ];
  
-// PAID ADD-ON ACTIVITIES ONLY — free/included activities are part of lodge rate
 const ACTIVITIES = [
   { id: 2, name: 'Bush Walk with Armed Ranger',    type: 'Adventure',    duration: '3 hours · dawn',              trustScore: 97, netRate: 1800, otaRate: 2600, image: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact: 'Tracks, plants — the detail you miss from a vehicle.', upgrades: { options: [{ label: 'Group walk', extra: 0 }, { label: 'Private walk', extra: 2400 }], extras: [{ label: 'Standard', extra: 0 }, { label: 'Breakfast in the bush', extra: 680 }] } },
   { id: 3, name: 'Hot Air Balloon Safari',         type: 'Luxury',       duration: '3 hours · dawn',              trustScore: 94, netRate: 4800, otaRate: 7200, image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact: 'The Mara from above — one of the great experiences on Earth.', upgrades: { options: [{ label: 'Shared basket', extra: 0 }, { label: 'Private basket', extra: 8500 }], extras: [{ label: 'Champagne breakfast', extra: 0 }, { label: 'Private bush breakfast', extra: 1200 }] } },
@@ -262,6 +297,7 @@ const SECTION_LABELS: Record<string, string> = {
   classes: 'Cabin class', baggage: 'Baggage', vehicles: 'Vehicle',
   extras: 'Add-ons', options: 'Option',
 };
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -307,7 +343,6 @@ function mapSupplierRow(s: any): Hotel {
   const netRate = Number(s.net_rate_per_night) || 25000;
   const displayRate = Number(s.display_rate_per_night) || Math.round(netRate * 1.15);
  
-  // Pull primary image from images JSONB array
   let images: any[] = [];
   try { images = Array.isArray(s.images) ? s.images : (s.images ? JSON.parse(s.images) : []); } catch { images = []; }
   const primaryImage = images.find((img: any) => img.is_primary && img.status === 'approved')
@@ -348,7 +383,6 @@ function getInterTransfer(regionA: string, regionB: string) {
 }
  
 function buildFallbackItinerary(nights: number, budget: number, mode: InputMode, singleDest?: string): Itinerary {
-  // Single destination fallback
   if (singleDest) {
     const destInfo: Record<string, { country: string; why: string; highlights: string[] }> = {
       'Cape Town':            { country: 'South Africa', why: 'World-class city, mountain, winelands — the perfect safari bookend.', highlights: ['Table Mountain', 'Winelands day trip', 'V&A Waterfront'] },
@@ -373,7 +407,6 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode,
     };
   }
  
-  // Two-destination fallback
   return {
     title: `${nights}-Night Safari Journey`,
     summary: `A perfectly sequenced ${nights}-night journey across two of Africa's finest wilderness areas.`,
@@ -441,7 +474,6 @@ function Nav({ edition, setScreen, currency, setCurrency, chatOpen, setChatOpen,
   return (
     <nav style={{ position:'sticky', top:0, zIndex:100, background:'rgba(10,10,10,0.96)', backdropFilter:'blur(16px)', borderBottom:`0.5px solid ${T.border}`, padding:'0 20px' }}>
       <div style={{ maxWidth:900, margin:'0 auto', height:58, display:'flex', alignItems:'center', justifyContent:'space-between', position:'relative' }}>
-        {/* LEFT — Edition dropdown */}
         <div style={{ position:'relative' }}>
           <button onClick={() => setEditionOpen((x: boolean) => !x)} style={{ background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6 }}>
             <span style={{ fontSize:14, fontWeight:700, color:T.gold, letterSpacing:'0.05em' }}>✦ {edition.name}</span>
@@ -466,7 +498,6 @@ function Nav({ edition, setScreen, currency, setCurrency, chatOpen, setChatOpen,
             </div>
           )}
         </div>
-        {/* RIGHT */}
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           {hasPricedItems && <div style={{ fontSize:13, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(totalZAR)}</div>}
           <select value={currency.code} onChange={(e: any) => setCurrency(CURRENCIES.find((c: any) => c.code === e.target.value)!)} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, borderRadius:8, padding:'5px 10px', fontSize:12, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
@@ -579,36 +610,33 @@ function StepDot({ active }: { active: boolean }) {
 // ─────────────────────────────────────────────────────────────────────────────
 const HOTELS_FALLBACK: Hotel[] = [
   { id: 1, edition_id: 'safari', name: 'Singita Boulders Lodge',    location: 'Kruger / Sabi Sand, South Africa',   destination: 'Kruger / Sabi Sand', subRegion: 'kruger-sabi-sand', region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 99, contentScore: 95, netRate: 56000, otaRate: 76000, marginScore: 27, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', funFact: "River-facing suites on the Sand River. Six guests per guide.", upgrades: { rooms: [{ label: 'Luxury Suite', extra: 0, tier: 0 }, { label: 'Private Villa', extra: 89000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 4200, tier: 1 }] } },
-  { id: 2, edition_id: 'safari', name: 'Londolozi Tree Camp',        location: 'Kruger / Sabi Sand, South Africa',   destination: 'Kruger / Sabi Sand', subRegion: 'kruger-sabi-sand', region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 97, contentScore: 90, netRate: 48000, otaRate: 67000, marginScore: 28, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1500491460312-c32fc2dbc751?w=800&q=80', funFact: "Treehouse suites above the Sand River. Londolozi means 'Protector of all living things'.", upgrades: { rooms: [{ label: 'Suite', extra: 0, tier: 0 }, { label: 'Private Treehouse', extra: 30000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3800, tier: 1 }] } },
-  { id: 3, edition_id: 'safari', name: 'Wilderness Mombo Camp',      location: 'Okavango Delta, Botswana',           destination: 'Okavango Delta',     subRegion: 'okavango-delta',  region: 'southern-africa', country: 'Botswana',      stars: 5, trustScore: 98, contentScore: 92, netRate: 62000, otaRate: 88000, marginScore: 30, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact: 'Chief\'s Island — the highest predator density in the Delta.', upgrades: { rooms: [{ label: 'Luxury Tent', extra: 0, tier: 0 }, { label: 'Family Tent', extra: 18000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
-  { id: 4, edition_id: 'safari', name: 'andBeyond Xaranna',          location: 'Okavango Delta, Botswana',           destination: 'Okavango Delta',     subRegion: 'okavango-delta',  region: 'southern-africa', country: 'Botswana',      stars: 5, trustScore: 95, contentScore: 88, netRate: 52000, otaRate: 74000, marginScore: 29, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', funFact: 'Xaranna means "place of star-like flowers" — on a private island in the Delta.', upgrades: { rooms: [{ label: 'Luxury Tent', extra: 0, tier: 0 }, { label: 'Honeymoon Tent', extra: 12000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3000, tier: 1 }] } },
-  { id: 5, edition_id: 'safari', name: 'Matetsi Victoria Falls',     location: 'Chobe / Victoria Falls, Zimbabwe',   destination: 'Chobe / Victoria Falls', subRegion: 'chobe-vic-falls', region: 'southern-africa', country: 'Zimbabwe',   stars: 5, trustScore: 96, contentScore: 88, netRate: 38000, otaRate: 54000, marginScore: 30, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact: 'Private 26km stretch of the Zambezi — no other camps in sight.', upgrades: { rooms: [{ label: 'River Suite', extra: 0, tier: 0 }, { label: 'Private Villa', extra: 45000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
-  { id: 6, edition_id: 'safari', name: 'Ellerman House',             location: 'Cape Town, South Africa',            destination: 'Cape Town',          subRegion: 'cape-town',      region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 94, contentScore: 91, netRate: 28000, otaRate: null,  marginScore: 27, malariaFree: true,  tags: ['malaria-free'], image: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80', funFact: 'Eleven suites overlooking the Atlantic. One of the finest wine cellars in Africa.', upgrades: { rooms: [{ label: 'Classic Suite', extra: 0, tier: 0 }, { label: 'Villa Suite', extra: 18000, tier: 1 }], basis: [{ label: 'Breakfast included', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2200, tier: 1 }] } },
-  { id: 7, edition_id: 'safari', name: 'Jamala Madikwe',             location: 'Madikwe, South Africa',              destination: 'Madikwe',            subRegion: 'madikwe',        region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 93, contentScore: 85, netRate: 28000, otaRate: 38500, marginScore: 27, malariaFree: true,  tags: ['malaria-free','family-friendly'], image: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact: 'Malaria-free Big Five. Royal suite has a private game vehicle and guide.', upgrades: { rooms: [{ label: 'Classic Suite', extra: 0, tier: 0 }, { label: 'Royal Suite', extra: 15000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2200, tier: 1 }] } },
+  { id: 2, edition_id: 'safari', name: 'Londolozi Tree Camp',        location: 'Kruger / Sabi Sand, South Africa',   destination: 'Kruger / Sabi Sand', subRegion: 'kruger-sabi-sand', region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 97, contentScore: 90, netRate: 48000, otaRate: 67000, marginScore: 28, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1500491460312-c32fc2dbc751?w=800&q=80', funFact: "Treehouse suites above the Sand River.", upgrades: { rooms: [{ label: 'Suite', extra: 0, tier: 0 }, { label: 'Private Treehouse', extra: 30000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3800, tier: 1 }] } },
+  { id: 3, edition_id: 'safari', name: 'Wilderness Mombo Camp',      location: 'Okavango Delta, Botswana',           destination: 'Okavango Delta',     subRegion: 'okavango-delta',  region: 'southern-africa', country: 'Botswana',      stars: 5, trustScore: 98, contentScore: 92, netRate: 62000, otaRate: 88000, marginScore: 30, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact: "Chief's Island — the highest predator density in the Delta.", upgrades: { rooms: [{ label: 'Luxury Tent', extra: 0, tier: 0 }, { label: 'Family Tent', extra: 18000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
+  { id: 4, edition_id: 'safari', name: 'andBeyond Xaranna',          location: 'Okavango Delta, Botswana',           destination: 'Okavango Delta',     subRegion: 'okavango-delta',  region: 'southern-africa', country: 'Botswana',      stars: 5, trustScore: 95, contentScore: 88, netRate: 52000, otaRate: 74000, marginScore: 29, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', funFact: 'On a private island in the Delta.', upgrades: { rooms: [{ label: 'Luxury Tent', extra: 0, tier: 0 }, { label: 'Honeymoon Tent', extra: 12000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3000, tier: 1 }] } },
+  { id: 5, edition_id: 'safari', name: 'Matetsi Victoria Falls',     location: 'Chobe / Victoria Falls, Zimbabwe',   destination: 'Chobe / Victoria Falls', subRegion: 'chobe-vic-falls', region: 'southern-africa', country: 'Zimbabwe',   stars: 5, trustScore: 96, contentScore: 88, netRate: 38000, otaRate: 54000, marginScore: 30, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact: 'Private 26km stretch of the Zambezi.', upgrades: { rooms: [{ label: 'River Suite', extra: 0, tier: 0 }, { label: 'Private Villa', extra: 45000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
+  { id: 6, edition_id: 'safari', name: 'Ellerman House',             location: 'Cape Town, South Africa',            destination: 'Cape Town',          subRegion: 'cape-town',      region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 94, contentScore: 91, netRate: 28000, otaRate: null,  marginScore: 27, malariaFree: true,  tags: ['malaria-free'], image: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80', funFact: 'Eleven suites overlooking the Atlantic.', upgrades: { rooms: [{ label: 'Classic Suite', extra: 0, tier: 0 }, { label: 'Villa Suite', extra: 18000, tier: 1 }], basis: [{ label: 'Breakfast included', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2200, tier: 1 }] } },
+  { id: 7, edition_id: 'safari', name: 'Jamala Madikwe',             location: 'Madikwe, South Africa',              destination: 'Madikwe',            subRegion: 'madikwe',        region: 'southern-africa', country: 'South Africa', stars: 5, trustScore: 93, contentScore: 85, netRate: 28000, otaRate: 38500, marginScore: 27, malariaFree: true,  tags: ['malaria-free','family-friendly'], image: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact: 'Malaria-free Big Five.', upgrades: { rooms: [{ label: 'Classic Suite', extra: 0, tier: 0 }, { label: 'Royal Suite', extra: 15000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2200, tier: 1 }] } },
   { id: 8, edition_id: 'safari', name: 'Mara Plains Camp',           location: 'Masai Mara, Kenya',                 destination: 'Masai Mara',         subRegion: 'masai-mara',     region: 'east-africa',     country: 'Kenya',        stars: 5, trustScore: 96, contentScore: 91, netRate: 42000, otaRate: 58000, marginScore: 28, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80', funFact: 'Only 8 tents. Peak migration July–October.', upgrades: { rooms: [{ label: 'Classic Tent', extra: 0, tier: 0 }, { label: 'Family Tent', extra: 18000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 3200, tier: 1 }] } },
   { id: 9, edition_id: 'safari', name: 'Azura Bazaruto',             location: 'Mozambique',                         destination: 'Mozambique',         subRegion: 'mozambique',     region: 'indian-ocean',    country: 'Mozambique',   stars: 5, trustScore: 92, contentScore: 84, netRate: 22000, otaRate: 32000, marginScore: 31, malariaFree: false, tags: [], image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80', funFact: 'Last viable dugong population in the Indian Ocean.', upgrades: { rooms: [{ label: 'Beach Villa', extra: 0, tier: 0 }, { label: 'Ocean Villa', extra: 14000, tier: 1 }], basis: [{ label: 'All-inclusive', extra: 0, tier: 0 }], flexibility: [{ label: 'Standard', extra: 0, tier: 0 }, { label: 'Flexible', extra: 2400, tier: 1 }] } },
 ];
+ 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: EditionConfig }) {
  
-  // ── Login gate ────────────────────────────────────────────────────────────
   const [unlocked, setUnlocked] = useState(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('tse_access') === 'safari2026';
   });
  
-  // ── Navigation ────────────────────────────────────────────────────────────
   const [screen, setScreen] = useState<Screen>('landing');
   const [inputMode, setInputMode] = useState<InputMode>('socratic');
   const [specialist] = useState(() => SPECIALISTS[Math.floor(Math.random() * SPECIALISTS.length)] ?? SPECIALISTS[0]);
  
-  // ── Currency ──────────────────────────────────────────────────────────────
   const [currency, setCurrency] = useState<Currency>(() => CURRENCIES.find(c => c.code === edition.defaultCurrency) ?? CURRENCIES[0]);
   const fmt = useMemo(() => makeFmt(currency.symbol, currency.rate), [currency]);
  
-  // ── Trip parameters ───────────────────────────────────────────────────────
   const [nights,     setNights]     = useState(7);
   const [adults,     setAdults]     = useState(2);
   const [children,   setChildren]   = useState(0);
@@ -616,7 +644,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [flexDays,   setFlexDays]   = useState(3);
   const totalPax = Math.max(adults + children, 1);
  
-  // ── Inspire flow ──────────────────────────────────────────────────────────
   const [needsIntlFlight, setNeedsIntlFlight] = useState<boolean | null>(null);
   const [region,           setRegion]          = useState<string | null>(null);
   const [themes,           setThemes]          = useState<string[]>([]);
@@ -627,7 +654,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [itinerary,        setItinerary]       = useState<Itinerary | null>(null);
   const [cityHotelIdxs,    setCityHotelIdxs]  = useState([0,1,2,3]);
  
-  // ── Builder state ─────────────────────────────────────────────────────────
   const [activePillars,    setActivePillars]    = useState<Pillar[]>([]);
   const [propertyStays,    setPropertyStays]    = useState<PropertyStay[]>([{ id: 1, hotelIdx: 0, nights: 7, prefs: { rooms: 0, basis: 0, flexibility: 0 } }]);
   const [interTransfers,   setInterTransfers]   = useState<InterTransferState[]>([]);
@@ -646,28 +672,29 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   });
   const [customise, setCustomise] = useState<{ pillar: Pillar | 'intl'; stayId?: number; idx: number } | null>(null);
  
-  // ── Availability ──────────────────────────────────────────────────────────
   const [availMap,   setAvailMap]   = useState<Map<string, AvailResult>>(new Map());
   const [altDates,   setAltDates]   = useState<Map<string, AltDate | null>>(new Map());
   const [preloading, setPreloading] = useState(false);
  
-  // ── KB ────────────────────────────────────────────────────────────────────
   const [kbEntries,   setKbEntries]   = useState<KBEntry[]>(DEFAULT_KB);
   const [kbSelected,  setKbSelected]  = useState(['kb-region-kruger','kb-region-okavango','kb-prop-singita-boulders','kb-prop-mombo','kb4']);
   const [kbEditEntry, setKbEditEntry] = useState<KBEntry | null>(null);
   const [kbNewEntry,  setKbNewEntry]  = useState(false);
  
-  // ── Hotels ────────────────────────────────────────────────────────────────
   const [hotels, setHotels] = useState<Hotel[]>(HOTELS_FALLBACK);
   const hotelsByMargin = useMemo(() => [...hotels].sort((a, b) => b.marginScore - a.marginScore), [hotels]);
  
+  // ─────────────────────────────────────────────────────────────────────────
+  // PATCH 1B — Supabase fetch: exclude operators, filter by supplier_type
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) return;
-    fetch(`${url}/rest/v1/suppliers?select=*&is_active=eq.true&order=trust_score.desc&limit=100`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-    })
+    fetch(
+      `${url}/rest/v1/suppliers?select=*&is_active=eq.true&supplier_type=neq.operator&region_slug=not.is.null&order=trust_score.desc&limit=100`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    )
       .then(r => r.json())
       .then((rows: any[]) => {
         if (!rows?.length) return;
@@ -696,7 +723,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     }).finally(() => setPreloading(false));
   }, [screen, checkinDate, nights, adults, children]);
  
-  // ── Chat ──────────────────────────────────────────────────────────────────
   const [chatOpen,    setChatOpen]    = useState(false);
   const [chatMsgs,    setChatMsgs]    = useState<ChatMessage[]>([{ role: 'assistant', text: `Welcome to ${edition.name}. How can our team help?` }]);
   const [chatInput,   setChatInput]   = useState('');
@@ -711,7 +737,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
  
   useEffect(() => { if (inspireMsgs.length > 1) inspireEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [inspireMsgs]);
  
-  // ── Pricing ───────────────────────────────────────────────────────────────
   const M = edition.margins;
   const relevantIntlFlights = INTL_FLIGHTS.filter(f => f.from === builderIntlOrigin);
   const currentIntlFlight   = relevantIntlFlights[intlFlightIdx % Math.max(relevantIntlFlights.length, 1)];
@@ -737,7 +762,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     return !r || r.available || altDates.get(String(h.id)) !== null;
   });
  
-  // ── Actions ───────────────────────────────────────────────────────────────
   const togglePillar = (p: Pillar) => setActivePillars(ps => ps.includes(p) ? ps.filter(x => x !== p) : [...ps, p]);
  
   const handleSelect = (pillar: string, key: string, opt: any, stayId?: number) => {
@@ -788,7 +812,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     });
   };
  
-  // ── Engine ────────────────────────────────────────────────────────────────
   const runEngine = async (promptBody: string, mode: InputMode) => {
     setInputMode(mode);
     setScreen('inspire-research'); setResearchStep(0);
@@ -814,68 +837,75 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     setScreen('inspire-plan');
   };
  
+  // ─────────────────────────────────────────────────────────────────────────
+  // PATCH 1C — Socratic planner: passes region slug to AI
+  // ─────────────────────────────────────────────────────────────────────────
   const runSocraticPlanner = () => {
-    const regionLabel = region ? REGIONS.find(r => r.id === region)?.label : 'Sub-Saharan Africa';
+    const selectedRegion = REGIONS.find(r => r.id === region);
+    const regionLabel = selectedRegion?.label ?? 'Sub-Saharan Africa';
+    const regionSlug  = selectedRegion?.slug ?? null;
     const themeLabels = themes.map(id => THEMES.find(t => t.id === id)?.label).join(', ') || 'safari';
     const intlNote    = needsIntlFlight ? `Guest flying from ${intlOrigin} — include international flight.` : 'Guest handling own international flights.';
-    const promptBody  = `You are a luxury safari journey designer at ${edition.name}. Plan an optimised safari itinerary.\n\nGUEST INPUTS: Origin: ${origin}, ${intlNote}, Region: ${regionLabel}, Budget: R${budget.toLocaleString()}, Trip: ${nights} nights, Travellers: ${adults} adults${children > 0 ? `, ${children} children` : ''}, Themes: ${themeLabels}`;
+ 
+    // Build supplier list scoped to the selected region
+    const regionSuppliers = hotels
+      .filter(h => !regionSlug || h.subRegion === regionSlug)
+      .map(h => `- ${h.name} (${h.destination}, ${h.country})`)
+      .join('\n');
+ 
+    const promptBody = `You are a luxury safari journey designer at ${edition.name}. Plan an optimised safari itinerary.
+ 
+GUEST INPUTS:
+- Origin: ${origin}
+- ${intlNote}
+- Region: ${regionLabel}${regionSlug ? ` (slug: ${regionSlug})` : ''}
+- Budget: R${budget.toLocaleString()}
+- Trip: ${nights} nights
+- Travellers: ${adults} adults${children > 0 ? `, ${children} children` : ''}
+- Themes: ${themeLabels}
+ 
+AVAILABLE SUPPLIERS FOR THIS REGION:
+${regionSuppliers || 'Use best available properties for the region'}
+ 
+Use the exact property names from the supplier list above where possible.
+Respond ONLY with a valid JSON object matching the Itinerary type. No preamble.`;
+ 
     track('socratic_complete', edition.id, { region: region || 'any', budget, nights });
     runEngine(promptBody, 'socratic');
   };
  
+  // ─────────────────────────────────────────────────────────────────────────
+  // PATCH 2 — Brief planner: injects live Supabase supplier list
+  // ─────────────────────────────────────────────────────────────────────────
   const runBriefPlanner = (briefText: string) => {
-    // Extract explicit constraints from brief text before sending to AI
     const nightsMatch = briefText.match(/(\d+)\s*night/i);
     const extractedNights = nightsMatch ? parseInt(nightsMatch[1]) : nights;
  
-    // Detect single-destination briefs
-    const singleDestinationKeywords = [
-      'cape town only', 'only cape town', 'just cape town',
-      'madikwe only', 'only madikwe', 'just madikwe',
-      'sabi sand only', 'only sabi sand', 'just sabi sand',
-      'okavango only', 'only okavango', 'just okavango',
-      'kruger only', 'only kruger', 'just kruger',
-    ];
-    const isSingleDest = singleDestinationKeywords.some(kw => briefText.toLowerCase().includes(kw));
- 
-    // Detect mentioned destinations
-    const destMap: Record<string, string> = {
-      'cape town': 'Cape Town', 'madikwe': 'Madikwe', 'sabi sand': 'Kruger / Sabi Sand',
-      'kruger': 'Kruger / Sabi Sand', 'okavango': 'Okavango Delta', 'botswana': 'Okavango Delta',
-      'victoria falls': 'Chobe / Victoria Falls', 'vic falls': 'Chobe / Victoria Falls',
-      'chobe': 'Chobe / Victoria Falls', 'phinda': 'Phinda', 'mozambique': 'Mozambique',
-    };
-    const mentionedDests = Object.entries(destMap)
-      .filter(([kw]) => briefText.toLowerCase().includes(kw))
-      .map(([, dest]) => dest);
-    const uniqueDests = [...new Set(mentionedDests)];
- 
-    const numCitiesNote = isSingleDest
-      ? '1 city only — the traveller explicitly wants a single destination'
-      : uniqueDests.length > 0
-        ? `${Math.min(uniqueDests.length, 2)} cities — only include destinations mentioned in the brief`
-        : 'maximum 2 cities — do not add a third city unless the brief explicitly requests it';
-    const destsNote = uniqueDests.length > 0
-      ? `Use only these destinations: ${uniqueDests.join(', ')}`
-      : 'Choose the best destinations for this brief';
-    const paxNote = `${adults} adults${children > 0 ? `, ${children} children` : ''}`;
+    // Build full supplier context from Supabase-loaded hotels
+    const supplierContext = hotels
+      .filter(h => h.name && h.destination)
+      .map(h => `- ${h.name} (${h.destination}, ${h.country}) — trust ${h.trustScore}/100`)
+      .join('\n');
  
     const promptBody = `You are a luxury safari journey designer at ${edition.name}.
-A traveller has written their own brief. Extract their intent and plan an optimised safari itinerary.
+A traveller has written their own brief. Read it carefully and plan an itinerary using ONLY suppliers from the list below.
  
 TRAVELLER BRIEF: "${briefText}"
  
-HARD CONSTRAINTS — you MUST follow these exactly, no exceptions:
-1. TOTAL NIGHTS: exactly ${extractedNights} nights total across ALL cities combined. Do not add or subtract even one night.
-2. NUMBER OF CITIES: ${numCitiesNote}.
-3. DESTINATIONS: ${destsNote}.
-4. NIGHTS PER CITY: all city nights must add up to exactly ${extractedNights}. If 1 city, it gets all ${extractedNights} nights. If 2 cities, split them so they total ${extractedNights}.
-5. KNOWN PARAMETERS: ${paxNote}.
+AVAILABLE SUPPLIERS (use these exact names and destinations — do not invent properties):
+${supplierContext || '- Singita Boulders Lodge (Kruger / Sabi Sand, South Africa)\n- Wilderness Mombo Camp (Okavango Delta, Botswana)\n- Ellerman House (Cape Town, South Africa)'}
+ 
+HARD CONSTRAINTS — follow exactly, no exceptions:
+1. TOTAL NIGHTS: exactly ${extractedNights} nights across ALL cities combined.
+2. Use only destinations and properties from the supplier list above.
+3. Match the brief's intent — destination, theme, occasion, budget signals.
+4. All city nights must sum to exactly ${extractedNights}.
+5. Do not add destinations not mentioned or implied in the brief.
+6. TRAVELLERS: ${adults} adults${children > 0 ? `, ${children} children` : ''}.
  
 Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, no explanation.`;
  
     track('brief_submit', edition.id, { briefLength: briefText.length, nights: extractedNights, adults });
-    // Update nights state to match what was in the brief
     if (extractedNights !== nights) setNights(extractedNights);
     runEngine(promptBody, 'brief');
   };
@@ -959,12 +989,8 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
  
   const navProps = { edition, setScreen, currency, setCurrency, chatOpen, setChatOpen, totalZAR, fmt, hasPricedItems: activePillars.length > 0 || includeIntlFlight };
  
-  // ── LOGIN GATE ────────────────────────────────────────────────────────────
   if (!unlocked) return <LoginGate onUnlock={() => setUnlocked(true)} />;
  
-  // ─────────────────────────────────────────────────────────────────────────
-  // SCREEN RENDERING
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <>
       <style suppressHydrationWarning>{GLOBAL_CSS}</style>
@@ -1033,7 +1059,8 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
           {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={() => setChatOpen(false)} edition={edition} />}
         </div>
       )}
- 
+
+     
       {/* ── INSPIRE INPUT ────────────────────────────────────────────────── */}
       {screen === 'inspire-input' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
@@ -1055,7 +1082,7 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
               </div>
               {needsIntlFlight === true && (
                 <div>
-                             <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Flying from</div>
+                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Flying from</div>
                   <select value={intlOrigin} onChange={e => setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
                     {INTERNATIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
                   </select>
@@ -1071,6 +1098,7 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
               )}
             </div>
  
+            {/* PATCH 1 — Region buttons now use actual Supabase region slugs */}
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:8 }}>Destination region</div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
@@ -1153,17 +1181,18 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
               <div style={{ textAlign:'right' as const }}><div style={{ fontSize:11, color:T.textDim, marginBottom:4 }}>Routing</div><div style={{ fontSize:12, color:T.textMid }}>{itinerary.routing}</div></div>
             </div>
  
-            {/* City cards with region images */}
+            {/* PATCH 3 — City cards: slug-first hotel matching against Supabase data */}
             {itinerary.cities.map((city, i) => {
-              const cityName = city.city.toLowerCase();
-              const destinationStack = hotelsByMargin.filter(h => {
-                const dest = (h.destination ?? '').toLowerCase();
-                const sub  = (h.subRegion ?? '').toLowerCase();
-                const name = (h.name ?? '').toLowerCase();
-                return dest.includes(cityName) || cityName.includes(dest) ||
-                       sub.includes(cityName)  || cityName.includes(sub)  ||
-                       name.includes(cityName) || cityName.includes(name);
-              });
+              const cityName = city.city.toLowerCase().trim();
+              const targetSlug = CITY_TO_SLUG[cityName] ?? CITY_TO_SLUG[city.city.toLowerCase()];
+ 
+              const destinationStack = targetSlug
+                ? hotelsByMargin.filter(h => h.subRegion === targetSlug)
+                : hotelsByMargin.filter(h => {
+                    const dest = (h.destination ?? '').toLowerCase();
+                    return dest.includes(cityName) || cityName.includes(dest);
+                  });
+ 
               const cityRegion = COUNTRY_REGION[city.country] ?? 'southern-africa';
               const regionStack = hotelsByMargin.filter(h => h.region === cityRegion);
               const stack = destinationStack.length > 0 ? destinationStack : regionStack.length > 0 ? regionStack : hotelsByMargin;
@@ -1210,8 +1239,8 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:10, borderTop:`0.5px solid ${T.border}` }}>
                         <div style={{ fontSize:12, color:T.textMid }}>Suggested: <span style={{ color:T.text, fontWeight:600 }}>{hotel.name}</span></div>
                         <div style={{ display:'flex', gap:6 }}>
-                          <button onClick={() => setCityHotelIdxs(prev => { const n=[...prev]; n[i]=Math.max(0,(n[i]??0)-1); return n; })} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.textMid, width:24, height:24, borderRadius:6, cursor:'pointer', fontSize:12, fontFamily:'inherit' }}>←</button>
-                          <button onClick={() => setCityHotelIdxs(prev => { const n=[...prev]; n[i]=Math.min(stackSize-1,(n[i]??0)+1); return n; })} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.textMid, width:24, height:24, borderRadius:6, cursor:'pointer', fontSize:12, fontFamily:'inherit' }}>→</button>
+                          <button onClick={() => setCityHotelIdxs(prev => { const n=[...prev]; n[i]=Math.max(0,(n[i]??0)-1); return n; })} disabled={(cityHotelIdxs[i]??0) === 0} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.textMid, width:24, height:24, borderRadius:6, cursor:'pointer', fontSize:12, fontFamily:'inherit', opacity:(cityHotelIdxs[i]??0)===0?0.35:1 }}>←</button>
+                          <button onClick={() => setCityHotelIdxs(prev => { const n=[...prev]; n[i]=Math.min(stackSize-1,(n[i]??0)+1); return n; })} disabled={(cityHotelIdxs[i]??0) >= stackSize-1} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.textMid, width:24, height:24, borderRadius:6, cursor:'pointer', fontSize:12, fontFamily:'inherit', opacity:(cityHotelIdxs[i]??0)>=stackSize-1?0.35:1 }}>→</button>
                         </div>
                       </div>
                     )}
@@ -1562,7 +1591,7 @@ function BriefScreen({ nights, setNights, adults, setAdults, children, setChildr
   const [brief, setBrief] = useState('');
   const maxLen = 1000;
   const ready = brief.trim().length >= 30;
-  const hasDestination = /sabi|kruger|okavango|botswana|kenya|tanzania|zimbabwe|zambia|south africa|victoria falls|mara|serengeti|rwanda|uganda/i.test(brief);
+  const hasDestination = /sabi|kruger|okavango|botswana|kenya|tanzania|zimbabwe|zambia|south africa|victoria falls|mara|serengeti|rwanda|uganda|madikwe|cape town/i.test(brief);
   const hasTheme       = /honeymoon|anniversary|family|romantic|adventure|wildlife|beach|gorilla|balloon|dive/i.test(brief);
   const hasDate        = /january|february|march|april|may|june|july|august|september|october|november|december|summer|winter|christmas|school holiday/i.test(brief);
   const hasBudget      = /R\s?\d|budget|afford|spend|cost/i.test(brief);
@@ -1613,4 +1642,3 @@ function BriefScreen({ nights, setNights, adults, setAdults, children, setChildr
     </div>
   );
 }
-
