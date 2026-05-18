@@ -35,7 +35,7 @@ const SAFARI_EDITION: EditionConfig = {
   defaultCurrency: 'ZAR',
   margins: { flights: 1.08, hotels: 1.15, transfers: 1.20, activities: 1.18, intl: 1.08 },
   ai: {
-    plannerModel:     'claude-sonnet-4-20250514',
+    plannerModel:     'claude-sonnet-4-5',
     chatModel:        'claude-haiku-4-5-20251001',
     maxPlanTokens:    1200,
     maxChatTokens:    400,
