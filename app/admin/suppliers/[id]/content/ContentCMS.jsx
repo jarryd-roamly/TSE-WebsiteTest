@@ -131,9 +131,7 @@ const DEMO_SUPPLIER = {
     { id:"img2", url:"https://images.unsplash.com/photo-1551918120-9739cb430c6d?w=1200", caption:"Suite deck", room_type:"suite", is_primary:false, order:1, status:"approved", width:1920, height:1080 },
     { id:"img3", url:"https://images.unsplash.com/photo-1493246507139-91e8fad9978e?w=1200", caption:"Bush view", room_type:"exterior", is_primary:false, order:2, status:"approved", width:1920, height:1080 },
   ],
-  reels: [
-    { id:"reel1", source:"youtube", video_id:"dQw4w9WgXcQ", start:10, end:22, speed:1, type:"arrival", caption:"Arrival experience", status:"approved" },
-  ],
+  reels: [],
   room_types: [
     { id:"rt1", name:"Boulders Suite", category:"suite", description:"The Boulders Suite is built directly into the granite outcrop above the Sand River. At 120m², the suite features a king bedroom, outdoor shower, private plunge pool, and a wraparound deck where leopards are regularly seen at the river below. North-facing for the best light.", beds:"King", size_sqm:120, max_pax:2, view:"River and bush", images:[] },
     { id:"rt2", name:"River Suite", category:"suite", description:"", beds:"Twin or King", size_sqm:95, max_pax:2, view:"River", images:[] },
@@ -475,46 +473,64 @@ function YouTubeEmbedPopup({ onSave, onClose, existingReel }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REEL SLOT — renders YouTube iframe or file video
+// REEL SLOT — shows thumbnail in tile, never autoplays iframe
+// iframe only runs inside the popup preview
 // ─────────────────────────────────────────────────────────────────────────────
 function ReelSlot({ reel, onEmbed, onRemove, isAdmin }) {
-  const embedUrl = reel?.source === "youtube"
-    ? buildYouTubeEmbedUrl(reel.video_id, reel.start, reel.end, reel.speed ?? 1)
+  const thumbUrl = reel?.source === "youtube"
+    ? `https://img.youtube.com/vi/${reel.video_id}/hqdefault.jpg`
     : null;
 
   return (
-    <div style={{position:"relative",width:"100%",height:"100%",background:T.bg2,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-      {/* Embed button — always visible */}
-      <div style={{position:"absolute",top:8,right:8,zIndex:10,display:"flex",gap:6}}>
-        <button onClick={onEmbed}
-          style={{padding:"4px 10px",background:"rgba(0,0,0,0.7)",border:`0.5px solid ${T.borderGold}`,borderRadius:6,color:T.gold,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(8px)"}}>
-          🎬 {reel ? "Edit clip" : "Embed from YouTube"}
-        </button>
-        {reel && onRemove && (
-          <button onClick={onRemove}
-            style={{padding:"4px 8px",background:"rgba(0,0,0,0.7)",border:"0.5px solid rgba(248,113,113,0.4)",borderRadius:6,color:T.red,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-        )}
-      </div>
+    <div style={{position:"relative",width:"100%",height:"100%",background:T.bg2,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
 
-      {reel?.source === "youtube" && embedUrl ? (
-        <iframe src={embedUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",border:"none"}}
-          allow="autoplay; encrypted-media" allowFullScreen={false}/>
+      {/* Thumbnail — static image, no iframe in the tile */}
+      {thumbUrl ? (
+        <img src={thumbUrl} alt="Reel thumbnail"
+          style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
       ) : reel?.url ? (
-        <video src={reel.url} autoPlay muted loop playsInline style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
-      ) : (
+        <video src={reel.url} muted playsInline preload="metadata"
+          style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+      ) : null}
+
+      {/* Dark overlay */}
+      {(thumbUrl || reel?.url) && (
+        <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.35)"}}/>
+      )}
+
+      {/* Play icon — decorative, shows a reel exists */}
+      {reel && (
+        <div style={{position:"relative",zIndex:2,width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.15)",border:"1.5px solid rgba(255,255,255,0.45)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontSize:14,marginLeft:3,color:"#fff"}}>▶</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!reel && (
         <>
-          <div style={{fontSize:26,marginBottom:6}}>🎬</div>
-          <div style={{fontSize:11,color:T.textDim,textAlign:"center",padding:"0 16px"}}>No reel yet</div>
-          <div style={{fontSize:10,color:T.gold,marginTop:4}}>+20 pts available</div>
+          <div style={{fontSize:24,marginBottom:6,position:"relative",zIndex:2}}>🎬</div>
+          <div style={{fontSize:11,color:T.textDim,textAlign:"center",padding:"0 16px",position:"relative",zIndex:2}}>No reel yet</div>
+          <div style={{fontSize:10,color:T.gold,marginTop:4,position:"relative",zIndex:2}}>+20 pts</div>
         </>
       )}
 
-      {/* Speed/duration badge */}
+      {/* Embed button — subtle, bottom left */}
+      <div style={{position:"absolute",bottom:8,left:8,zIndex:10,display:"flex",gap:5}}>
+        <button onClick={onEmbed}
+          style={{padding:"3px 9px",background:"rgba(0,0,0,0.65)",border:`0.5px solid ${T.borderGold}`,borderRadius:5,color:T.gold,fontSize:9,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+          🎬 {reel ? "Edit" : "Add YouTube clip"}
+        </button>
+        {reel && onRemove && (
+          <button onClick={e=>{e.stopPropagation();onRemove();}}
+            style={{padding:"3px 7px",background:"rgba(0,0,0,0.65)",border:"0.5px solid rgba(248,113,113,0.4)",borderRadius:5,color:T.red,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+        )}
+      </div>
+
+      {/* Duration + speed badges — top right, minimal */}
       {reel?.source === "youtube" && (
-        <div style={{position:"absolute",bottom:8,left:8,display:"flex",gap:6}}>
-          <span style={{fontSize:9,padding:"2px 6px",background:"rgba(0,0,0,0.7)",borderRadius:20,color:"rgba(255,255,255,0.7)"}}>{Math.round(reel.end-reel.start)}s</span>
-          {reel.speed !== 1 && <span style={{fontSize:9,padding:"2px 6px",background:"rgba(0,0,0,0.7)",borderRadius:20,color:T.gold}}>{reel.speed}×</span>}
-          <StatusPill status={reel.status}/>
+        <div style={{position:"absolute",top:8,right:8,zIndex:10,display:"flex",gap:4}}>
+          <span style={{fontSize:9,padding:"2px 5px",background:"rgba(0,0,0,0.65)",borderRadius:20,color:"rgba(255,255,255,0.6)"}}>{Math.round(reel.end-reel.start)}s</span>
+          {reel.speed !== 1 && <span style={{fontSize:9,padding:"2px 5px",background:"rgba(0,0,0,0.65)",borderRadius:20,color:T.gold}}>{reel.speed}×</span>}
         </div>
       )}
     </div>
