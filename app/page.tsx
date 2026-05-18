@@ -840,36 +840,42 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   // ─────────────────────────────────────────────────────────────────────────
   // PATCH 1C — Socratic planner: passes region slug to AI
   // ─────────────────────────────────────────────────────────────────────────
-  const runSocraticPlanner = () => {
+const runSocraticPlanner = () => {
     const selectedRegion = REGIONS.find(r => r.id === region);
-    const regionLabel = selectedRegion?.label ?? 'Sub-Saharan Africa';
+    const regionLabel = selectedRegion?.label ?? null;
     const regionSlug  = selectedRegion?.slug ?? null;
     const themeLabels = themes.map(id => THEMES.find(t => t.id === id)?.label).join(', ') || 'safari';
     const intlNote    = needsIntlFlight ? `Guest flying from ${intlOrigin} — include international flight.` : 'Guest handling own international flights.';
- 
-    // Build supplier list scoped to the selected region
-    const regionSuppliers = hotels
-      .filter(h => !regionSlug || h.subRegion === regionSlug)
-      .map(h => `- ${h.name} (${h.destination}, ${h.country})`)
-      .join('\n');
- 
-    const promptBody = `You are a luxury safari journey designer at ${edition.name}. Plan an optimised safari itinerary.
- 
+
+    const regionSuppliers = regionSlug
+      ? hotels.filter(h => h.subRegion === regionSlug).map(h => `- ${h.name} (${h.destination}, ${h.country})`)
+      : hotels.map(h => `- ${h.name} (${h.destination}, ${h.country})`);
+
+    const regionConstraint = regionSlug
+      ? `SINGLE DESTINATION ONLY: "${regionLabel}". Do NOT add any other destination. All ${nights} nights must be in ${regionLabel}. This is a hard constraint — ignore any instinct to add a second destination.`
+      : `Choose the best 1–2 destinations from the supplier list for this brief.`;
+
+    const promptBody = `You are a luxury safari journey designer at ${edition.name}. Plan an optimised itinerary.
+
 GUEST INPUTS:
 - Origin: ${origin}
 - ${intlNote}
-- Region: ${regionLabel}${regionSlug ? ` (slug: ${regionSlug})` : ''}
 - Budget: R${budget.toLocaleString()}
-- Trip: ${nights} nights
+- Trip: exactly ${nights} nights total
 - Travellers: ${adults} adults${children > 0 ? `, ${children} children` : ''}
 - Themes: ${themeLabels}
- 
-AVAILABLE SUPPLIERS FOR THIS REGION:
-${regionSuppliers || 'Use best available properties for the region'}
- 
-Use the exact property names from the supplier list above where possible.
-Respond ONLY with a valid JSON object matching the Itinerary type. No preamble.`;
- 
+
+REGION CONSTRAINT: ${regionConstraint}
+
+AVAILABLE SUPPLIERS (use these exact names only — do not invent properties):
+${regionSuppliers.join('\n') || 'Use best available properties'}
+
+HARD RULES:
+1. Total nights across ALL cities must equal exactly ${nights}. Not ${nights - 1}, not ${nights + 1}. Exactly ${nights}.
+2. Use only property names from the supplier list above.
+3. If a single destination is specified, ALL nights go to that destination. One city only.
+4. Respond ONLY with valid JSON matching the Itinerary type. No preamble.`;
+
     track('socratic_complete', edition.id, { region: region || 'any', budget, nights });
     runEngine(promptBody, 'socratic');
   };
