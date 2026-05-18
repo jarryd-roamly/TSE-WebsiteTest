@@ -7,7 +7,7 @@ import type { KBEntry, Itinerary, EditionConfig } from './types';
 
 // Default config — Safari Edition. Overridden by EDITION below.
 const DEFAULT_AI = {
-  plannerModel:  'claude-sonnet-4-20250514',
+  plannerModel:  'claude-sonnet-4-5',
   chatModel:     'claude-haiku-4-5-20251001',
   maxPlanTokens: 1200,
   maxChatTokens: 400,
