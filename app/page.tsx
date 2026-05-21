@@ -1440,8 +1440,37 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
               <div style={{ marginBottom:20 }}>
                 <div style={{ fontSize:11, color:T.pillar.hotels, fontWeight:600, letterSpacing:'0.1em', textTransform:'uppercase' as const, marginBottom:10 }}>🏕 Lodges · {propertyStays.length} propert{propertyStays.length===1?'y':'ies'}</div>
                 {propertyStays.map((stay, stayIdx) => {
-                  const stack = availableHotelStack.length > 0 ? availableHotelStack : hotelsByMargin;
-                  const hotel = stack[Math.min(stay.hotelIdx, stack.length-1)] ?? stack[0];
+
+                  // Scope hotel stack to the slugs from the current itinerary cities
+                  // This prevents Cape Town selector from showing Mozambique properties etc.
+                  const itinerarySlugs = itinerary
+                    ? [...new Set(itinerary.cities.map(c => {
+                        const name = c.city.toLowerCase().trim();
+                        return CITY_TO_SLUG[name] ?? CITY_TO_SLUG[c.city.toLowerCase()] ?? null;
+                      }).filter(Boolean))] as string[]
+                    : [];
+
+                  // For this specific stay, use the slug of the matching city if possible
+                  const cityForStay = itinerary?.cities[stayIdx];
+                  const citySlug = cityForStay
+                    ? (CITY_TO_SLUG[cityForStay.city.toLowerCase().trim()] ?? CITY_TO_SLUG[cityForStay.city.toLowerCase()] ?? null)
+                    : null;
+
+                  // Build scoped stack: prefer city-specific slug, fall back to all itinerary slugs
+                  const scopedPool = citySlug
+                    ? hotelsByMargin.filter(h => h.subRegion === citySlug)
+                    : itinerarySlugs.length > 0
+                      ? hotelsByMargin.filter(h => itinerarySlugs.includes(h.subRegion))
+                      : hotelsByMargin;
+
+                  // Also apply availability filter within scoped pool
+                  const scopedAvailable = availableHotelStack.length > 0
+                    ? availableHotelStack.filter(h => scopedPool.some(s => s.id === h.id))
+                    : scopedPool;
+
+                  const stack = scopedAvailable.length > 0 ? scopedAvailable : scopedPool.length > 0 ? scopedPool : hotelsByMargin;
+                  const safeIdx = stay.hotelIdx % stack.length;
+                  const hotel = stack[Math.min(safeIdx, stack.length-1)] ?? stack[0];
                   if (!hotel) return null;
                   const { resolved, mismatches } = resolveHotelUpgrades(hotel, stay.prefs);
                   const upgradeExtra = Object.values(resolved).reduce((s: number, v: any) => s + (v?.extra ?? 0), 0);
@@ -1452,7 +1481,7 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
                   return (
                     <div key={stay.id} className="property-card" style={{ marginBottom:12 }}>
                       <div style={{ padding:'12px 14px', borderBottom:`0.5px solid ${T.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:T.gold }}>Property {stayIdx+1}</div>
+                        <div style={{ fontSize:12, fontWeight:600, color:T.gold }}>Property {stayIdx+1}{cityForStay ? ` · ${cityForStay.city}` : ''}</div>
                         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                           <button onClick={() => updateStayNights(stayIdx,-1)} disabled={stay.nights<=1} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, width:22, height:22, borderRadius:5, cursor:'pointer', fontSize:12, fontFamily:'inherit', opacity: stay.nights<=1 ? 0.35 : 1 }}>−</button>
                           <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:54, textAlign:'center' as const }}>{stay.nights} night{stay.nights!==1?'s':''}</span>
@@ -1467,9 +1496,21 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
                         </div>
                       )}
                       {mismatches.length>0 && <div style={{ margin:'8px 14px 0', fontSize:11, color:T.amber }}>⚠ Your upgrade preference isn't available — showing closest match.</div>}
-                      <PillarCard item={{ ...hotel }} displayRate={display} otaSaving={saving} pillarColor={T.pillar.hotels} fmt={fmt} onPrev={() => setPropertyStays(prev => { const s=prev.map(x=>({...x})); s[stayIdx].hotelIdx=Math.max(0,s[stayIdx].hotelIdx-1); return s; })} onNext={() => setPropertyStays(prev => { const s=prev.map(x=>({...x})); s[stayIdx].hotelIdx=Math.min(hotelsByMargin.length-1,s[stayIdx].hotelIdx+1); return s; })} isPrevDisabled={stay.hotelIdx===0} isNextDisabled={stay.hotelIdx>=hotelsByMargin.length-1} onCustomise={() => setCustomise({ pillar:'hotels', stayId:stay.id, idx:stay.hotelIdx })} stackLabel={`${stay.hotelIdx+1}/${hotelsByMargin.length} properties`} />
+                      <PillarCard item={{ ...hotel }} displayRate={display} otaSaving={saving} pillarColor={T.pillar.hotels} fmt={fmt}
+                        onPrev={() => setPropertyStays(prev => { const s=prev.map(x=>({...x})); s[stayIdx].hotelIdx=Math.max(0,s[stayIdx].hotelIdx-1); return s; })}
+                        onNext={() => setPropertyStays(prev => { const s=prev.map(x=>({...x})); s[stayIdx].hotelIdx=Math.min(stack.length-1,s[stayIdx].hotelIdx+1); return s; })}
+                        isPrevDisabled={stay.hotelIdx===0}
+                        isNextDisabled={stay.hotelIdx>=stack.length-1}
+                        onCustomise={() => setCustomise({ pillar:'hotels', stayId:stay.id, idx:stay.hotelIdx })}
+                        stackLabel={`${safeIdx+1}/${stack.length} properties`} />
                       {stayIdx < propertyStays.length-1 && interTransfers[stayIdx] && (() => {
-                        const nextHotel = hotelsByMargin[propertyStays[stayIdx+1].hotelIdx] ?? hotelsByMargin[0];
+                        const nextCitySlug = itinerary?.cities[stayIdx+1]
+                          ? (CITY_TO_SLUG[itinerary.cities[stayIdx+1].city.toLowerCase().trim()] ?? null)
+                          : null;
+                        const nextPool = nextCitySlug
+                          ? hotelsByMargin.filter(h => h.subRegion === nextCitySlug)
+                          : hotelsByMargin;
+                        const nextHotel = nextPool[propertyStays[stayIdx+1].hotelIdx % Math.max(nextPool.length,1)] ?? hotelsByMargin[0];
                         const xfer = getInterTransfer(hotel.region, nextHotel.region);
                         return (
                           <div className="inter-transfer" onClick={() => setInterTransfers(prev => prev.map((t,i) => i===stayIdx ? {...t,expanded:!t.expanded} : t))} style={{ margin:'8px 14px 14px' }}>
