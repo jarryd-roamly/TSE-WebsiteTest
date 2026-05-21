@@ -688,7 +688,7 @@ function StackManager(){
 
 function KnowledgeBase(){
   const LOCAL_KB=[
-    {id:'kb1',segment_type:'property',title:'Singita Sabi Sand — Booking Notes',content:'Request Boulders Suite for couples. North-facing — uninterrupted bush views. WiFi limited at Boulders. Private vehicle confirmed with 48h notice. Early check-in available at R1,800.',priority:'high',verified_at:'2026-04-01'},
+    {id:'kb1',segment_type:'property',supplier_id:'sup-singita-001',title:'Singita Sabi Sand — Booking Notes',content:'Request Boulders Suite for couples. North-facing — uninterrupted bush views. WiFi limited at Boulders. Private vehicle confirmed with 48h notice. Early check-in available at R1,800. ⚑ Internal only — not visible to supplier.',priority:'high',verified_at:'2026-04-01',internal_only:true},
     {id:'kb2',segment_type:'region',title:'Sabi Sand — Seasonal Notes',content:'Peak: June–October. Green season Nov–Feb — lower rates, dramatic skies, good birding. Leopard sightings year-round. Malaria area — prophylaxis required.',priority:'standard',verified_at:'2026-04-01'},
     {id:'kb3',segment_type:'airport',title:'JNB — OR Tambo Transit Tips',content:'Domestic connections: minimum 2h. International to domestic: minimum 3h. Forex rates poor at airport — use Bidvest. SLOW lounge excellent for long layovers.',priority:'standard',verified_at:'2026-04-01'},
     {id:'kb4',segment_type:'transfer',title:'Federal Airlines — Booking Notes',content:'Weight limit 20kg per person in soft bags only. Check-in 45min before departure. Ensure arrival before 16:00 at Skukuza for afternoon drive.',priority:'high',verified_at:'2026-04-01'},
@@ -696,7 +696,7 @@ function KnowledgeBase(){
   ]
   const [entries,setEntries]=useState<any[]>(LOCAL_KB)
   const [adding,setAdding]=useState(false)
-  const [form,setForm]=useState({segment_type:'property',title:'',content:'',priority:'standard'})
+  const [form,setForm]=useState({segment_type:'property',title:'',content:'',priority:'standard',supplier_id:'',internal_only:true})
   const [search,setSearch]=useState('')
   const [filter,setFilter]=useState('all')
   const [sortField,setSortField]=useState('priority')
@@ -728,6 +728,15 @@ function KnowledgeBase(){
             <select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
               {['standard','high','critical'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
           </div>
+          <div style={{marginBottom:10,display:'flex',gap:12,alignItems:'center'}}>
+            <div style={{flex:1}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Linked Supplier (optional)</label>
+            <input value={form.supplier_id} onChange={e=>setForm(f=>({...f,supplier_id:e.target.value}))} placeholder="e.g. sup-singita-001 — links to a specific supplier record"
+              style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
+            <div style={{flexShrink:0,paddingTop:16}}><label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:12,color:T.textMid}}>
+              <input type="checkbox" checked={form.internal_only} onChange={e=>setForm(f=>({...f,internal_only:e.target.checked}))} style={{accentColor:T.gold}}/>
+              <span style={{color:form.internal_only?T.amber:T.textDim,fontSize:11,fontWeight:600}}>⚑ Internal only — hidden from supplier, excluded from score</span>
+            </label></div>
+          </div>
           <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Title</label>
           <input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="e.g. Singita — Booking Notes" style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
           <div style={{marginBottom:12}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Notes</label>
@@ -739,10 +748,11 @@ function KnowledgeBase(){
         </div>
       )}
       <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:'hidden'}}>
-        <div style={{display:'grid',gridTemplateColumns:'120px 1fr 80px 100px',gap:8,padding:'10px 16px',borderBottom:`0.5px solid ${T.border}`}}>
+        <div style={{display:'grid',gridTemplateColumns:'110px 1fr 70px 80px 70px',gap:8,padding:'10px 16px',borderBottom:`0.5px solid ${T.border}`}}>
           <ColHeader label="Type" field="segment_type" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
-          <ColHeader label="Title" field="title" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Title / Notes" field="title" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
           <ColHeader label="Priority" field="priority" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+          <ColHeader label="Visibility" />
           <ColHeader label="Verified" field="verified_at" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
         </div>
         {filtered.map((e,i)=>(
@@ -1116,7 +1126,7 @@ export default function AdminPage(){
         </nav>
         <div style={{padding:'16px',borderTop:`0.5px solid ${T.border}`,display:'flex',flexDirection:'column',gap:8}}>
           <div style={{fontSize:11,color:T.textDim}}>Signed in as <span style={{color:T.text}}>{userName}</span></div>
-          <a href="/" style={{fontSize:12,color:T.textDim,textDecoration:'none'}}>← Back to site</a>
+          <a href="/" style={{fontSize:12,color:T.textDim,textDecoration:'none',display:'flex',alignItems:'center',gap:4}}>🏠 Back to website</a>
           <button onClick={()=>{sessionStorage.removeItem('tse_session');setAuthed(false)}} style={{padding:'6px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:7,color:T.textDim,fontSize:11,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>Sign out</button>
         </div>
       </div>
