@@ -953,6 +953,7 @@ export default function SupplierPortal() {
   const [role, setRole] = useState<Role>('supplier_admin')
   const [userName, setUserName] = useState('')
   const [supplierId, setSupplierId] = useState<string | null>(null)
+  const [isEditionAdmin, setIsEditionAdmin] = useState(false)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [noSession, setNoSession] = useState(false)
 
@@ -980,6 +981,7 @@ export default function SupplierPortal() {
       if (s.type === 'edition') {
         // Edition admin viewing portal — give full access
         setRole('supplier_admin')
+        setIsEditionAdmin(true)
         setUserName(s.name || 'Admin')
         // For edition admins, try to get supplier_id from URL param or use first active supplier
         const urlParams = new URLSearchParams(window.location.search)
@@ -1137,9 +1139,14 @@ export default function SupplierPortal() {
 
         <div style={{ padding: '14px 16px', borderTop: `0.5px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontSize: 11, color: T.textDim }}>Signed in as <span style={{ color: T.text }}>{userName}</span></div>
-          <a href="/admin" style={{ fontSize: 11, color: T.textDim, textDecoration: 'none' }}>⚙ Edition Portal ↗</a>
-          <button onClick={() => { sessionStorage.removeItem('tse_session'); localStorage.removeItem('tse_session'); window.location.href = '/admin' }}
-            style={{ padding: '6px', background: 'transparent', border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.textDim, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+          {isEditionAdmin && (
+            <a href="/admin" style={{ fontSize: 11, color: T.textDim, textDecoration: 'none' }}>⚙ Edition Portal ↗</a>
+          )}
+          {!isEditionAdmin && (
+            <a href="/" style={{ fontSize: 11, color: T.textDim, textDecoration: 'none' }}>🏠 Home</a>
+          )}
+          <button onClick={() => { sessionStorage.removeItem('tse_session'); localStorage.removeItem('tse_session'); window.location.href = isEditionAdmin ? '/admin' : '/' }}
+            style={{ padding: '6px', background: 'transparent', border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.textDim, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' as const }}>
             Sign out
           </button>
         </div>
