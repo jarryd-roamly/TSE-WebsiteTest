@@ -200,6 +200,18 @@ const DEFAULT_KB: KBEntry[] = [
   { id: 'kb-prop-singita-boulders', edition_id: 'safari', type: 'property', inclusion_source: 'KB', title: 'Singita Boulders Lodge', linkedTo: 'Singita Boulders Lodge', active: true, structuredFields: { why_here: 'Six riverside suites built into the boulders above the Sand River. The benchmark luxury safari lodge.', best_room: 'Request Suite 3 (Boulders Suite) — north-facing, directly above the river bend, private plunge pool.', best_sightings: 'Leopard at the river most evenings. Lion crosses at dawn. Wild dog May–July.', ideal_nights: '4 nights. 3 feels rushed — you need two full drive cycles to hit your stride.' }, specialistNotes: 'Our rate is 27% below Booking.com. Groups 6+: 10% discount. Ask for Marcus or Sipho as guide.' },
   { id: 'kb-prop-mombo', edition_id: 'safari', type: 'property', inclusion_source: 'KB', title: 'Wilderness Mombo Camp', linkedTo: 'Wilderness Mombo Camp', active: true, structuredFields: { why_here: "Chief's Island — the largest island in the Delta — has the highest predator density in Botswana.", best_sightings: 'Wild dog almost guaranteed June–September. Lion year-round.', ideal_nights: '3–4 nights. Your best sighting is often the last morning.' }, specialistNotes: 'Request Little Mombo (6 tents) for honeymooners — more intimate. Same guiding team.' },
   { id: 'kb4', edition_id: 'safari', type: 'trade_tip', inclusion_source: 'KB', title: 'Charter Flights — Booking Tips', linkedTo: 'flights', active: true, structuredFields: { federal_air: 'Book minimum 6 weeks ahead high season. Weight limit: 20kg soft bag only.', baggage: 'ALL bush charter carriers: 20kg total soft bag. No exceptions. Advise guests firmly.', cancellation: 'Federal Air: 72hr cancellation policy. Full charge within 72hrs.' }, specialistNotes: 'Federal Air preferred for Skukuza, Eastgate, Hoedspruit. Never book LAM Mozambique without reconfirming 48hrs ahead.' },
+  {
+    id: 'kb-transfer-madikwe', edition_id: 'safari', type: 'trade_tip',
+    inclusion_source: 'KB', title: 'Transfers — Madikwe Distances (CRITICAL)',
+    linkedTo: 'madikwe', active: true,
+    structuredFields: {
+      cape_town_to_madikwe: 'Cape Town to Madikwe: 2hr domestic flight via JNB (recommended) OR 8hr+ road. NOT 4.5 hours. Never quote 4.5hrs — this is incorrect.',
+      jnb_to_madikwe: 'Johannesburg to Madikwe: 3.5hr drive OR 45min charter flight. Most guests drive.',
+      cape_town_to_kruger: 'Cape Town to Kruger/Sabi Sand: fly to JNB (2hrs), then Federal Air to Skukuza (55min). Total ~4hrs door to lodge.',
+      common_error: 'The 4.5hr transfer figure applies ONLY to Cape Town → Kruger via Nelspruit. It does NOT apply to Cape Town → Madikwe.',
+    },
+    specialistNotes: 'Always correct any AI output that says Cape Town to Madikwe is 4.5hrs — it is not. Correct routing: fly CPT→JNB, drive 3.5hrs north or charter to Madikwe airstrip.',
+  },
 ];
 
 const RESEARCH_STEPS = [
@@ -620,7 +632,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [preloading, setPreloading] = useState(false);
 
   const [kbEntries,  setKbEntries]  = useState<KBEntry[]>(DEFAULT_KB);
-  const [kbSelected, setKbSelected] = useState(['kb-region-kruger','kb-region-okavango','kb-prop-singita-boulders','kb-prop-mombo','kb4']);
+  const [kbSelected, setKbSelected] = useState(['kb-region-kruger','kb-region-okavango','kb-prop-singita-boulders','kb-prop-mombo','kb4','kb-transfer-madikwe']);
 
   // FIX 1 — Hotels: log fetch result so we can see what's happening
   const [hotels, setHotels] = useState<Hotel[]>(HOTELS_FALLBACK);
@@ -636,8 +648,8 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       setSuppliersLoaded(true);
       return;
     }
-    // Removed supplier_type filter in case column doesn't exist on all rows
-    // Fetch all active lodges with a region_slug
+    // Query: active suppliers with a region_slug. No supplier_type filter in URL
+    // because some rows have NULL supplier_type (NULL != 'operator' = NULL in PostgREST, excludes row)
     const query = `${url}/rest/v1/suppliers?select=*&is_active=eq.true&region_slug=not.is.null&order=trust_score.desc&limit=100`;
     fetch(query, { headers: { apikey: key, Authorization: `Bearer ${key}` } })
       .then(r => {
@@ -645,11 +657,12 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
         return r.json();
       })
       .then((rows: any[]) => {
-        // Filter out operators (flight/transfer companies without lodge rates)
+        // Filter out operators in JS — handles both supplier_type='operator' AND NULL rows
+        const OPERATOR_NAMES = ['Federal Air','Fastjet South Africa','Mack Air Botswana','Wilderness Air Botswana','Cape Town Airport Transfers'];
         const lodges = rows.filter(r =>
           r.country && r.name &&
           r.supplier_type !== 'operator' &&
-          !['Federal Air','Fastjet South Africa','Mack Air Botswana','Wilderness Air Botswana','Cape Town Airport Transfers'].includes(r.name)
+          !OPERATOR_NAMES.includes(r.name)
         );
         console.log(`[Suppliers] Fetched ${rows.length} rows, ${lodges.length} lodges after filter`);
         if (lodges.length > 0) {
@@ -787,16 +800,18 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     const aiPromise = runPlannerEngine({ kbContext: kbCtx, promptBody, ai: edition.ai })
       .catch(() => null); // null = fallback
 
-    // Run spinner animation concurrently
-    for (let i = 0; i < RESEARCH_STEPS.length; i++) {
-      setResearchStep(i);
-      await new Promise(r => setTimeout(r, 600));
-    }
+    // Run spinner with interval — clears as soon as AI responds
+    let spinStep = 0;
+    const spinInterval = setInterval(() => {
+      spinStep = Math.min(spinStep + 1, RESEARCH_STEPS.length - 1);
+      setResearchStep(spinStep);
+    }, 600);
 
     track('itinerary_viewed', edition.id, { mode, nights, adults, budget });
 
-    // Await the AI result (may already be done)
+    // Await AI — result shows immediately, doesn't wait for full animation
     const result = await aiPromise;
+    clearInterval(spinInterval);
     if (result) {
       result.inputMode = mode;
       setItinerary(result);
@@ -1251,13 +1266,30 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
               <button className="btn-gold" style={{ padding:16, fontSize:15 }} onClick={() => {
                 track('price_and_book_clicked', edition.id, { totalEstimate: itinerary.totalEstimate });
                 if (itinerary.cities.length > 0) {
-                  const newStays = itinerary.cities.map((city, i) => ({
-                    id: i + 1,
-                    // FIX 4 — use the hotel index from the inspire-plan carousel
-                    hotelIdx: cityHotelIdxs[i] ?? i % hotelsByMargin.length,
-                    nights: city.nights || 3,
-                    prefs: { rooms: 0, basis: 0, flexibility: 0 },
-                  }));
+                  const newStays = itinerary.cities.map((city, i) => {
+                    // Resolve the exact hotel the user was viewing on inspire-plan
+                    // cityHotelIdxs[i] is an index into the per-city filtered stack, NOT hotelsByMargin
+                    // So we must look up the hotel object, then find its position in hotelsByMargin
+                    const cityName = city.city.toLowerCase().trim();
+                    const targetSlug = CITY_TO_SLUG[cityName] ?? CITY_TO_SLUG[city.city.toLowerCase()];
+                    const cityStack = targetSlug
+                      ? hotelsByMargin.filter(h => h.subRegion === targetSlug)
+                      : hotelsByMargin.filter(h => {
+                          const dest = (h.destination ?? '').toLowerCase();
+                          return dest.includes(cityName) || cityName.includes(dest);
+                        });
+                    const stack = cityStack.length > 0 ? cityStack : hotelsByMargin;
+                    const selectedHotel = stack[Math.min(cityHotelIdxs[i] ?? 0, stack.length - 1)];
+                    const globalIdx = selectedHotel
+                      ? hotelsByMargin.findIndex(h => h.id === selectedHotel.id)
+                      : i % hotelsByMargin.length;
+                    return {
+                      id: i + 1,
+                      hotelIdx: Math.max(0, globalIdx),
+                      nights: city.nights || 3,
+                      prefs: { rooms: 0, basis: 0, flexibility: 0 },
+                    };
+                  });
                   setPropertyStays(newStays);
                   setNights(newStays.reduce((s, s2) => s + s2.nights, 0));
                 }
