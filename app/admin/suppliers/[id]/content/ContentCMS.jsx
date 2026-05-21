@@ -60,22 +60,27 @@ function extractYouTubeId(url) {
 
 function buildYouTubeEmbedUrl(videoId, start, end, speed = 1, autoplay = 1) {
   const params = new URLSearchParams({
-    start: Math.floor(start),
-    end: Math.floor(end),
-    autoplay: autoplay,
-    mute: 1,
-    loop: 1,
-    playlist: videoId,
-    controls: 0,
-    rel: 0,
-    playsinline: 1,
-    // speed handled via YouTube IFrame API postMessage — stored for reference
+    start:          Math.floor(start),
+    end:            Math.floor(end),
+    autoplay:       autoplay,
+    mute:           1,
+    loop:           1,
+    playlist:       videoId,   // required for loop to work
+    controls:       0,         // hides play/pause bar
+    rel:            0,         // no related videos
+    modestbranding: 1,         // removes YouTube logo
+    showinfo:       0,         // deprecated but still suppresses some UI
+    fs:             0,         // no fullscreen button
+    disablekb:      1,         // disable keyboard controls
+    iv_load_policy: 3,         // no annotations
+    playsinline:    1,
   });
   return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 }
 
 // ── CONTENT SCORE ─────────────────────────────────────────────────────────────
-function calcFullScore(supplier, kbCount) {
+// kbCount is internal TSE notes — deliberately excluded from score (suppliers should not see why their score differs)
+function calcFullScore(supplier) {
   const desc  = supplier.description ?? "";
   const imgs  = (supplier.images ?? []).filter(i => i.status === "approved");
   const reels = (supplier.reels ?? []).filter(r => r.status === "approved");
@@ -90,7 +95,7 @@ function calcFullScore(supplier, kbCount) {
   const photoPts = imgs.length >= 12 ? 20 : imgs.length >= 6 ? 12 : imgs.length >= 3 ? 6 : 0;
   const reelPts  = reels.length >= 3 ? 25 : reels.length >= 2 ? 20 : reels.length >= 1 ? 10 : 0;
   const socPts   = (soc.instagram ? 4 : 0) + (soc.facebook ? 3 : 0) + (soc.youtube ? 3 : 0);
-  const kbPts    = kbCount >= 3 ? 10 : kbCount >= 1 ? 4 : 0;
+  const kbPts    = 0; // TSE internal notes excluded from score — suppliers can't see them
   const kwPts    = kw.length >= 5 ? 5 : kw.length >= 2 ? 2 : 0;
   const freshPts = supplier.last_content_update ? 5 : 0;
 
@@ -356,13 +361,17 @@ function YouTubeEmbedPopup({ onSave, onClose, existingReel }) {
               <div style={{marginBottom:20}}>
                 <div style={{position:"relative",paddingTop:"56.25%",borderRadius:10,overflow:"hidden",background:T.bg2}}>
                   {previewing ? (
-                    <iframe
-                      key={previewKey.current}
-                      src={buildYouTubeEmbedUrl(videoId, start, end, speed, 1)}
-                      style={{position:"absolute",inset:0,width:"100%",height:"100%",border:"none"}}
-                      allow="autoplay; encrypted-media"
-                      allowFullScreen={false}
-                    />
+                    <>
+                      <iframe
+                        key={previewKey.current}
+                        src={buildYouTubeEmbedUrl(videoId, start, end, speed, 1)}
+                        style={{position:"absolute",inset:0,width:"100%",height:"100%",border:"none"}}
+                        allow="autoplay; encrypted-media"
+                        allowFullScreen={false}
+                      />
+                      {/* Transparent overlay: blocks YouTube share/info/branding UI */}
+                      <div style={{position:"absolute",inset:0,zIndex:2,background:"transparent",pointerEvents:"none"}} />
+                    </>
                   ) : (
                     <img
                       src={`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
@@ -1023,10 +1032,22 @@ function SupplierContentPanel({ uploadedBy = "supplier" }) {
 
   // Load real supplier from URL
   useEffect(() => {
+    // Extract supplier ID from URL — supports both path and query param
     const parts = window.location.pathname.split("/");
     const idx = parts.indexOf("suppliers");
-    const supplierId = idx !== -1 ? parts[idx+1] : null;
-    if (!supplierId || supplierId.length < 10) { setLoading(false); return; }
+    // Path param: /admin/suppliers/[id]/content
+    let supplierId = idx !== -1 ? parts[idx+1] : null;
+    // Fallback: query param ?supplier_id=xxx
+    if (!supplierId) {
+      const qp = new URLSearchParams(window.location.search);
+      supplierId = qp.get("supplier_id");
+    }
+    // UUIDs are 36 chars. Reject obviously wrong values.
+    if (!supplierId || supplierId === "[id]" || supplierId === "content" || supplierId.length < 8) {
+      setLoading(false);
+      setFlash("❌ No supplier ID found in URL. Open this page from a supplier record.");
+      return;
+    }
     fetch(`${SB_URL}/rest/v1/suppliers?id=eq.${supplierId}&select=*`, {
       headers:{ apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}` }
     })
@@ -1053,21 +1074,39 @@ function SupplierContentPanel({ uploadedBy = "supplier" }) {
           theme_tags:      s.theme_tags      ?? [],
           last_content_update: s.updated_at ?? null,
         });
+      } else {
+        // No supplier found — show clear error instead of silently falling back to demo data
+        setFlash(`❌ Supplier ID "${supplierId}" not found in Supabase. Check the URL.`);
+        setSupplier(prev => ({ ...prev, name: "Supplier not found", id: supplierId }));
       }
     })
-    .catch(console.error)
+    .catch(err => { console.error(err); setFlash("❌ Could not load supplier: " + err.message); })
     .finally(()=>setLoading(false));
   }, []);
 
   const onFlash = (msg) => { setFlash(msg); setTimeout(()=>setFlash(""),5000); };
-  const update = (patch) => setSupplier(s=>({...s,...patch,last_content_update:new Date().toISOString()}));
+  const update = (patch) => {
+    setSupplier(s => {
+      const updated = {...s, ...patch, last_content_update: new Date().toISOString()};
+      // Persist to Supabase immediately — fire and forget with flash on error
+      if (updated.id && updated.id !== "sup-singita-boulders") {
+        fetch(`${SB_URL}/rest/v1/suppliers?id=eq.${updated.id}`, {
+          method: "PATCH",
+          headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify(patch),
+        }).then(r => { if (!r.ok) r.text().then(t => setFlash("⚠ Save error: " + t)); })
+          .catch(e => setFlash("⚠ Save error: " + e.message));
+      }
+      return updated;
+    });
+  };
   const updateRoom = (id,patch) => setSupplier(s=>({...s,room_types:s.room_types.map(r=>r.id===id?{...r,...patch}:r),last_content_update:new Date().toISOString()}));
   const removeRoom = (id) => setSupplier(s=>({...s,room_types:s.room_types.filter(r=>r.id!==id)}));
   const updateActivity = (id,patch) => setSupplier(s=>({...s,activities:s.activities.map(a=>a.id===id?{...a,...patch}:a)}));
   const removeActivity = (id) => setSupplier(s=>({...s,activities:s.activities.filter(a=>a.id!==id)}));
   const addActivity = () => { const id=`act-${Date.now()}`; setSupplier(s=>({...s,activities:[...s.activities,{id,name:"New Activity",type:"activity",description:"",duration:"",price_display:"",is_included:false,images:[]}]})); };
 
-  const scoreData = calcFullScore(supplier, 0);
+  const scoreData = calcFullScore(supplier);
   const hasRooms = HAS_ROOMS.includes((supplier.supplier_type??"lodge").toLowerCase());
 
   // Property gallery — images not tied to a specific room
