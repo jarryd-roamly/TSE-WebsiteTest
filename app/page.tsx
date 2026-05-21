@@ -181,10 +181,27 @@ const ACTIVITIES = [
 ];
 
 const SPECIALISTS = [
-  { name: 'Sarah Mitchell', role: 'Senior Safari Specialist',          avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', tip: 'June–August is peak season — book 6 months ahead for Sabi Sand.',           instagram: '@sarahsafaris',  quote: 'Every great safari starts with the right lodge in the right season.', trips: 247 },
-  { name: 'James Okonkwo',  role: 'East Africa Specialist',            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80', tip: 'The Great Migration crosses the Mara River July–October. Don\'t miss it.', instagram: '@jamesonsafari', quote: 'Kenya and Tanzania together is the ultimate safari combination.',     trips: 183 },
-  { name: 'Priya Naidoo',   role: 'Indian Ocean & Islands Specialist', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=120&q=80', tip: 'Combine 4 nights bush with 4 nights beach — the perfect balance.',          instagram: '@priyatravels',  quote: 'The best safaris end on an island.',                                trips: 156 },
+  { name: 'Sarah',     role: 'Safari Specialist',             avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', tip: 'June–August is peak season — book 6 months ahead for Sabi Sand.',        quote: 'Every great safari starts with the right lodge in the right season.', trips: 247 },
+  { name: 'Thandeka',  role: 'Southern Africa Specialist',    avatar: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=120&q=80', tip: 'Botswana in July: wild dogs in the Delta, lion on Chief's Island.',       quote: 'The Delta at peak flood is unlike anything else on earth.',            trips: 192 },
+  { name: 'Beverley',  role: 'East Africa & Islands',         avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=120&q=80', tip: 'Combine 4 nights bush with 4 nights beach — the perfect balance.',         quote: 'The best safaris end on an island.',                                   trips: 156 },
+  { name: 'Simon',     role: 'Itinerary & Logistics',         avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80', tip: 'Routing matters as much as the lodges — let's get the sequence right.',   quote: 'A well-sequenced itinerary doubles the experience.',                   trips: 183 },
+  { name: 'Clarence',  role: 'Cape & Southern Circuit',       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&q=80', tip: 'Madikwe is malaria-free — the smartest choice for families.',              quote: 'South Africa has the most accessible Big Five in Africa.',             trips: 211 },
 ];
+
+// Escalation rules — when AI hands off to a real person
+const ESCALATION_TRIGGERS = [
+  { pattern: /booking ref|reference|TSE-|my booking|existing booking|change.*booking|cancel.*booking/i, reason: 'existing booking', action: 'human' },
+  { pattern: /payment|invoice|charged|refund|deposit|receipt/i,                                          reason: 'payment query',   action: 'human' },
+  { pattern: /complaint|unhappy|wrong|mistake|error|problem with/i,                                      reason: 'complaint',        action: 'human' },
+  { pattern: /call me|phone|speak to|talk to|need someone|real person/i,                                 reason: 'contact request',  action: 'human' },
+];
+
+function checkEscalation(msg: string): { escalate: boolean; reason: string } | null {
+  for (const rule of ESCALATION_TRIGGERS) {
+    if (rule.pattern.test(msg)) return { escalate: true, reason: rule.reason };
+  }
+  return null;
+}
 
 const CURATED_JOURNEYS = [
   { id: 'sabi-classic',    name: 'The Sabi Sand Classic',        tagline: "South Africa's finest leopard territory",    nights: 5, pax: 2, image: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', badge: 'Most popular',   badgeColor: T.gold,    includes: ['Return Federal Air charter JNB→Skukuza','5 nights Singita Sabi Sand','All-inclusive','All game drives & walks','All transfers'],     priceFrom: 142000, otaEquivalent: 192000 },
@@ -457,7 +474,31 @@ function Nav({ edition, setScreen, currency, setCurrency, chatOpen, setChatOpen,
             {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
           </select>
           <button onClick={() => setChatOpen((x: boolean) => !x)} style={{ background:T.goldDim, border:`0.5px solid ${T.borderGold}`, color:T.gold, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>{chatOpen ? '✕ Close' : '✦ Specialists'}</button>
-          <a href="/admin" style={{ background:'rgba(255,255,255,0.06)', border:`0.5px solid rgba(255,255,255,0.14)`, color:T.textMid, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', textDecoration:'none' }}>Admin →</a>
+          <div style={{ position:'relative' }} id="partner-login-wrapper">
+            <button
+              id="partner-login-btn"
+              onClick={() => {
+                const d = document.getElementById('partner-login-dropdown')
+                if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none'
+              }}
+              style={{ background:'rgba(212,175,55,0.10)', border:`0.5px solid rgba(212,175,55,0.28)`, color:'#d4af37', borderRadius:8, padding:'7px 16px', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+              Partner Login ▾
+            </button>
+            <div id="partner-login-dropdown" style={{ display:'none', position:'absolute', top:'calc(100% + 6px)', right:0, background:'#0d0e1a', border:`0.5px solid rgba(212,175,55,0.28)`, borderRadius:10, overflow:'hidden', zIndex:300, minWidth:180, boxShadow:'0 8px 32px rgba(0,0,0,0.6)' }}>
+              <a href="/admin" style={{ display:'block', padding:'11px 16px', color:'#f0ede6', textDecoration:'none', fontSize:13, borderBottom:'0.5px solid rgba(255,255,255,0.07)' }}
+                onMouseOver={e=>(e.currentTarget.style.background='rgba(212,175,55,0.08)')} onMouseOut={e=>(e.currentTarget.style.background='transparent')}>
+                ✦ TSE Admin
+              </a>
+              <a href="/supplier" style={{ display:'block', padding:'11px 16px', color:'#f0ede6', textDecoration:'none', fontSize:13, borderBottom:'0.5px solid rgba(255,255,255,0.07)' }}
+                onMouseOver={e=>(e.currentTarget.style.background='rgba(212,175,55,0.08)')} onMouseOut={e=>(e.currentTarget.style.background='transparent')}>
+                🏕 Supplier Portal
+              </a>
+              <a href="/admin" style={{ display:'block', padding:'11px 16px', color:'#f0ede6', textDecoration:'none', fontSize:13 }}
+                onMouseOver={e=>(e.currentTarget.style.background='rgba(212,175,55,0.08)')} onMouseOut={e=>(e.currentTarget.style.background='transparent')}>
+                🤝 B2B Partner
+              </a>
+            </div>
+          </div>
         </div>
       </div>
       {editionOpen && <div style={{ position:'fixed', inset:0, zIndex:199 }} onClick={() => setEditionOpen(false)} />}
@@ -936,6 +977,19 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
     setChatMsgs(m => [...m, { role: 'user', text: msg }]);
     setChatLoading(true);
     track('chat_sent', edition.id, { screen, msgLength: msg.length });
+
+    // Check escalation triggers before sending to AI
+    const esc = checkEscalation(msg);
+    if (esc) {
+      const sName = specialist?.name || 'one of our specialists';
+      setChatMsgs(m => [...m, {
+        role: 'assistant',
+        text: `That's something ${sName} needs to handle directly. I'm flagging this for our team now — please reach out at journeys@thesafariedition.com or WhatsApp +27 000 000 000 and we'll be back to you within a few hours.`
+      }]);
+      setChatLoading(false);
+      return;
+    }
+
     try { const reply = await chatWithSpecialist(msg, edition.ai); setChatMsgs(m => [...m, { role: 'assistant', text: reply }]); }
     catch { setChatMsgs(m => [...m, { role: 'assistant', text: 'The dry season (June–Sept) is perfect — short grass, animals at water.' }]); }
     setChatLoading(false);
