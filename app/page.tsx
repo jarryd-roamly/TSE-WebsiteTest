@@ -181,11 +181,11 @@ const ACTIVITIES = [
 ];
 
 const SPECIALISTS = [
-  { name: 'Sarah',     role: 'Safari Specialist',             avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', tip: 'June–August is peak season — book 6 months ahead for Sabi Sand.',        quote: 'Every great safari starts with the right lodge in the right season.', trips: 247 },
-  { name: 'Thandeka',  role: 'Southern Africa Specialist',    avatar: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=120&q=80', tip: 'Botswana in July: wild dogs in the Delta, lion on Chief's Island.',       quote: 'The Delta at peak flood is unlike anything else on earth.',            trips: 192 },
-  { name: 'Beverley',  role: 'East Africa & Islands',         avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=120&q=80', tip: 'Combine 4 nights bush with 4 nights beach — the perfect balance.',         quote: 'The best safaris end on an island.',                                   trips: 156 },
-  { name: 'Simon',     role: 'Itinerary & Logistics',         avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80', tip: 'Routing matters as much as the lodges — let's get the sequence right.',   quote: 'A well-sequenced itinerary doubles the experience.',                   trips: 183 },
-  { name: 'Clarence',  role: 'Cape & Southern Circuit',       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&q=80', tip: 'Madikwe is malaria-free — the smartest choice for families.',              quote: 'South Africa has the most accessible Big Five in Africa.',             trips: 211 },
+  { name: 'Sarah',     role: 'Safari Specialist',             avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', tip: 'June–August is peak season — book 6 months ahead for Sabi Sand.',           quote: 'Every great safari starts with the right lodge in the right season.', trips: 247 },
+  { name: 'Thandeka',  role: 'Southern Africa Specialist',    avatar: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=120&q=80', tip: "Botswana in July: wild dogs in the Delta, lion on Chief's Island.",          quote: 'The Delta at peak flood is unlike anything else on earth.',            trips: 192 },
+  { name: 'Beverley',  role: 'East Africa & Islands',         avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=120&q=80', tip: 'Combine 4 nights bush with 4 nights beach — the perfect balance.',          quote: 'The best safaris end on an island.',                                   trips: 156 },
+  { name: 'Simon',     role: 'Itinerary & Logistics',         avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&q=80', tip: "Routing matters as much as the lodges — let's get the sequence right.",    quote: 'A well-sequenced itinerary doubles the experience.',                   trips: 183 },
+  { name: 'Clarence',  role: 'Cape & Southern Circuit',       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&q=80', tip: 'Madikwe is malaria-free — the smartest choice for families.',               quote: 'South Africa has the most accessible Big Five in Africa.',             trips: 211 },
 ];
 
 // Escalation rules — when AI hands off to a real person
