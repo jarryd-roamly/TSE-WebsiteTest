@@ -183,7 +183,7 @@ function DimBar({ label, current, max, locked }) {
   return (
     <div style={{marginBottom:7}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-        <span style={{fontSize:11,color:locked?T.purple:T.textMid}}>{label}{locked&&<span style={{fontSize:9,opacity:0.6}}> · TSE only</span>}</span>
+        <span style={{fontSize:11,color:locked?T.purple:T.textMid}}>{label}{locked&&<span style={{fontSize:9,opacity:0.6,marginLeft:4,padding:"1px 5px",background:"rgba(167,139,250,0.1)",borderRadius:4}}> TSE only</span>}</span>
         <span style={{fontSize:11,color:current>=max?T.green:T.textDim}}>{current}/{max}</span>
       </div>
       <div style={{height:3,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden"}}>
@@ -1048,13 +1048,25 @@ function SupplierContentPanel({ uploadedBy = "supplier" }) {
       setFlash("❌ No supplier ID found in URL. Open this page from a supplier record.");
       return;
     }
+    // Primary: filter by id on server. Fallback: fetch all and filter client-side
+    // (handles Supabase RLS policies that may block eq. filters with anon key)
     fetch(`${SB_URL}/rest/v1/suppliers?id=eq.${supplierId}&select=*`, {
       headers:{ apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}` }
     })
     .then(r=>r.json())
-    .then(data => {
-      if (data?.[0]) {
-        const s = data[0];
+    .then(async data => {
+      // If server-side filter returned nothing, try fetching all and filtering client-side
+      let record = data?.[0];
+      if (!record) {
+        const allRes = await fetch(`${SB_URL}/rest/v1/suppliers?select=*&order=name.asc&limit=500`, {
+          headers:{ apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}` }
+        });
+        const allData = await allRes.json();
+        record = Array.isArray(allData) ? allData.find(s => s.id === supplierId) : null;
+      }
+      if (record) {
+        const s = record;
+        // s already assigned as record above
         setSupplier({
           ...DEMO_SUPPLIER,
           id:          s.id,
@@ -1164,7 +1176,7 @@ function SupplierContentPanel({ uploadedBy = "supplier" }) {
       <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
         <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:10}}>Score breakdown</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 20px"}}>
-          {Object.entries(scoreData.dims).map(([key,dim])=>(
+          {Object.entries(scoreData.dims).filter(([key,dim])=>!(dim.locked && uploadedBy!=="admin")).map(([key,dim])=>(
             <DimBar key={key} label={dim.label} current={dim.pts} max={dim.max} locked={!!dim.locked}/>
           ))}
         </div>
@@ -1457,24 +1469,59 @@ function AdminReviewPanel() {
 // ROOT
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ContentCMS() {
-  const [mode, setMode] = useState("supplier");
+  // Determine if the logged-in user is a TSE admin by reading the session.
+  // Suppliers NEVER see the toggle — they always get supplier mode.
+  // This runs once on mount; no toggle rendered for non-admins.
+  const [isTSEAdmin, setIsTSEAdmin] = useState(false);
+  const [mode, setMode] = useState("admin"); // default admin since this page is /admin/suppliers/[id]/content
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("tse_session") || localStorage.getItem("tse_session");
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s.type === "edition") {
+          setIsTSEAdmin(true);
+          setMode("admin");
+        } else {
+          // Supplier logged in — lock to supplier view, no toggle
+          setIsTSEAdmin(false);
+          setMode("supplier");
+        }
+      } else {
+        // No session — default to admin mode (this page is under /admin/)
+        setIsTSEAdmin(true);
+        setMode("admin");
+      }
+    } catch {
+      setIsTSEAdmin(true);
+      setMode("admin");
+    }
+  }, []);
+
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"Arial,sans-serif"}}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
       <div style={{background:T.bg2,borderBottom:`0.5px solid ${T.border}`,padding:"10px 24px",display:"flex",gap:10,alignItems:"center"}}>
-        <span style={{fontSize:12,color:T.textDim,marginRight:6}}>View as:</span>
-        {[["supplier","Supplier"],["admin","TSE Admin"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setMode(id)}
-            style={{padding:"6px 16px",borderRadius:8,border:`0.5px solid ${mode===id?T.gold:T.border}`,background:mode===id?T.goldDim:"transparent",color:mode===id?T.gold:T.textDim,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:mode===id?700:400}}>
-            {label}
-          </button>
-        ))}
-        {mode==="admin"&&<span style={{fontSize:11,color:T.green,background:T.greenDim,border:"0.5px solid rgba(74,222,128,0.3)",borderRadius:20,padding:"2px 9px"}}>✓ No approval needed · changes logged</span>}
+        {/* Toggle only shown to TSE admins — suppliers never see this */}
+        {isTSEAdmin && (
+          <>
+            <span style={{fontSize:12,color:T.textDim,marginRight:6}}>View as:</span>
+            {[["admin","TSE Admin"],["supplier","Supplier Preview"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setMode(id)}
+                style={{padding:"6px 16px",borderRadius:8,border:`0.5px solid ${mode===id?T.gold:T.border}`,background:mode===id?T.goldDim:"transparent",color:mode===id?T.gold:T.textDim,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:mode===id?700:400}}>
+                {label}
+              </button>
+            ))}
+            {mode==="admin"&&<span style={{fontSize:11,color:T.green,background:T.greenDim,border:"0.5px solid rgba(74,222,128,0.3)",borderRadius:20,padding:"2px 9px"}}>✓ Instant apply · audit logged</span>}
+            {mode==="supplier"&&<span style={{fontSize:11,color:T.amber,background:T.amberDim,border:"0.5px solid rgba(251,191,36,0.3)",borderRadius:20,padding:"2px 9px"}}>👁 Supplier preview — changes still apply as admin</span>}
+          </>
+        )}
         <span style={{marginLeft:"auto",fontSize:11,color:T.textDim}}>✦ {EDITION_CONFIG.name} · Content CMS v4</span>
       </div>
       <div style={{maxWidth:980,margin:"0 auto",padding:"28px 24px"}}>
         {mode==="supplier"?(
-          <SupplierContentPanel uploadedBy="supplier"/>
+          <SupplierContentPanel uploadedBy={isTSEAdmin ? "admin" : "supplier"}/>
         ):(
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,alignItems:"start"}}>
             <div>
