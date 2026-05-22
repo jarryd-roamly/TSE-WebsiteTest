@@ -1457,34 +1457,38 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
 
                   // Scope hotel stack to the slugs from the current itinerary cities
                   // This prevents Cape Town selector from showing Mozambique properties etc.
-                  const itinerarySlugs = itinerary
-                    ? [...new Set(itinerary.cities.map(c => {
-                        const name = c.city.toLowerCase().trim();
-                        return CITY_TO_SLUG[name] ?? CITY_TO_SLUG[c.city.toLowerCase()] ?? null;
-                      }).filter(Boolean))] as string[]
+                  // Safe fallback if hotels not yet loaded
+                  if (hotelsByMargin.length === 0) return null;
+
+                  const itinerarySlugs: string[] = itinerary?.cities
+                    ? (itinerary.cities
+                        .map(c => CITY_TO_SLUG[c.city?.toLowerCase().trim() ?? ''] ?? null)
+                        .filter(Boolean) as string[])
                     : [];
 
                   // For this specific stay, use the slug of the matching city if possible
-                  const cityForStay = itinerary?.cities[stayIdx];
-                  const citySlug = cityForStay
-                    ? (CITY_TO_SLUG[cityForStay.city.toLowerCase().trim()] ?? CITY_TO_SLUG[cityForStay.city.toLowerCase()] ?? null)
+                  const cityForStay = itinerary?.cities?.[stayIdx];
+                  const citySlug = cityForStay?.city
+                    ? (CITY_TO_SLUG[cityForStay.city.toLowerCase().trim()] ?? null)
                     : null;
 
-                  // Build scoped stack: prefer city-specific slug, fall back to all itinerary slugs
+                  // Build scoped stack: city-specific → itinerary-wide → all hotels
                   const scopedPool = citySlug
                     ? hotelsByMargin.filter(h => h.subRegion === citySlug)
                     : itinerarySlugs.length > 0
                       ? hotelsByMargin.filter(h => itinerarySlugs.includes(h.subRegion))
                       : hotelsByMargin;
 
-                  // Also apply availability filter within scoped pool
-                  const scopedAvailable = availableHotelStack.length > 0
-                    ? availableHotelStack.filter(h => scopedPool.some(s => s.id === h.id))
-                    : scopedPool;
+                  const safePool = scopedPool.length > 0 ? scopedPool : hotelsByMargin;
 
-                  const stack = scopedAvailable.length > 0 ? scopedAvailable : scopedPool.length > 0 ? scopedPool : hotelsByMargin;
-                  const safeIdx = stay.hotelIdx % stack.length;
-                  const hotel = stack[Math.min(safeIdx, stack.length-1)] ?? stack[0];
+                  // Apply availability filter within scoped pool
+                  const scopedAvailable = availableHotelStack.length > 0
+                    ? availableHotelStack.filter(h => safePool.some(s => s.id === h.id))
+                    : safePool;
+
+                  const stack = scopedAvailable.length > 0 ? scopedAvailable : safePool;
+                  const safeIdx = stack.length > 0 ? stay.hotelIdx % stack.length : 0;
+                  const hotel = stack[Math.min(safeIdx, stack.length - 1)] ?? hotelsByMargin[0];
                   if (!hotel) return null;
                   const { resolved, mismatches } = resolveHotelUpgrades(hotel, stay.prefs);
                   const upgradeExtra = Object.values(resolved).reduce((s: number, v: any) => s + (v?.extra ?? 0), 0);
