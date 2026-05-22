@@ -1236,7 +1236,7 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
                     )}
                     <div style={{ fontSize:12, color:T.textMid, marginBottom:10, lineHeight:1.6 }}>{city.why}</div>
                     <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
-                      {city.highlights.filter(Boolean).map((h: string, hi: number) => <span key={hi} style={{ fontSize:11, color:T.textDim, background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'3px 10px' }}>✦ {h}</span>)}
+                      {(city.highlights ?? []).filter(Boolean).map((h: string, hi: number) => <span key={hi} style={{ fontSize:11, color:T.textDim, background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'3px 10px' }}>✦ {h}</span>)}
                     </div>
                     {hotel && (
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:10, borderTop:`0.5px solid ${T.border}` }}>
@@ -1258,17 +1258,17 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
               );
             })}
 
-            {itinerary.aiInsights?.filter(Boolean).length > 0 && (
+            {(itinerary.aiInsights ?? []).filter(Boolean).length > 0 && (
               <div style={{ background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:14, padding:'16px 18px', marginBottom:16 }}>
                 <div style={{ fontSize:11, color:'rgba(212,175,55,0.7)', fontWeight:600, letterSpacing:'0.07em', textTransform:'uppercase' as const, marginBottom:10 }}>Rate insights</div>
-                {itinerary.aiInsights.filter(Boolean).map((ins: string, i: number) => <div key={i} style={{ display:'flex', gap:8, marginBottom:6, fontSize:12, color:T.textMid, lineHeight:1.55 }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{ins}</div>)}
+                {(itinerary.aiInsights ?? []).filter(Boolean).map((ins: string, i: number) => <div key={i} style={{ display:'flex', gap:8, marginBottom:6, fontSize:12, color:T.textMid, lineHeight:1.55 }}><span style={{ color:T.gold, flexShrink:0 }}>✦</span>{ins}</div>)}
               </div>
             )}
 
             {/* FIX 6 — Filter patronising warnings before display */}
-            {filterWarnings(itinerary.warnings).length > 0 && (
+            {filterWarnings(itinerary.warnings ?? []).length > 0 && (
               <div style={{ background:'rgba(251,146,60,0.07)', border:'0.5px solid rgba(251,146,60,0.22)', borderRadius:12, padding:'12px 16px', marginBottom:16 }}>
-                {filterWarnings(itinerary.warnings).map((w: string, i: number) => <div key={i} style={{ fontSize:12, color:'rgba(251,146,60,0.9)', lineHeight:1.55 }}>⚠ {w}</div>)}
+                {filterWarnings(itinerary.warnings ?? []).map((w: string, i: number) => <div key={i} style={{ fontSize:12, color:'rgba(251,146,60,0.9)', lineHeight:1.55 }}>⚠ {w}</div>)}
               </div>
             )}
 
