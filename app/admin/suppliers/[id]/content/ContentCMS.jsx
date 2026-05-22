@@ -30,7 +30,7 @@ const T = {
 };
 
 const SB_URL = "https://tkthsbxuyihoblpcfnml.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrdGhzYnh1eWlob2JscGNmbW1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3MzkzODAsImV4cCI6MjA5MzMxNTM4MH0.vMYkuyH-5vs4zCd9ONxq9evvZZ_OTyxSPyUSU6pdUGg";
+const SB_KEY = "sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx";
 
 // Supplier types that have room type tiles
 const HAS_ROOMS = ["lodge", "camp", "hotel", "boutique-hotel", "villa", "tented-camp"];
