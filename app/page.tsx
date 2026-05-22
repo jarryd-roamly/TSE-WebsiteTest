@@ -851,11 +851,11 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     track('itinerary_viewed', edition.id, { mode, nights, adults, budget });
 
     // Await AI — result shows immediately, doesn't wait for full animation
-    const result = await aiPromise;
-    clearInterval(spinInterval);
-    if (result) {
-      result.inputMode = mode;
-      setItinerary(result);
+const result = await aiPromise;
+clearInterval(spinInterval);
+if (result && result.cities?.length > 0 && result.cities.every((c: any) => c?.city && c?.country)) {
+  result.inputMode = mode;
+  setItinerary(result);
       setCityHotelIdxs([0, 1, 2, 3]);
       setInspireMsgs([{ role: 'assistant', text: `We've put together your journey. Want to adjust anything?` }]);
     } else {
@@ -962,9 +962,16 @@ Respond ONLY with a valid JSON object matching the Itinerary type. No preamble, 
       if (FACTUAL.test(msg)) { const answer = await answerFactual(msg, itinerary.cities[0]?.city ?? 'Southern Africa', edition.ai); setInspireMsgs(m => [...m, { role: 'assistant', text: answer }]); setInspireLoading(false); return; }
       const diff = await applyCreativeDiff({ message: msg, itinerary, budget, nights, ai: edition.ai });
       if (diff.cities?.length) {
-        const updatedCities = itinerary.cities.map(existing => { const changed = diff.cities!.find((c: any) => c.city === existing.city); return changed ? { ...existing, ...changed } : existing; });
-        diff.cities.forEach((c: any) => { if (!itinerary.cities.find(e => e.city === c.city)) updatedCities.push(c); });
-        setItinerary({ ...itinerary, cities: updatedCities, totalEstimate: diff.totalEstimate ?? itinerary.totalEstimate });
+const updatedCities = itinerary.cities.map(existing => {
+  const changed = diff.cities!.find((c: any) => c.city === existing.city);
+  return changed ? { ...existing, ...changed } : existing;
+});
+diff.cities.forEach((c: any) => {
+  if (c?.city && !itinerary.cities.find(e => e.city === c.city)) updatedCities.push(c);
+});
+// Ensure no city is missing required fields before setting
+const safeCities = updatedCities.filter(c => c?.city && c?.country);
+setItinerary({ ...itinerary, cities: safeCities.length > 0 ? safeCities : itinerary.cities, totalEstimate: diff.totalEstimate ?? itinerary.totalEstimate });
       }
       setInspireMsgs(m => [...m, { role: 'assistant', text: diff.reply ?? 'Done.', revert: prev }]);
     } catch { setInspireMsgs(m => [...m, { role: 'assistant', text: 'Something went wrong. Please try again.', revert: prev }]); }
