@@ -2481,7 +2481,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                   <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
                     {bookingFlight
                       ? 'Your return flight is included. Your Journey Specialist will confirm your departure timing and transfer from the final lodge.'
-                      : 'You're arranging your own return flight. Select your departure airport so we can add your final transfer.'}
+                      : "You're arranging your own return flight. Select your departure airport so we can add your final transfer."}
                   </div>
                   {!bookingFlight && hubs.map(hub => (
                     <div key={hub.code} style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:9, padding:'10px 14px', marginBottom:8 }}>
