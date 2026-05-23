@@ -202,13 +202,18 @@ const DEFAULT_KB: KBEntry[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 type InternalLeg = { fromLabel:string; toLabel:string; mode:'charter'|'scheduled'|'road'|'boat'; provider:string; duration:string; estimatedCostZAR:number; aiNote:string; bufferHours:number; };
 
-const INTERNAL_LEGS: Record<string, InternalLeg> = {
-  'cape-town→kruger-sabi-sand': { fromLabel:'Cape Town', toLabel:'Sabi Sand', mode:'scheduled', provider:'Airlink CPT→JNB + Federal Air JNB→Skukuza', duration:'~2h 45m', estimatedCostZAR:12000, aiNote:'Morning departure from CPT recommended to catch the afternoon game drive.', bufferHours:3 },
-  'kruger-sabi-sand→okavango-delta': { fromLabel:'Sabi Sand', toLabel:'Okavango Delta', mode:'charter', provider:'Federal Air / Wilderness Air charter', duration:'~2h 15m', estimatedCostZAR:18000, aiNote:'Direct charter from Skukuza. Departs post-morning game drive (~10:00).', bufferHours:1.5 },
-  'okavango-delta→chobe-vic-falls': { fromLabel:'Okavango Delta', toLabel:'Chobe / Victoria Falls', mode:'charter', provider:'Air Botswana / Wilderness Air', duration:'~1h 30m', estimatedCostZAR:9500, aiNote:'Afternoon departure post-morning activity recommended.', bufferHours:1.5 },
-  'kruger-sabi-sand→chobe-vic-falls': { fromLabel:'Sabi Sand', toLabel:'Victoria Falls', mode:'charter', provider:'Charter or scheduled via JNB', duration:'~2h 30m', estimatedCostZAR:14000, aiNote:'Journey Specialist confirms best routing based on travel dates.', bufferHours:2 },
-  'kruger-sabi-sand→cape-town': { fromLabel:'Sabi Sand', toLabel:'Cape Town', mode:'scheduled', provider:'Federal Air Skukuza→JNB + Airlink JNB→CPT', duration:'~3h', estimatedCostZAR:12000, aiNote:'Allow 2hr connection at O.R. Tambo.', bufferHours:2.5 },
-  'cape-town→okavango-delta': { fromLabel:'Cape Town', toLabel:'Okavango Delta', mode:'scheduled', provider:'Airlink CPT→JNB + Mack Air JNB→Maun', duration:'~4h', estimatedCostZAR:16500, aiNote:'Connect through Johannesburg. Afternoon arrival in Maun.', bufferHours:3.5 },
+// road_viable: false = road transfer is geographically impossible / impractical.
+// This prevents buildTransferOptions from hallucinating road alternatives.
+const INTERNAL_LEGS: Record<string, InternalLeg & { road_viable?: boolean }> = {
+  'cape-town→kruger-sabi-sand': { fromLabel:'Cape Town', toLabel:'Sabi Sand', mode:'scheduled', provider:'Airlink CPT→JNB + Federal Air JNB→Skukuza', duration:'~2h 45m', estimatedCostZAR:12000, aiNote:'Morning departure from CPT recommended to catch the afternoon game drive.', bufferHours:3, road_viable:false },
+  'kruger-sabi-sand→okavango-delta': { fromLabel:'Sabi Sand', toLabel:'Okavango Delta', mode:'charter', provider:'Federal Air / Wilderness Air charter', duration:'~2h 15m', estimatedCostZAR:18000, aiNote:'Direct charter from Skukuza. Departs post-morning game drive (~10:00).', bufferHours:1.5, road_viable:false },
+  'okavango-delta→chobe-vic-falls': { fromLabel:'Okavango Delta', toLabel:'Chobe / Victoria Falls', mode:'charter', provider:'Air Botswana / Wilderness Air', duration:'~1h 30m', estimatedCostZAR:9500, aiNote:'Afternoon departure post-morning activity recommended.', bufferHours:1.5, road_viable:false },
+  'kruger-sabi-sand→chobe-vic-falls': { fromLabel:'Sabi Sand', toLabel:'Victoria Falls', mode:'charter', provider:'Charter or scheduled via JNB', duration:'~2h 30m', estimatedCostZAR:14000, aiNote:'Journey Specialist confirms best routing based on travel dates.', bufferHours:2, road_viable:false },
+  'kruger-sabi-sand→cape-town': { fromLabel:'Sabi Sand', toLabel:'Cape Town', mode:'scheduled', provider:'Federal Air Skukuza→JNB + Airlink JNB→CPT', duration:'~3h', estimatedCostZAR:12000, aiNote:'Allow 2hr connection at O.R. Tambo.', bufferHours:2.5, road_viable:false },
+  'cape-town→okavango-delta': { fromLabel:'Cape Town', toLabel:'Okavango Delta', mode:'scheduled', provider:'Airlink CPT→JNB + Mack Air JNB→Maun', duration:'~4h', estimatedCostZAR:16500, aiNote:'Connect through Johannesburg. Afternoon arrival in Maun.', bufferHours:3.5, road_viable:false },
+  'cape-town→madikwe':        { fromLabel:'Cape Town', toLabel:'Madikwe',         mode:'scheduled', provider:'Airlink CPT→JNB + 3.5hr private drive or 45min charter', duration:'~4h total', estimatedCostZAR:11000, aiNote:'Fly CPT→JNB, then 3.5hr private drive north or 45min charter to Madikwe airstrip.', bufferHours:4, road_viable:false },
+  'kruger-sabi-sand→madikwe': { fromLabel:'Sabi Sand', toLabel:'Madikwe',         mode:'scheduled', provider:'Federal Air + Airlink JNB connection', duration:'~3h', estimatedCostZAR:9500, aiNote:'Connect via O.R. Tambo. Allow 2hr connection.', bufferHours:3, road_viable:false },
+  'madikwe→cape-town':        { fromLabel:'Madikwe', toLabel:'Cape Town',         mode:'scheduled', provider:'Road to JNB (3.5hr) + Airlink JNB→CPT', duration:'~4h total', estimatedCostZAR:11000, aiNote:'Early morning departure from Madikwe to catch morning flights from JNB.', bufferHours:4, road_viable:false },
 };
 
 function getInternalLeg(fromSlug: string, toSlug: string): InternalLeg | null {
@@ -730,39 +735,48 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, sel
                 </div>
                 <div style={{ fontSize:12, color:T.textDim, marginBottom:14, lineHeight:1.5 }}>Add to your package · all priced per person · confirmed by your Journey Specialist</div>
                 {/* Horizontal scroll carousel */}
-                <div style={{ display:'flex', gap:12, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, marginLeft:-20, marginRight:-20, paddingLeft:20, paddingRight:20, paddingBottom:4 }}>
-                  {regionActs.map(act => {
-                    const isSel   = selectedActivityIds.includes(String(act.id));
-                    const display = Math.round(act.netRate * 1.18);
-                    const saving  = act.otaRate ? Math.round(act.otaRate - display) : 0;
-                    return (
-                      <div
-                        key={act.id}
-                        onClick={() => onActivityToggle(String(act.id))}
-                        style={{ flexShrink:0, width:'min(70vw, 240px)', scrollSnapAlign:'start', borderRadius:12, border:`1.5px solid ${isSel?T.gold:T.border}`, background:isSel?'rgba(212,175,55,0.06)':T.surface, cursor:'pointer', overflow:'hidden', transition:'border-color 0.2s' }}
-                      >
-                        <div style={{ position:'relative', height:130, overflow:'hidden' }}>
-                          <img src={act.image} alt={act.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 50%)' }} />
-                          {isSel && <div style={{ position:'absolute', top:8, right:8, width:20, height:20, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#0a0a0a', fontWeight:800 }}>✓</div>}
-                          <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'8px 10px' }}>
-                            <div style={{ fontSize:12, fontWeight:700, color:'#fff', lineHeight:1.2, fontFamily:"'Playfair Display',serif" }}>{act.name}</div>
-                            <div style={{ fontSize:10, color:'rgba(255,255,255,0.5)', marginTop:1 }}>{act.duration}</div>
-                          </div>
-                        </div>
-                        <div style={{ padding:'10px 12px' }}>
-                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4 }}>
-                            <div style={{ fontSize:11, color:T.textDim }}>★ {act.trustScore}/100</div>
-                            <div style={{ textAlign:'right' as const }}>
-                              <div style={{ fontSize:14, fontWeight:700, color:isSel?T.gold:T.text }}>{fmt(display)}<span style={{ fontSize:9, color:T.textDim, fontWeight:400 }}>/pp</span></div>
-                              {saving > 0 && <div style={{ fontSize:9, color:T.green }}>Save {fmt(saving)}</div>}
+                <div style={{ position:'relative', margin:'0 -20px' }}>
+                  {actIdx > 0 && (
+                    <button onClick={() => scrollActTo(actIdx - 1)} style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.92)', border:`1px solid ${T.borderGold}`, color:T.gold, width:32, height:52, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 12px rgba(0,0,0,0.5)' }}>‹</button>
+                  )}
+                  {actIdx < regionActs.length - 1 && (
+                    <button onClick={() => scrollActTo(actIdx + 1)} style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.92)', border:`1px solid ${T.borderGold}`, color:T.gold, width:32, height:52, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 12px rgba(0,0,0,0.5)' }}>›</button>
+                  )}
+                  <div ref={actStripRef} style={{ display:'flex', gap:12, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingLeft:20, paddingRight:20, paddingBottom:4 }}>
+                    {regionActs.map((act, actI) => {
+                      const isSel   = selectedActivityIds.includes(String(act.id));
+                      const display = Math.round(act.netRate * 1.18);
+                      const saving  = act.otaRate ? Math.round(act.otaRate - display) : 0;
+                      return (
+                        <div
+                          key={act.id}
+                          data-act-card={actI}
+                          onClick={() => { onActivityToggle(String(act.id)); setActIdx(actI); }}
+                          style={{ flexShrink:0, width:'min(70vw, 240px)', scrollSnapAlign:'center', borderRadius:12, border:`1.5px solid ${isSel?T.gold:T.border}`, background:isSel?'rgba(212,175,55,0.06)':T.surface, cursor:'pointer', overflow:'hidden', transition:'border-color 0.2s' }}
+                        >
+                          <div style={{ position:'relative', height:130, overflow:'hidden' }}>
+                            <img src={act.image} alt={act.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                            <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 50%)' }} />
+                            {isSel && <div style={{ position:'absolute', top:8, right:8, width:20, height:20, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#0a0a0a', fontWeight:800 }}>✓</div>}
+                            <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'8px 10px' }}>
+                              <div style={{ fontSize:12, fontWeight:700, color:'#fff', lineHeight:1.2, fontFamily:"'Playfair Display',serif" }}>{act.name}</div>
+                              <div style={{ fontSize:10, color:'rgba(255,255,255,0.5)', marginTop:1 }}>{act.duration}</div>
                             </div>
                           </div>
-                          <div style={{ fontSize:10, color:T.textDim, lineHeight:1.4 }}>{act.funFact}</div>
+                          <div style={{ padding:'10px 12px' }}>
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4 }}>
+                              <div style={{ fontSize:11, color:T.textDim }}>★ {act.trustScore}/100</div>
+                              <div style={{ textAlign:'right' as const }}>
+                                <div style={{ fontSize:14, fontWeight:700, color:isSel?T.gold:T.text }}>{fmt(display)}<span style={{ fontSize:9, color:T.textDim, fontWeight:400 }}>/pp</span></div>
+                                {saving > 0 && <div style={{ fontSize:9, color:T.green }}>Save {fmt(saving)}</div>}
+                              </div>
+                            </div>
+                            <div style={{ fontSize:10, color:T.textDim, lineHeight:1.4 }}>{act.funFact}</div>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
                 {selectedActivityIds.length > 0 && (
                   <div style={{ marginTop:10, padding:'9px 14px', background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, display:'flex', justifyContent:'space-between', fontSize:12 }}>
@@ -1396,31 +1410,32 @@ function buildTransferOptions(fromSlug: string, toSlug: string): TransferOption[
       });
     }
   } else if (leg.mode === 'scheduled') {
-    // Upgrade to private charter
+    // Upgrade to private charter — always a valid alternative for scheduled flights
     options.push({
       id: 'charter-upgrade',
       mode: 'charter',
       icon: '✈',
       label: 'Private Charter',
       provider: 'Direct charter — no connections',
-      duration: `Faster — no layover`,
+      duration: 'Faster — no layover',
       estimatedCostZAR: Math.round(base * 1.8),
       badges: [{ text:'Fastest', color:T.green }, { text:'Most comfortable', color:T.gold }],
       aiNote: 'Direct charter eliminates connection risk. Recommended for guests with tight schedules or peak season.',
       recommended: false,
     });
-    // Road option if under 5h
-    if (base < 15000) {
+    // Road ONLY if explicitly flagged viable in INTERNAL_LEGS — never auto-generate.
+    // Cape Town → Kruger is 1,600km and is NOT a road transfer option.
+    if ((leg as any).road_viable === true) {
       options.push({
         id: 'road',
         mode: 'road',
         icon: '🚗',
         label: 'Private Road Transfer',
         provider: 'Private vehicle with refreshments',
-        duration: '3–5 hrs depending on route',
+        duration: '2–4 hrs depending on route',
         estimatedCostZAR: Math.round(base * 0.3),
         badges: [{ text:'Cheapest', color:'#60a5fa' }, { text:'Scenic', color:'#4ade80' }],
-        aiNote: 'Scenic drive through the lowveld or bushveld. Relaxed pacing — stop when you want.',
+        aiNote: 'Scenic drive. Relaxed pacing — stop when you want.',
         recommended: false,
       });
     }
@@ -2219,6 +2234,11 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               {infants>0&&<div style={{ marginTop:12, background:'rgba(251,191,36,0.07)', border:'0.5px solid rgba(251,191,36,0.2)', borderRadius:8, padding:'8px 12px', fontSize:12, color:T.amber, lineHeight:1.55 }}>⚠ Some camps restrict under-5s on open game drives — we'll flag this in your itinerary.</div>}
             </div>
 
+            {/* Date selector on the planning form */}
+            <div style={{ marginBottom:20 }}>
+              <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
+            </div>
+
             <button className="btn-gold" style={{ width:'100%', padding:16, fontSize:15 }} onClick={runSocraticPlanner}>✦ Build My Itinerary →</button>
             <p style={{ textAlign:'center' as const, fontSize:12, color:T.textDim, marginTop:10 }}>Usually ready in under 30 seconds</p>
           </div>
@@ -2258,10 +2278,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                   <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(itinerary.totalEstimate)}</div>
                 </div>
               </div>
-              {/* Date selector */}
-              <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}` }}>
-                <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
-              </div>
+
               {/* Journey Specialist mini-profile */}
               <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}`, display:'flex', alignItems:'center', gap:12 }}>
                 <img src={specialist.avatar} alt={specialist.name} style={{ width:40, height:40, borderRadius:'50%', objectFit:'cover', border:`1.5px solid ${T.borderGold}`, flexShrink:0 }} />
@@ -2443,6 +2460,47 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                 </div>
               );
             })}
+
+            {/* ── DEPARTURE CARD — after last city ── */}
+            {(() => {
+              const lastCity = itinerary.cities[itinerary.cities.length - 1];
+              if (!lastCity) return null;
+              const lastSlug = CITY_TO_SLUG[lastCity.city.toLowerCase().trim()] ?? '';
+              // Determine likely departure hubs based on last destination
+              const hubs: {code:string; label:string; note:string}[] = lastSlug === 'cape-town'
+                ? [{ code:'CPT', label:'Cape Town International (CPT)', note:'Direct international departures to London, Amsterdam, Frankfurt, New York and more.' }]
+                : lastSlug === 'masai-mara'
+                ? [{ code:'NBO', label:'Nairobi Jomo Kenyatta (NBO)', note:'45-min charter from Mara airstrip to NBO. Book early for peak season connections.' }, { code:'MBA', label:'Mombasa Moi (MBA)', note:'Alternative via scheduled carrier — useful if combining with coast.' }]
+                : [{ code:'JNB', label:'Johannesburg O.R. Tambo (JNB)', note:'Main hub for onward international connections. Allow 3hr connection from bush charters.' },
+                   { code:'CPT', label:'Cape Town International (CPT)', note:'Domestic connection from JNB. Good option for guests ending in Cape Town.' }];
+              const bookingFlight = includeIntlFlight;
+              return (
+                <div style={{ marginBottom:24, background:`rgba(212,175,55,0.05)`, border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
+                  <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
+                  <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>Where do you fly home from?</div>
+                  <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
+                    {bookingFlight
+                      ? 'Your return flight is included. Your Journey Specialist will confirm your departure timing and transfer from the final lodge.'
+                      : 'You're arranging your own return flight. Select your departure airport so we can add your final transfer.'}
+                  </div>
+                  {!bookingFlight && hubs.map(hub => (
+                    <div key={hub.code} style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:9, padding:'10px 14px', marginBottom:8 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:3 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{hub.label}</div>
+                        <div style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:700, flexShrink:0, marginLeft:8 }}>Add transfer</div>
+                      </div>
+                      <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{hub.note}</div>
+                    </div>
+                  ))}
+                  {bookingFlight && (
+                    <div style={{ fontSize:11, color:T.green }}>✓ Return flight included — your Journey Specialist handles all final transfers and airport timing.</div>
+                  )}
+                  <div style={{ marginTop:10, fontSize:11, color:T.textDim, borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>
+                    💬 Your Journey Specialist will confirm all final logistics before travel.
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Warnings */}
             {filterWarnings(itinerary.warnings??[]).length>0 && (
