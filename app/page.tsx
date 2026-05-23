@@ -502,6 +502,17 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, sel
   const [roomSlides, setRoomSlides]   = useState<Record<number,number>>({});
   const [expandedRoom, setExpandedRoom] = useState<number | null>(null);
 
+  // Activity carousel navigation
+  const [actIdx,    setActIdx]    = useState(0);
+  const actStripRef               = useRef<HTMLDivElement>(null);
+  const scrollActTo = (i: number) => {
+    const strip = actStripRef.current;
+    if (!strip) return;
+    const cards = strip.querySelectorAll<HTMLElement>('[data-act-card]');
+    cards[i]?.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+    setActIdx(i);
+  };
+
   // Activities filtered to this region
   const regionActs = ACTIVITIES.filter(a =>
     !a.region_tags?.length || a.region_tags.includes(regionSlug)
