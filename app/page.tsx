@@ -1598,6 +1598,211 @@ function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CITY TRANSFER STRIP — airport ↔ hotel transfers for city-type destinations.
+// Own component so it can hold index state + strip ref for arrow navigation.
+// ─────────────────────────────────────────────────────────────────────────────
+function CityTransferStrip({ slug, destLabel, opts, selectedId, onSelect, fmt }: {
+  slug:       string;
+  destLabel:  string;
+  opts:       CityTransferOption[];
+  selectedId: string | undefined;
+  onSelect:   (id:string) => void;
+  fmt:        (n:number) => string;
+}) {
+  const [idx, setIdx]   = useState(0);
+  const stripRef        = useRef<HTMLDivElement>(null);
+
+  const scrollTo = (i: number) => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const cards = strip.querySelectorAll<HTMLElement>('[data-city-card]');
+    cards[i]?.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+    setIdx(i);
+  };
+
+  return (
+    <div style={{ marginBottom:16 }}>
+      {/* Section header */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
+        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+        <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
+          🚗 Airport transfer — {destLabel}
+        </div>
+        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+      </div>
+
+      {/* Carousel with arrows */}
+      <div style={{ position:'relative', margin:'0 -4px' }}>
+        {idx > 0 && (
+          <button onClick={() => scrollTo(idx - 1)} style={{ position:'absolute', left:0, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.92)', border:'1px solid rgba(74,222,128,0.4)', color:T.green, width:30, height:50, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 12px rgba(0,0,0,0.5)' }}>‹</button>
+        )}
+        {idx < opts.length - 1 && (
+          <button onClick={() => scrollTo(idx + 1)} style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.92)', border:'1px solid rgba(74,222,128,0.4)', color:T.green, width:30, height:50, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 12px rgba(0,0,0,0.5)' }}>›</button>
+        )}
+
+        <div ref={stripRef} style={{ display:'flex', gap:10, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingLeft:20, paddingRight:20, paddingBottom:2 }}>
+          {opts.map((opt, i) => {
+            const isSel = selectedId ? selectedId === opt.id : opt.recommended;
+            return (
+              <div
+                key={opt.id}
+                data-city-card={i}
+                onClick={() => { onSelect(opt.id); scrollTo(i); }}
+                style={{ flexShrink:0, width:'min(75vw,320px)', scrollSnapAlign:'center', borderRadius:12, border:`1.5px solid ${isSel?T.green:T.border}`, background:isSel?'rgba(74,222,128,0.07)':T.surface, cursor:'pointer', padding:'14px 16px', transition:'border-color 0.2s', opacity:i===idx?1:0.75 }}
+              >
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:20 }}>{opt.icon}</span>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, color:isSel?T.green:T.text }}>{opt.label}</div>
+                      <div style={{ fontSize:11, color:T.textDim, marginTop:1 }}>{opt.provider}</div>
+                    </div>
+                  </div>
+                  {isSel && <div style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.12)', border:'0.5px solid rgba(74,222,128,0.3)', borderRadius:20, padding:'2px 8px', fontWeight:700 }}>Selected</div>}
+                </div>
+                {opt.recommended && <div style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:700, display:'inline-block', marginBottom:8 }}>✦ Recommended</div>}
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                  <div style={{ fontSize:12, color:T.textMid }}>{opt.duration}</div>
+                  <div style={{ textAlign:'right' as const }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:T.green }}>{fmt(opt.estimatedCostZAR)}</div>
+                    <div style={{ fontSize:9, color:T.textDim }}>est.</div>
+                  </div>
+                </div>
+                <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5, background:'rgba(74,222,128,0.04)', borderRadius:7, padding:'7px 10px' }}>{opt.note}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Position dots */}
+        {opts.length > 1 && (
+          <div style={{ display:'flex', justifyContent:'center', gap:4, marginTop:8 }}>
+            {opts.map((_,i) => <div key={i} onClick={() => scrollTo(i)} style={{ width:i===idx?14:5, height:5, borderRadius:3, background:i===idx?T.green:'rgba(255,255,255,0.2)', cursor:'pointer', transition:'all 0.2s' }} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPARTURE CARD — shown after the last city in the builder
+// Lets traveller select departure airport, then opens TransferCarousel
+// ─────────────────────────────────────────────────────────────────────────────
+function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, departureHubId, setDepartureHubId, showDepartureXfer, setShowDepartureXfer }: {
+  lastCity:           any;
+  lastSlug:           string;
+  includeIntlFlight:  boolean;
+  fmt:                (n:number)=>string;
+  kbEntries:          KBEntry[];
+  departureHubId:     string;
+  setDepartureHubId:  (v:string)=>void;
+  showDepartureXfer:  boolean;
+  setShowDepartureXfer: (v:boolean)=>void;
+}) {
+  // Determine hub options based on last destination
+  const hubs: {code:string; label:string; airport:string; note:string}[] = lastSlug === 'cape-town'
+    ? [{ code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Direct international departures to London, Amsterdam, Frankfurt, New York and more.' }]
+    : lastSlug === 'masai-mara'
+    ? [{ code:'NBO', label:'Nairobi', airport:'Jomo Kenyatta International (NBO)', note:'45-min charter from Mara airstrip. Book early for peak season connections.' },
+       { code:'MBA', label:'Mombasa', airport:'Moi International (MBA)', note:'Alternative via scheduled carrier — useful if combining with coast.' }]
+    : [{ code:'JNB', label:'Johannesburg', airport:'O.R. Tambo International (JNB)', note:'Main hub for onward international connections. Allow 3hr connection from bush charters.' },
+       { code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Domestic connection from JNB. Good option for guests ending in Cape Town.' }];
+
+  const selectedHub = hubs.find(h => h.code === departureHubId);
+
+  return (
+    <div style={{ marginBottom:24, background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
+      <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
+      <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>Where do you fly home from?</div>
+      <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
+        {includeIntlFlight
+          ? 'Your return flight is included. Your Journey Specialist will confirm your departure timing and final transfer.'
+          : "Select your departure airport — we'll add your final lodge-to-airport transfer."}
+      </div>
+
+      {!includeIntlFlight && (
+        <>
+          {/* Hub selector buttons */}
+          <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:selectedHub ? 14 : 0 }}>
+            {hubs.map(hub => {
+              const isSel = departureHubId === hub.code;
+              return (
+                <button
+                  key={hub.code}
+                  onClick={() => {
+                    setDepartureHubId(hub.code);
+                    setShowDepartureXfer(true);
+                  }}
+                  style={{ width:'100%', padding:'11px 14px', background:isSel?T.goldDim:T.surface, border:`1.5px solid ${isSel?T.gold:T.border}`, borderRadius:10, cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const, transition:'border-color 0.2s' }}
+                >
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:isSel?700:400, color:isSel?T.gold:T.text }}>{hub.airport}</div>
+                      <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{hub.note}</div>
+                    </div>
+                    <div style={{ fontSize:11, color:isSel?T.gold:T.textDim, background:isSel?T.goldDim:'rgba(255,255,255,0.05)', border:`0.5px solid ${isSel?T.borderGold:T.border}`, borderRadius:20, padding:'3px 10px', fontWeight:isSel?700:400, flexShrink:0, marginLeft:12 }}>
+                      {isSel ? '✓ Selected' : 'Select'}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Transfer carousel — shown after hub selected */}
+          {showDepartureXfer && selectedHub && (() => {
+            // Build a departure leg: lastSlug → selected hub (use CITY_TRANSFERS for hub airports)
+            const deptOpts = CITY_TRANSFERS[lastSlug] ?? [
+              { id:'private-car', icon:'🚗', label:'Private transfer', provider:'Private vehicle to airport', duration:'Varies by lodge location', estimatedCostZAR:2800, note:`Private vehicle from your final lodge to ${selectedHub.airport}. Driver tracks your checkout time.`, recommended:true },
+              { id:'charter-transfer', icon:'✈', label:'Light aircraft charter', provider:'Charter to hub airport', duration:'30–60 min flight', estimatedCostZAR:8500, note:`Direct charter to ${selectedHub.airport}. Eliminates road transfer time — best for early departures.`, recommended:false },
+            ];
+            return (
+              <div style={{ marginTop:4 }}>
+                <div style={{ fontSize:11, color:T.gold, fontWeight:600, marginBottom:8 }}>Transfer options → {selectedHub.airport}</div>
+                <div style={{ display:'flex', gap:10, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingBottom:4 }}>
+                  {deptOpts.map(opt => {
+                    const isSel = opt.recommended;
+                    return (
+                      <div key={opt.id} style={{ flexShrink:0, width:'min(78vw, 300px)', scrollSnapAlign:'center', borderRadius:11, border:`1.5px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:T.surface, padding:'12px 14px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                          <span style={{ fontSize:18 }}>{opt.icon}</span>
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:700, color:isSel?T.gold:T.text }}>{opt.label}</div>
+                            <div style={{ fontSize:11, color:T.textDim }}>{opt.provider}</div>
+                          </div>
+                          {isSel && <div style={{ marginLeft:'auto', fontSize:9, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 7px', fontWeight:800 }}>✦ Rec.</div>}
+                        </div>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                          <div style={{ fontSize:12, color:T.textMid }}>{opt.duration}</div>
+                          <div style={{ fontSize:14, fontWeight:700, color:isSel?T.gold:T.text }}>{fmt(opt.estimatedCostZAR)}<span style={{ fontSize:9, color:T.textDim, fontWeight:400 }}> est.</span></div>
+                        </div>
+                        <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{opt.note}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </>
+      )}
+
+      {includeIntlFlight && (
+        <div style={{ fontSize:11, color:T.green }}>✓ Return flight included — your Journey Specialist handles all final transfers and airport timing.</div>
+      )}
+
+      <div style={{ marginTop:12, fontSize:11, color:T.textDim, borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>
+        💬 Your Journey Specialist will confirm all final logistics before travel.
+      </div>
+    </div>
+  );
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // LOGIN GATE  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 function LoginGate({ onUnlock }: { onUnlock: () => void }) {
@@ -1760,6 +1965,9 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [windowEnd,     setWindowEnd]     = useState('');
   // Transfer selection: legKey → transferOptionId
   const [selectedTransferIds, setSelectedTransferIds] = useState<Record<string,string>>({});
+  // Departure card: which hub the traveller selected + whether transfer carousel is open
+  const [departureHubId,    setDepartureHubId]    = useState<string>('');
+  const [showDepartureXfer, setShowDepartureXfer] = useState(false);
   // City transfer selections: citySlug → transferOptionId
   const [cityTransferIds, setCityTransferIds] = useState<Record<string,string>>({});
   // Activity selections: citySlug → Set of activity ids
@@ -2353,45 +2561,16 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               return (
                 <div key={cityIdx}>
 
-                  {/* [GAP 2] City airport transfer card — auto-shown for city-type destinations */}
+                  {/* [GAP 2] City airport transfer — now a proper component with arrows */}
                   {isCityDest && cityXferOpts.length > 0 && (
-                    <div style={{ marginBottom:16 }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
-                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
-                        <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
-                          🚗 Airport transfer — {destLabel}
-                        </div>
-                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
-                      </div>
-                      <div style={{ display:'flex', gap:10, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingBottom:2 }}>
-                        {cityXferOpts.map(opt => {
-                          const isSel = selCityXferId ? selCityXferId===opt.id : opt.recommended;
-                          return (
-                            <div key={opt.id} onClick={() => setCityTransferIds(prev => ({ ...prev, [slug]: opt.id }))} style={{ flexShrink:0, width:'min(75vw,320px)', scrollSnapAlign:'center', borderRadius:12, border:`1.5px solid ${isSel?T.green:T.border}`, background:isSel?'rgba(74,222,128,0.07)':T.surface, cursor:'pointer', padding:'14px 16px', transition:'border-color 0.2s' }}>
-                              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
-                                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                                  <span style={{ fontSize:20 }}>{opt.icon}</span>
-                                  <div>
-                                    <div style={{ fontSize:13, fontWeight:700, color:isSel?T.green:T.text }}>{opt.label}</div>
-                                    <div style={{ fontSize:11, color:T.textDim, marginTop:1 }}>{opt.provider}</div>
-                                  </div>
-                                </div>
-                                {isSel && <div style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.12)', border:'0.5px solid rgba(74,222,128,0.3)', borderRadius:20, padding:'2px 8px', fontWeight:700 }}>Selected</div>}
-                              </div>
-                              {opt.recommended && <div style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:700, display:'inline-block', marginBottom:8 }}>✦ Recommended</div>}
-                              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                                <div style={{ fontSize:12, color:T.textMid }}>{opt.duration}</div>
-                                <div style={{ textAlign:'right' as const }}>
-                                  <div style={{ fontSize:14, fontWeight:700, color:T.green }}>{fmt(opt.estimatedCostZAR)}</div>
-                                  <div style={{ fontSize:9, color:T.textDim }}>est.</div>
-                                </div>
-                              </div>
-                              <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5, background:'rgba(74,222,128,0.04)', borderRadius:7, padding:'7px 10px' }}>{opt.note}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <CityTransferStrip
+                      slug={slug}
+                      destLabel={destLabel}
+                      opts={cityXferOpts}
+                      selectedId={selCityXferId}
+                      onSelect={id => setCityTransferIds(prev => ({ ...prev, [slug]: id }))}
+                      fmt={fmt}
+                    />
                   )}
 
 
@@ -2462,43 +2641,21 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
             })}
 
             {/* ── DEPARTURE CARD — after last city ── */}
-            {(() => {
+            {itinerary.cities.length > 0 && (() => {
               const lastCity = itinerary.cities[itinerary.cities.length - 1];
-              if (!lastCity) return null;
-              const lastSlug = CITY_TO_SLUG[lastCity.city.toLowerCase().trim()] ?? '';
-              // Determine likely departure hubs based on last destination
-              const hubs: {code:string; label:string; note:string}[] = lastSlug === 'cape-town'
-                ? [{ code:'CPT', label:'Cape Town International (CPT)', note:'Direct international departures to London, Amsterdam, Frankfurt, New York and more.' }]
-                : lastSlug === 'masai-mara'
-                ? [{ code:'NBO', label:'Nairobi Jomo Kenyatta (NBO)', note:'45-min charter from Mara airstrip to NBO. Book early for peak season connections.' }, { code:'MBA', label:'Mombasa Moi (MBA)', note:'Alternative via scheduled carrier — useful if combining with coast.' }]
-                : [{ code:'JNB', label:'Johannesburg O.R. Tambo (JNB)', note:'Main hub for onward international connections. Allow 3hr connection from bush charters.' },
-                   { code:'CPT', label:'Cape Town International (CPT)', note:'Domestic connection from JNB. Good option for guests ending in Cape Town.' }];
-              const bookingFlight = includeIntlFlight;
+              const lastSlug = CITY_TO_SLUG[lastCity?.city?.toLowerCase().trim() ?? ''] ?? '';
               return (
-                <div style={{ marginBottom:24, background:`rgba(212,175,55,0.05)`, border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
-                  <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
-                  <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>Where do you fly home from?</div>
-                  <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
-                    {bookingFlight
-                      ? 'Your return flight is included. Your Journey Specialist will confirm your departure timing and transfer from the final lodge.'
-                      : "You're arranging your own return flight. Select your departure airport so we can add your final transfer."}
-                  </div>
-                  {!bookingFlight && hubs.map(hub => (
-                    <div key={hub.code} style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:9, padding:'10px 14px', marginBottom:8 }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:3 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{hub.label}</div>
-                        <div style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:700, flexShrink:0, marginLeft:8 }}>Add transfer</div>
-                      </div>
-                      <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{hub.note}</div>
-                    </div>
-                  ))}
-                  {bookingFlight && (
-                    <div style={{ fontSize:11, color:T.green }}>✓ Return flight included — your Journey Specialist handles all final transfers and airport timing.</div>
-                  )}
-                  <div style={{ marginTop:10, fontSize:11, color:T.textDim, borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>
-                    💬 Your Journey Specialist will confirm all final logistics before travel.
-                  </div>
-                </div>
+                <DepartureCard
+                  lastCity={lastCity}
+                  lastSlug={lastSlug}
+                  includeIntlFlight={includeIntlFlight}
+                  fmt={fmt}
+                  kbEntries={kbEntries}
+                  departureHubId={departureHubId}
+                  setDepartureHubId={setDepartureHubId}
+                  showDepartureXfer={showDepartureXfer}
+                  setShowDepartureXfer={setShowDepartureXfer}
+                />
               );
             })()}
 
