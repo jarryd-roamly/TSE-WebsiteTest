@@ -92,9 +92,13 @@ function createSupabase() {
 }
 
 // ─── buildSlides — mirrors page.tsx logic exactly ─────────────────────────────
-function buildSlides(supplier, localImages, heroType) {
+function buildSlides(supplier, localImages, heroType, localReels) {
   const ht = heroType ?? supplier?.hero_type ?? 'image';
-  const reelUrl = supplier?.reel_url ?? supplier?.video_url ?? null;
+  // Use first saved reel if available, otherwise fall back to reel_url column
+  const firstReel = (localReels ?? []).find(r => r.source === 'youtube' && r.video_id);
+  const reelUrl = firstReel
+    ? \`https://www.youtube.com/embed/\${firstReel.video_id}?start=\${Math.round(firstReel.start)}&end=\${Math.round(firstReel.end)}&autoplay=1&mute=1&loop=1&playlist=\${firstReel.video_id}\`
+    : supplier?.reel_url ?? supplier?.video_url ?? null;
   const heroImageUrl = supplier?._primaryUrl ?? supplier?.image ?? null;
 
   const slides = [];
@@ -302,11 +306,254 @@ function BigTilePreview({ supplier, slides, activeSlideIdx, onSlideChange }) {
 }
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// YOUTUBE EMBED POPUP
+// Paste URL → player loads → set start point → end follows automatically
+// at start + 15s. Drag end handle back to shorten clip.
+// Speed selector. Preview. Save to Supabase reels column.
+// ─────────────────────────────────────────────────────────────────────────────
+function parseYouTubeId(url) {
+  if (!url) return null;
+  const patterns = [
+    /youtu\.be\/([\w-]{11})/,
+    /youtube\.com\/watch\?v=([\w-]{11})/,
+    /youtube\.com\/embed\/([\w-]{11})/,
+    /youtube\.com\/shorts\/([\w-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+const CLIP_DURATION = 15; // seconds — end always starts at start + this
+const MIN_CLIP = 5;
+
+function YouTubePopup({ onSave, onClose, existing }) {
+  const [url,      setUrl]      = useState(existing?.video_id ? \`https://youtu.be/\${existing.video_id}\` : '');
+  const [videoId,  setVideoId]  = useState(existing?.video_id ?? null);
+  const [vidDur,   setVidDur]   = useState(120); // fallback; YouTube iframe API gives real value
+  const [start,    setStart]    = useState(existing?.start ?? 0);
+  const [end,      setEnd]      = useState(existing?.end   ?? CLIP_DURATION);
+  const [speed,    setSpeed]    = useState(existing?.speed ?? 1);
+  const [caption,  setCaption]  = useState(existing?.caption ?? '');
+  const [previewing, setPreviewing] = useState(false);
+  const playerRef = useRef(null);
+
+  // Parse URL as user types
+  const handleUrlChange = (v) => {
+    setUrl(v);
+    const id = parseYouTubeId(v);
+    if (id) {
+      setVideoId(id);
+      setStart(0);
+      setEnd(CLIP_DURATION);
+      setPreviewing(false);
+    } else {
+      setVideoId(null);
+    }
+  };
+
+  // Moving START: end follows automatically (start + CLIP_DURATION)
+  // unless the user has already manually shortened the end
+  const handleStartChange = (val) => {
+    const s = Math.max(0, Math.min(val, vidDur - MIN_CLIP));
+    const newEnd = Math.min(s + CLIP_DURATION, vidDur);
+    setStart(s);
+    setEnd(newEnd);
+  };
+
+  // Moving END independently (only shorten — can't exceed start + CLIP_DURATION)
+  const handleEndChange = (val) => {
+    const e = Math.max(start + MIN_CLIP, Math.min(val, Math.min(start + CLIP_DURATION, vidDur)));
+    setEnd(e);
+  };
+
+  const clipLen = Math.round(end - start);
+  const pct = (v) => `${Math.round((v / Math.max(vidDur, 1)) * 100)}%`;
+
+  const previewSrc = videoId
+    ? \`https://www.youtube.com/embed/\${videoId}?start=\${Math.round(start)}&end=\${Math.round(end)}&autoplay=1&mute=1&loop=1&playlist=\${videoId}&controls=0&rel=0&playbackRate=\${speed}\`
+    : null;
+
+  const thumbnailSrc = videoId
+    ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
+    : null;
+
+  const SPEEDS = [
+    { v: 0.5,  label: '0.5×', desc: 'Slow motion — wildlife at its most dramatic' },
+    { v: 0.75, label: '0.75×', desc: 'Gentle — landscapes, arrivals, sundowners' },
+    { v: 1,    label: '1×',   desc: 'Normal speed' },
+    { v: 1.25, label: '1.25×', desc: 'Slightly faster — activity montages' },
+    { v: 1.5,  label: '1.5×', desc: 'Fast cut — aerial footage, overviews' },
+  ];
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: '#0f0f0f', border: \`0.5px solid \${T.borderGold}\`, borderRadius: 16, padding: '24px 24px 20px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.gold }}>🎬 YouTube reel editor</div>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.07)', border: 'none', color: T.textMid, width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', fontSize: 16, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        </div>
+
+        {/* URL input */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 5 }}>YouTube URL</div>
+          <input
+            value={url}
+            onChange={e => handleUrlChange(e.target.value)}
+            placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+            style={{ width: '100%', padding: '9px 12px', background: T.bg3, border: \`1.5px solid \${videoId ? T.borderGold : T.border}\`, borderRadius: 9, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+          />
+          {url && !videoId && <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>⚠ Couldn't extract video ID — try the full YouTube URL</div>}
+          {videoId && <div style={{ fontSize: 11, color: T.green, marginTop: 4 }}>✓ Video ID: {videoId}</div>}
+        </div>
+
+        {/* Thumbnail preview */}
+        {videoId && !previewing && (
+          <div style={{ position: 'relative', height: 180, borderRadius: 10, overflow: 'hidden', background: '#111', marginBottom: 16, cursor: 'pointer' }} onClick={() => setPreviewing(true)}>
+            <img src={thumbnailSrc} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(212,175,55,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>▶</div>
+            </div>
+            <div style={{ position: 'absolute', bottom: 8, right: 10, fontSize: 10, color: 'rgba(255,255,255,0.7)', background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 7px' }}>Click to preview clip</div>
+          </div>
+        )}
+
+        {/* Live preview iframe */}
+        {videoId && previewing && (
+          <div style={{ position: 'relative', paddingBottom: '42%', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 16 }}>
+            <iframe
+              key={\`\${videoId}-\${start}-\${end}-\${speed}\`}
+              src={previewSrc}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none' }}
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+            />
+            <button onClick={() => setPreviewing(false)} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff', borderRadius: '50%', width: 26, height: 26, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>×</button>
+          </div>
+        )}
+
+        {videoId && (
+          <>
+            {/* Clip window */}
+            <div style={{ background: T.surface, border: \`0.5px solid \${T.border}\`, borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700 }}>Clip window</div>
+                <div style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{clipLen}s clip · {Math.round(start)}s → {Math.round(end)}s</div>
+              </div>
+
+              {/* Visual timeline bar */}
+              <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 12, overflow: 'visible' }}>
+                {/* Selected region highlight */}
+                <div style={{ position: 'absolute', left: pct(start), width: \`\${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%\`, height: '100%', background: 'rgba(212,175,55,0.25)', borderRadius: 4 }} />
+
+                {/* START handle */}
+                <input
+                  type="range"
+                  min={0}
+                  max={vidDur}
+                  step={0.5}
+                  value={start}
+                  onChange={e => handleStartChange(Number(e.target.value))}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
+                />
+                {/* Visual start handle */}
+                <div style={{ position: 'absolute', left: \`calc(\${pct(start)} - 10px)\`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: T.gold, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#0a0a0a', fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+                  ◂
+                </div>
+              </div>
+
+              {/* END handle — separate row */}
+              <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 10, overflow: 'visible' }}>
+                <div style={{ position: 'absolute', left: pct(start), width: \`\${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%\`, height: '100%', background: 'rgba(212,175,55,0.15)', borderRadius: 4 }} />
+                <input
+                  type="range"
+                  min={start + MIN_CLIP}
+                  max={Math.min(start + CLIP_DURATION, vidDur)}
+                  step={0.5}
+                  value={end}
+                  onChange={e => handleEndChange(Number(e.target.value))}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
+                />
+                <div style={{ position: 'absolute', left: \`calc(\${pct(end)} - 10px)\`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: '#fff', border: \`2px solid \${T.gold}\`, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: T.gold, fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+                  ▸
+                </div>
+              </div>
+
+              <div style={{ fontSize: 10, color: T.textDim, lineHeight: 1.5 }}>
+                <strong style={{ color: T.gold }}>Gold handle (◂)</strong> — move start. End adjusts automatically to start +{CLIP_DURATION}s.<br/>
+                <strong style={{ color: T.text }}>White handle (▸)</strong> — drag back to shorten clip. Cannot exceed {CLIP_DURATION}s.
+              </div>
+
+              {/* Fine-tune number inputs */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>Start (seconds)</div>
+                  <input type="number" value={Math.round(start * 10) / 10} min={0} max={vidDur - MIN_CLIP} step={0.5}
+                    onChange={e => handleStartChange(Number(e.target.value))}
+                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: \`0.5px solid \${T.border}\`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>End (seconds)</div>
+                  <input type="number" value={Math.round(end * 10) / 10} min={start + MIN_CLIP} max={Math.min(start + CLIP_DURATION, vidDur)} step={0.5}
+                    onChange={e => handleEndChange(Number(e.target.value))}
+                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: \`0.5px solid \${T.border}\`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Speed selector */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Playback speed</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {SPEEDS.map(s => (
+                  <button key={s.v} onClick={() => setSpeed(s.v)}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: \`1.5px solid \${speed === s.v ? T.gold : T.border}\`, background: speed === s.v ? T.goldDim : 'transparent', color: speed === s.v ? T.gold : T.textMid, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: speed === s.v ? 700 : 400 }}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>{SPEEDS.find(s => s.v === speed)?.desc}</div>
+            </div>
+
+            {/* Caption */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 5 }}>Caption (optional)</div>
+              <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="e.g. Arrival experience · Singita Boulders"
+                style={{ width: '100%', padding: '8px 12px', background: T.bg3, border: \`0.5px solid \${T.border}\`, borderRadius: 8, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+            </div>
+
+            {/* Preview + Save */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setPreviewing(v => !v)}
+                style={{ flex: 1, padding: '10px 0', background: 'rgba(96,165,250,0.1)', border: '0.5px solid rgba(96,165,250,0.3)', borderRadius: 9, color: '#60a5fa', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                {previewing ? '■ Stop preview' : '▶ Preview clip'}
+              </button>
+              <button onClick={() => onSave({ source: 'youtube', video_id: videoId, start: Math.round(start * 10) / 10, end: Math.round(end * 10) / 10, speed, caption, thumbnail: thumbnailSrc })}
+                style={{ flex: 2, padding: '10px 0', background: \`linear-gradient(135deg,\${T.gold},\${T.goldLight})\`, border: 'none', borderRadius: 9, color: '#0a0a0a', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Save reel →
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ContentCMS({ supplierId, isAdmin = false }) {
   const [supplier,      setSupplier]      = useState(null);
   const [images,        setImages]        = useState([]);   // local working copy
   const [heroType,      setHeroType]      = useState('image'); // 'image'|'video'|'reel'
   const [locked,        setLocked]        = useState(false);
+  const [reels,         setReels]         = useState([]);      // saved YouTube reels
+  const [showYTPopup,   setShowYTPopup]   = useState(false);
+  const [editingReel,   setEditingReel]   = useState(null);    // null = new, obj = editing
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(false);
   const [saved,         setSaved]         = useState(false);
@@ -341,6 +588,15 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
         const primary = imgs.find(img => img.is_primary && img.status === 'approved') ?? imgs.find(img => img.status === 'approved') ?? imgs[0];
         row._primaryUrl = primary?.url ?? null;
 
+        // Parse reels from Supabase
+        let reelRows = [];
+        try {
+          reelRows = Array.isArray(row.reels)
+            ? row.reels
+            : (row.reels ? JSON.parse(row.reels) : []);
+        } catch { reelRows = []; }
+        setReels(reelRows);
+
         // Normalise display_order
         const normalised = imgs.map((img, i) => ({ ...img, display_order: img.display_order ?? i + 1 }))
           .sort((a, b) => a.display_order - b.display_order);
@@ -351,7 +607,7 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
   }, [supplierId]);
 
   // ── Build slides from current state ───────────────────────────────────────
-  const slides = buildSlides(supplier, images, heroType);
+  const slides = buildSlides(supplier, images, heroType, reels);
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
   const onDragStart = (e, idx) => {
@@ -407,6 +663,7 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
     try {
       await db.updateSupplier(supplierId, {
         images: images,
+        reels: reels,
         hero_type: heroType,
         ...(isAdmin ? { media_order_locked: locked } : {}),
       });
@@ -592,20 +849,73 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                 )}
               </div>
 
-              {/* Reel / video URL field */}
-              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
-                <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 8 }}>Reel / Video URL</div>
-                <div style={{ fontSize: 12, color: T.textDim, marginBottom: 12, lineHeight: 1.5 }}>
-                  The property short reel or video. When set as Hero, this plays first in the traveller's carousel.
-                </div>
-                <input
-                  type="url"
-                  value={supplier?.reel_url ?? supplier?.video_url ?? ''}
-                  placeholder="https://… (Cloudflare R2 or direct video URL)"
-                  readOnly
-                  style={{ width: '100%', background: T.bg3, border: `0.5px solid ${T.border}`, color: T.textMid, borderRadius: 8, padding: '9px 12px', fontSize: 12, outline: 'none', fontFamily: 'inherit', cursor: 'not-allowed' }}
+              {/* ── YouTube reel editor ── */}
+              {showYTPopup && (
+                <YouTubePopup
+                  existing={editingReel}
+                  onClose={() => { setShowYTPopup(false); setEditingReel(null); }}
+                  onSave={reel => {
+                    if (editingReel) {
+                      setReels(prev => prev.map(r => r === editingReel ? reel : r));
+                    } else {
+                      setReels(prev => [...prev, reel]);
+                    }
+                    setShowYTPopup(false);
+                    setEditingReel(null);
+                    setSaved(false); // prompt user to save
+                  }}
                 />
-                <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>Reel URL is managed via the Content tab or by TSE admin.</div>
+              )}
+
+              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>YouTube reels</div>
+                  <button
+                    onClick={() => { setEditingReel(null); setShowYTPopup(true); }}
+                    style={{ padding: '6px 14px', background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, border: 'none', borderRadius: 8, color: '#0a0a0a', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                  >
+                    + Add reel
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.55 }}>
+                  Paste any YouTube URL, trim to a 5–15 second clip, set playback speed, and set it as the hero tile. Saved to your supplier record.
+                </div>
+
+                {reels.length === 0 ? (
+                  <div style={{ padding: '24px 0', textAlign: 'center', color: T.textDim, fontSize: 12 }}>
+                    No reels yet. Tap <strong style={{ color: T.text }}>+ Add reel</strong> to embed a YouTube clip.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {reels.map((reel, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 12px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 10 }}>
+                        {/* Thumbnail */}
+                        <div style={{ width: 80, height: 50, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#111' }}>
+                          {reel.thumbnail
+                            ? <img src={reel.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>▶</div>
+                          }
+                        </div>
+                        {/* Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {reel.caption || reel.video_id}
+                          </div>
+                          <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>
+                            {Math.round(reel.start)}s → {Math.round(reel.end)}s · {reel.speed}× speed · {Math.round(reel.end - reel.start)}s clip
+                          </div>
+                        </div>
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button onClick={() => { setEditingReel(reel); setShowYTPopup(true); }}
+                            style={{ padding: '4px 10px', background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 6, color: T.gold, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
+                          <button onClick={() => setReels(prev => prev.filter((_, idx) => idx !== i))}
+                            style={{ padding: '4px 10px', background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', borderRadius: 6, color: '#f87171', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Remove</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Order summary */}
