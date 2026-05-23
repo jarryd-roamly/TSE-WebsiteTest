@@ -403,11 +403,47 @@ function ImageMiniChat({ hotel, slide, edition, onEscalate, onClose }: { hotel:H
     const msg = input.trim(); setInput('');
     setMsgs(m => [...m, { role:'user', text:msg }]);
     setLoading(true);
+    let replied = false;
+    // Try /api/ai-gateway first (server-side proxy)
     try {
-      const res = await fetch('/api/ai-gateway', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ model:edition.ai.chatModel, max_tokens:200, system:`You are a luxury safari specialist at The Safari Edition. The traveller is looking at an image of ${hotel.name}. Answer questions about this property concisely (2–3 sentences max). Property context: ${context}`, messages:[...msgs.filter(m=>m.role==='user').map(m=>({ role:'user', content:m.text })), { role:'user', content:msg }] }) });
-      const d = await res.json();
-      setMsgs(m => [...m, { role:'ai', text:d.content?.[0]?.text ?? 'Ask your Journey Specialist for details on this property.' }]);
-    } catch { setMsgs(m => [...m, { role:'ai', text:'Ask your Journey Specialist for details on this property.' }]); }
+      const res = await fetch('/api/ai-gateway', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'claude-haiku-4-5-20251001',
+          max_tokens:200,
+          system:`You are a knowledgeable safari specialist. Answer questions about ${hotel.name} in ${hotel.destination} concisely (2-3 sentences). Be specific and helpful. Context: ${context}`,
+          messages:[{ role:'user', content:msg }]
+        })
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const text = d.content?.[0]?.text;
+        if (text) { setMsgs(m => [...m, { role:'ai', text }]); replied = true; }
+      }
+    } catch { /* fall through to direct API */ }
+    // Fallback: call Anthropic API directly
+    if (!replied) {
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+          body:JSON.stringify({
+            model:'claude-haiku-4-5-20251001',
+            max_tokens:200,
+            system:`You are a knowledgeable safari specialist. Answer questions about ${hotel.name} in ${hotel.destination} concisely (2-3 sentences). Be specific and helpful. Context: ${context}`,
+            messages:[{ role:'user', content:msg }]
+          })
+        });
+        if (res.ok) {
+          const d = await res.json();
+          const text = d.content?.[0]?.text;
+          if (text) { setMsgs(m => [...m, { role:'ai', text }]); replied = true; }
+        }
+      } catch { /* both failed */ }
+    }
+    if (!replied) {
+      setMsgs(m => [...m, { role:'ai', text:`${hotel.name} is in ${hotel.destination}. For detailed information, your Journey Specialist can help — tap the escalate button below.` }]);
+    }
     setLoading(false);
   };
 
@@ -450,8 +486,14 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, sel
   const kbEntry = kbEntries.find(e => e.active && e.type==='property' && e.linkedTo?.toLowerCase().includes(hotel.name.toLowerCase()));
   const allSlides = buildSlides(hotel);
 
+  // Mirror stayPrefs into LOCAL state so buttons feel instant (no prop round-trip lag)
+  const [localPrefs, setLocalPrefs] = useState(stayPrefs);
+  const handleSelect = (key: string, opt: any) => {
+    setLocalPrefs(p => ({ ...p, [key]: opt.tier ?? 0 }));
+    onSelect(key, opt);
+  };
+
   // Room-type image state: roomIdx → slideIdx within that room's images
-  // For now we use the main slides array per room (future: room-specific images from Supabase)
   const [roomSlides, setRoomSlides]   = useState<Record<number,number>>({});
   const [expandedRoom, setExpandedRoom] = useState<number | null>(null);
 
@@ -460,9 +502,9 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, sel
     !a.region_tags?.length || a.region_tags.includes(regionSlug)
   );
 
-  // Running additions cost for this property
-  const roomExtra  = hotel.upgrades?.rooms?.[stayPrefs.rooms]?.extra ?? 0;
-  const flexExtra  = hotel.upgrades?.flexibility?.[stayPrefs.flexibility]?.extra ?? 0;
+  // Running additions cost (use localPrefs for instant feedback)
+  const roomExtra  = hotel.upgrades?.rooms?.[localPrefs.rooms]?.extra ?? 0;
+  const flexExtra  = hotel.upgrades?.flexibility?.[localPrefs.flexibility]?.extra ?? 0;
   const actCost    = ACTIVITIES.filter(a => selectedActivityIds.includes(String(a.id)))
                                .reduce((s,a) => s + Math.round(a.netRate * 1.18), 0);
   const addedCost  = roomExtra + flexExtra + actCost;
@@ -585,7 +627,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, sel
             <div style={{ marginBottom:24 }}>
               <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:12 }}>Room types &amp; upgrades</div>
               {(hotel.upgrades?.rooms ?? []).map((opt:any, roomIdx:number) => {
-                const sel      = opt.tier === stayPrefs.rooms;
+                const sel      = opt.tier === localPrefs.rooms;
                 const expanded = expandedRoom === roomIdx;
                 // Room-specific slides: use all slides tagged with this room type, fall back to hero
                 const roomSlideList = allSlides.filter(s => !s.roomType || s.roomType?.toLowerCase().includes(opt.label.toLowerCase()));
@@ -633,7 +675,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, sel
                         {expanded ? '▲ Hide details' : '▼ Room details'}
                       </button>
                       <button
-                        onClick={() => onSelect('rooms', opt)}
+                        onClick={() => handleSelect('rooms', opt)}
                         style={{ padding:'7px 16px', borderRadius:8, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?700:400 }}
                       >
                         {sel ? '✓ Selected' : 'Select this room'}
@@ -666,9 +708,9 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, sel
                   <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:8 }}>Cancellation</div>
                   <div style={{ display:'flex', gap:8 }}>
                     {hotel.upgrades.flexibility.map((opt:any) => {
-                      const sel = opt.tier === stayPrefs.flexibility;
+                      const sel = opt.tier === localPrefs.flexibility;
                       return (
-                        <button key={opt.label} onClick={() => onSelect('flexibility', opt)} style={{ flex:1, padding:'9px 12px', borderRadius:9, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?600:400, textAlign:'left' as const }}>
+                        <button key={opt.label} onClick={() => handleSelect('flexibility', opt)} style={{ flex:1, padding:'9px 12px', borderRadius:9, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?600:400, textAlign:'left' as const }}>
                           <div style={{ fontWeight:sel?700:400 }}>{opt.label}</div>
                           <div style={{ fontSize:10, marginTop:2, color:opt.extra===0?T.textDim:T.gold }}>{opt.extra===0?'No extra cost':`+${fmt(opt.extra)}/night`}</div>
                         </button>
@@ -898,8 +940,7 @@ function NestedPropertyCarousel({
           <div style={{ fontSize:12, color:T.textDim, marginTop:1 }}>{hotels.length} propert{hotels.length===1?'y':'ies'} · swipe or tap to browse</div>
         </div>
         <div style={{ textAlign:'right' as const }}>
-          <div style={{ fontSize:11, color:T.textDim }}>Selected subtotal</div>
-          <div style={{ fontSize:17, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{selectedTotal > 0 ? fmt(selectedTotal) : '—'}</div>
+          <div style={{ fontSize:11, color:T.textDim }}>{hotels.length} option{hotels.length!==1?'s':''}</div>
         </div>
       </div>
 
@@ -1460,13 +1501,13 @@ function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries
           <div style={{ fontSize:12, color:'#60a5fa' }}>Finding transfer options…</div>
         </div>
       ) : (
-        <div style={{ position:'relative' as const }}>
-          {/* Left arrow */}
+        <div style={{ position:'relative' as const, margin:'0 -4px' }}>
+          {/* Left arrow — always visible when not at start */}
           {activeIdx > 0 && (
-            <button onClick={() => scrollToIdx(activeIdx-1)} style={{ position:'absolute', left:-16, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.9)', border:'0.5px solid rgba(96,165,250,0.3)', color:'#60a5fa', width:30, height:44, borderRadius:'0 8px 8px 0', cursor:'pointer', fontSize:16, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
+            <button onClick={() => scrollToIdx(activeIdx-1)} style={{ position:'absolute', left:-4, top:'50%', transform:'translateY(-50%)', zIndex:12, background:'rgba(10,10,10,0.95)', border:'1px solid rgba(96,165,250,0.5)', color:'#60a5fa', width:34, height:52, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 16px rgba(0,0,0,0.6)' }}>‹</button>
           )}
           {activeIdx < options.length-1 && (
-            <button onClick={() => scrollToIdx(activeIdx+1)} style={{ position:'absolute', right:-16, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.9)', border:'0.5px solid rgba(96,165,250,0.3)', color:'#60a5fa', width:30, height:44, borderRadius:'8px 0 0 8px', cursor:'pointer', fontSize:16, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+            <button onClick={() => scrollToIdx(activeIdx+1)} style={{ position:'absolute', right:-4, top:'50%', transform:'translateY(-50%)', zIndex:12, background:'rgba(10,10,10,0.95)', border:'1px solid rgba(96,165,250,0.5)', color:'#60a5fa', width:34, height:52, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 16px rgba(0,0,0,0.6)' }}>›</button>
           )}
 
           {/* Scroll strip */}
@@ -2221,6 +2262,17 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}` }}>
                 <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
               </div>
+              {/* Journey Specialist mini-profile */}
+              <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}`, display:'flex', alignItems:'center', gap:12 }}>
+                <img src={specialist.avatar} alt={specialist.name} style={{ width:40, height:40, borderRadius:'50%', objectFit:'cover', border:`1.5px solid ${T.borderGold}`, flexShrink:0 }} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:11, color:T.gold, fontWeight:600 }}>{specialist.name}</div>
+                  <div style={{ fontSize:10, color:T.textDim }}>{specialist.role} · Available now</div>
+                  <div style={{ fontSize:11, color:T.textMid, marginTop:2, fontStyle:'italic' }}>"{specialist.tip}"</div>
+                </div>
+                <button onClick={() => setChatOpen(true)} style={{ background:T.goldDim, border:`0.5px solid ${T.borderGold}`, color:T.gold, borderRadius:8, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' as const, flexShrink:0 }}>Chat →</button>
+              </div>
+
               {/* [V5-1] Collapsible adjust chat */}
               <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}` }}>
                 <button onClick={()=>setAdjustOpen(v=>!v)} style={{ background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6, color:T.textDim, fontSize:12 }}>
@@ -2256,8 +2308,22 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               const cityName = city.city.toLowerCase().trim();
               const slug = CITY_TO_SLUG[cityName] ?? '';
               const destLabel = city.city;
-              const pool = slug ? hotelsByMargin.filter(h=>h.subRegion===slug) : hotelsByMargin.filter(h=>{ const dest=(h.destination??'').toLowerCase(); return dest.includes(cityName)||cityName.includes(dest); });
-              const safePool = pool.length>0 ? pool : hotelsByMargin;
+              // Strict region filter: only show properties matching this city's slug.
+              // If slug unknown (AI named a city not in CITY_TO_SLUG), try name fuzzy match.
+              // NEVER fall back to full list — that causes 51 properties for one city.
+              const pool = slug
+                ? hotelsByMargin.filter(h => h.subRegion === slug)
+                : hotelsByMargin.filter(h => {
+                    const dest = (h.destination ?? '').toLowerCase();
+                    const name = (h.name ?? '').toLowerCase();
+                    // Require meaningful match: city name contains dest word or vice versa
+                    return dest.includes(cityName) || cityName.includes(dest.split(',')[0].trim()) || name.includes(cityName);
+                  });
+              // If still empty: show top 3 from the same country to avoid blank section.
+              // Cap at 5 max — never show the full unfiltered list.
+              const safePool = pool.length > 0
+                ? pool.slice(0, 12)
+                : hotelsByMargin.filter(h => (h.country ?? '') === (itinerary.cities[cityIdx]?.country ?? '')).slice(0, 3);
               const currentStay = cityStays[cityIdx] ?? { hotelId:safePool[0]?.id??0, nights:city.nights, prefs:{ rooms:0, basis:0, flexibility:0 } };
 
               // Show city transfer if always-on OR if KB has a city_transfer entry for this slug
