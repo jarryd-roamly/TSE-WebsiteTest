@@ -97,7 +97,7 @@ function buildSlides(supplier, localImages, heroType, localReels) {
   // Use first saved reel if available, otherwise fall back to reel_url column
   const firstReel = (localReels ?? []).find(r => r.source === 'youtube' && r.video_id);
   const reelUrl = firstReel
-    ? \`https://www.youtube.com/embed/\${firstReel.video_id}?start=\${Math.round(firstReel.start)}&end=\${Math.round(firstReel.end)}&autoplay=1&mute=1&loop=1&playlist=\${firstReel.video_id}\`
+    ? `https://www.youtube.com/embed/${firstReel.video_id}?start=${Math.round(firstReel.start)}&end=${Math.round(firstReel.end)}&autoplay=1&mute=1&loop=1&playlist=${firstReel.video_id}`
     : supplier?.reel_url ?? supplier?.video_url ?? null;
   const heroImageUrl = supplier?._primaryUrl ?? supplier?.image ?? null;
 
@@ -332,7 +332,7 @@ const CLIP_DURATION = 15; // seconds — end always starts at start + this
 const MIN_CLIP = 5;
 
 function YouTubePopup({ onSave, onClose, existing }) {
-  const [url,      setUrl]      = useState(existing?.video_id ? \`https://youtu.be/\${existing.video_id}\` : '');
+  const [url,      setUrl]      = useState(existing?.video_id ? `https://youtu.be/${existing.video_id}` : '');
   const [videoId,  setVideoId]  = useState(existing?.video_id ?? null);
   const [vidDur,   setVidDur]   = useState(120); // fallback; YouTube iframe API gives real value
   const [start,    setStart]    = useState(existing?.start ?? 0);
@@ -375,11 +375,11 @@ function YouTubePopup({ onSave, onClose, existing }) {
   const pct = (v) => `${Math.round((v / Math.max(vidDur, 1)) * 100)}%`;
 
   const previewSrc = videoId
-    ? \`https://www.youtube.com/embed/\${videoId}?start=\${Math.round(start)}&end=\${Math.round(end)}&autoplay=1&mute=1&loop=1&playlist=\${videoId}&controls=0&rel=0&playbackRate=\${speed}\`
+    ? `https://www.youtube.com/embed/${videoId}?start=${Math.round(start)}&end=${Math.round(end)}&autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&rel=0&playbackRate=${speed}`
     : null;
 
   const thumbnailSrc = videoId
-    ? \`https://img.youtube.com/vi/\${videoId}/mqdefault.jpg\`
+    ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`
     : null;
 
   const SPEEDS = [
@@ -392,7 +392,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ background: '#0f0f0f', border: \`0.5px solid \${T.borderGold}\`, borderRadius: 16, padding: '24px 24px 20px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div style={{ background: '#0f0f0f', border: `0.5px solid ${T.borderGold}`, borderRadius: 16, padding: '24px 24px 20px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -407,7 +407,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
             value={url}
             onChange={e => handleUrlChange(e.target.value)}
             placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
-            style={{ width: '100%', padding: '9px 12px', background: T.bg3, border: \`1.5px solid \${videoId ? T.borderGold : T.border}\`, borderRadius: 9, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '9px 12px', background: T.bg3, border: `1.5px solid ${videoId ? T.borderGold : T.border}`, borderRadius: 9, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
           />
           {url && !videoId && <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>⚠ Couldn't extract video ID — try the full YouTube URL</div>}
           {videoId && <div style={{ fontSize: 11, color: T.green, marginTop: 4 }}>✓ Video ID: {videoId}</div>}
@@ -428,7 +428,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
         {videoId && previewing && (
           <div style={{ position: 'relative', paddingBottom: '42%', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 16 }}>
             <iframe
-              key={\`\${videoId}-\${start}-\${end}-\${speed}\`}
+              key={`${videoId}-${start}-${end}-${speed}`}
               src={previewSrc}
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none' }}
               allow="autoplay; encrypted-media"
@@ -441,7 +441,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
         {videoId && (
           <>
             {/* Clip window */}
-            <div style={{ background: T.surface, border: \`0.5px solid \${T.border}\`, borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+            <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700 }}>Clip window</div>
                 <div style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{clipLen}s clip · {Math.round(start)}s → {Math.round(end)}s</div>
@@ -450,7 +450,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
               {/* Visual timeline bar */}
               <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 12, overflow: 'visible' }}>
                 {/* Selected region highlight */}
-                <div style={{ position: 'absolute', left: pct(start), width: \`\${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%\`, height: '100%', background: 'rgba(212,175,55,0.25)', borderRadius: 4 }} />
+                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.25)', borderRadius: 4 }} />
 
                 {/* START handle */}
                 <input
@@ -463,14 +463,14 @@ function YouTubePopup({ onSave, onClose, existing }) {
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
                 />
                 {/* Visual start handle */}
-                <div style={{ position: 'absolute', left: \`calc(\${pct(start)} - 10px)\`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: T.gold, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#0a0a0a', fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+                <div style={{ position: 'absolute', left: `calc(${pct(start)} - 10px)`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: T.gold, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#0a0a0a', fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
                   ◂
                 </div>
               </div>
 
               {/* END handle — separate row */}
               <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 10, overflow: 'visible' }}>
-                <div style={{ position: 'absolute', left: pct(start), width: \`\${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%\`, height: '100%', background: 'rgba(212,175,55,0.15)', borderRadius: 4 }} />
+                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.15)', borderRadius: 4 }} />
                 <input
                   type="range"
                   min={start + MIN_CLIP}
@@ -480,7 +480,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
                   onChange={e => handleEndChange(Number(e.target.value))}
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
                 />
-                <div style={{ position: 'absolute', left: \`calc(\${pct(end)} - 10px)\`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: '#fff', border: \`2px solid \${T.gold}\`, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: T.gold, fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+                <div style={{ position: 'absolute', left: `calc(${pct(end)} - 10px)`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: '#fff', border: `2px solid ${T.gold}`, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: T.gold, fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
                   ▸
                 </div>
               </div>
@@ -496,13 +496,13 @@ function YouTubePopup({ onSave, onClose, existing }) {
                   <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>Start (seconds)</div>
                   <input type="number" value={Math.round(start * 10) / 10} min={0} max={vidDur - MIN_CLIP} step={0.5}
                     onChange={e => handleStartChange(Number(e.target.value))}
-                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: \`0.5px solid \${T.border}\`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>End (seconds)</div>
                   <input type="number" value={Math.round(end * 10) / 10} min={start + MIN_CLIP} max={Math.min(start + CLIP_DURATION, vidDur)} step={0.5}
                     onChange={e => handleEndChange(Number(e.target.value))}
-                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: \`0.5px solid \${T.border}\`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
                 </div>
               </div>
             </div>
@@ -513,7 +513,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {SPEEDS.map(s => (
                   <button key={s.v} onClick={() => setSpeed(s.v)}
-                    style={{ padding: '7px 12px', borderRadius: 8, border: \`1.5px solid \${speed === s.v ? T.gold : T.border}\`, background: speed === s.v ? T.goldDim : 'transparent', color: speed === s.v ? T.gold : T.textMid, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: speed === s.v ? 700 : 400 }}>
+                    style={{ padding: '7px 12px', borderRadius: 8, border: `1.5px solid ${speed === s.v ? T.gold : T.border}`, background: speed === s.v ? T.goldDim : 'transparent', color: speed === s.v ? T.gold : T.textMid, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: speed === s.v ? 700 : 400 }}>
                     {s.label}
                   </button>
                 ))}
@@ -525,7 +525,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 5 }}>Caption (optional)</div>
               <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="e.g. Arrival experience · Singita Boulders"
-                style={{ width: '100%', padding: '8px 12px', background: T.bg3, border: \`0.5px solid \${T.border}\`, borderRadius: 8, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                style={{ width: '100%', padding: '8px 12px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
             </div>
 
             {/* Preview + Save */}
@@ -535,7 +535,7 @@ function YouTubePopup({ onSave, onClose, existing }) {
                 {previewing ? '■ Stop preview' : '▶ Preview clip'}
               </button>
               <button onClick={() => onSave({ source: 'youtube', video_id: videoId, start: Math.round(start * 10) / 10, end: Math.round(end * 10) / 10, speed, caption, thumbnail: thumbnailSrc })}
-                style={{ flex: 2, padding: '10px 0', background: \`linear-gradient(135deg,\${T.gold},\${T.goldLight})\`, border: 'none', borderRadius: 9, color: '#0a0a0a', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 2, padding: '10px 0', background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, border: 'none', borderRadius: 9, color: '#0a0a0a', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                 Save reel →
               </button>
             </div>
