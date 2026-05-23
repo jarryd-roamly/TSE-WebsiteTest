@@ -96,6 +96,34 @@ const CITY_TO_SLUG: Record<string, string> = {
   'phinda':'phinda','mozambique':'mozambique','bazaruto':'mozambique','bwindi':'bwindi','kalahari':'kalahari',
 };
 
+// Destinations that are cities / hubs — need airport ↔ hotel transfer cards
+// (wilderness camps don't need this; cities do)
+// Always show airport transfer card for these city-type destinations
+const CITY_TYPE_ALWAYS = new Set(['cape-town','chobe-vic-falls']);
+// Show for these only if KB has an entry flagging in-city transfers (type='city_transfer')
+const CITY_TYPE_KB = new Set(['masai-mara','bwindi','mozambique']);
+// Combined for grandTotal calculation
+const CITY_TYPE_SLUGS = new Set([...CITY_TYPE_ALWAYS, ...CITY_TYPE_KB]);
+
+// City airport transfer options — different from inter-region legs
+type CityTransferOption = { id:string; icon:string; label:string; provider:string; duration:string; estimatedCostZAR:number; note:string; recommended:boolean; };
+const CITY_TRANSFERS: Record<string, CityTransferOption[]> = {
+  'cape-town': [
+    { id:'private-car',  icon:'🚗', label:'Private transfer',    provider:'Private vehicle — door to door',    duration:'30–45 min', estimatedCostZAR:2800,  note:'Most popular. Driver meets you at arrivals with name board. Includes luggage handling.', recommended:true },
+    { id:'helicopter',   icon:'🚁', label:'Helicopter transfer',  provider:'NAC Helicopters — aerial city tour', duration:'12 min',    estimatedCostZAR:18000, note:'The unforgettable arrival. 12 minutes airside to the hotel pad with full city panorama.', recommended:false },
+    { id:'shuttle',      icon:'🚌', label:'Shared shuttle',       provider:'Backpacker Bus / Myciti',           duration:'45–75 min', estimatedCostZAR:850,   note:'Budget option. Shared with other passengers, scheduled times only.', recommended:false },
+  ],
+  'chobe-vic-falls': [
+    { id:'private-car',  icon:'🚗', label:'Private transfer',    provider:'Private vehicle from VFA airport',  duration:'15–20 min', estimatedCostZAR:1800,  note:'Victoria Falls Airport is 20 minutes from town. Private vehicle recommended — minimal public options.', recommended:true },
+    { id:'helicopter',   icon:'🚁', label:'Helicopter arrival',  provider:'Helicopter direct from airstrip',   duration:'8 min',     estimatedCostZAR:9500,  note:'Arrive in style — aerial views of the Falls on approach. Unforgettable first moment.', recommended:false },
+  ],
+  'masai-mara': [
+    { id:'light-aircraft', icon:'✈', label:'Light aircraft charter', provider:'Safarilink / Air Kenya charter', duration:'45 min',    estimatedCostZAR:6800,  note:'Nairobi to Mara airstrip. Most camps have their own airstrip — vehicle transfer included.', recommended:true },
+    { id:'road',           icon:'🚗', label:'Road transfer',          provider:'Private 4WD — scenic route',    duration:'5–6 hrs',   estimatedCostZAR:3200,  note:'Long but scenic. Passes through the Rift Valley. Early morning departure essential.', recommended:false },
+  ],
+};
+
+
 const COUNTRY_REGION: Record<string, string> = {
   'South Africa':'southern-africa','Botswana':'southern-africa','Zimbabwe':'southern-africa',
   'Zambia':'southern-africa','Namibia':'southern-africa','Kenya':'east-africa',
@@ -134,6 +162,17 @@ const RESEARCH_STEPS = [
   'Comparing lodge rates and margin opportunities...',
   'Optimising your itinerary sequence...',
   'Putting your personalised journey together...',
+];
+
+const ACTIVITIES = [
+  { id:2, name:'Bush Walk with Armed Ranger',    type:'Adventure',    duration:'3 hours · dawn',            trustScore:97, netRate:1800, otaRate:2600, image:'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact:'Tracks, plants — the detail you miss from a vehicle.', region_tags:['kruger-sabi-sand','okavango-delta','masai-mara','madikwe','chobe-vic-falls'], upgrades:{ options:[{label:'Group walk',extra:0},{label:'Private walk',extra:2400}], extras:[{label:'Standard',extra:0},{label:'Breakfast in the bush',extra:680}] } },
+  { id:3, name:'Hot Air Balloon Safari',         type:'Luxury',       duration:'3 hours · dawn',            trustScore:94, netRate:4800, otaRate:7200, image:'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact:'The Mara from above — one of the great experiences on Earth.', region_tags:['masai-mara','kruger-sabi-sand'], upgrades:{ options:[{label:'Shared basket',extra:0},{label:'Private basket',extra:8500}], extras:[{label:'Champagne breakfast',extra:0},{label:'Private bush breakfast',extra:1200}] } },
+  { id:4, name:'Night Drive & Spotlight Safari', type:'Wildlife',     duration:'2.5 hours · 20:00',         trustScore:95, netRate:1200, otaRate:1800, image:'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80', funFact:'Leopards, civets, honey badgers — the nocturnal world.', region_tags:['kruger-sabi-sand','okavango-delta','masai-mara','madikwe','chobe-vic-falls'], upgrades:{ options:[{label:'Group drive',extra:0},{label:'Private drive',extra:2800}], extras:[{label:'Standard',extra:0},{label:'Add sundowners',extra:480}] } },
+  { id:5, name:'Victoria Falls Helicopter',      type:'Scenic',       duration:"15 min 'Flight of Angels'", trustScore:96, netRate:2800, otaRate:4200, image:'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact:'108m high, 1.7km wide — the only way to grasp the scale.', region_tags:['chobe-vic-falls'], upgrades:{ options:[{label:'15-minute flight',extra:0},{label:'30-minute flight',extra:2200}], extras:[{label:'Standard',extra:0},{label:'Private helicopter',extra:5800}] } },
+  { id:6, name:'Rhino Tracking on Foot',         type:'Conservation', duration:'Half day',                  trustScore:93, netRate:2200, otaRate:3200, image:'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact:'One of only a handful of places you can approach white rhino on foot.', region_tags:['madikwe','kruger-sabi-sand'], upgrades:{ options:[{label:'Group tracking',extra:0},{label:'Private with conservationist',extra:3400}], extras:[{label:'Standard',extra:0},{label:'Full conservation day',extra:4800}] } },
+  { id:7, name:'Mokoro Safari',                  type:'Wildlife',     duration:'2 hours',                   trustScore:96, netRate:1600, otaRate:null,  image:'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', funFact:'Silent dugout canoe through papyrus — the sound of the Delta.', region_tags:['okavango-delta'], upgrades:{ options:[{label:'Shared mokoro',extra:0},{label:'Private mokoro',extra:1800}], extras:[{label:'Standard',extra:0},{label:'Sundowner picnic',extra:550}] } },
+  { id:8, name:'Cape Town Winelands Day Tour',   type:'Culture',      duration:'Full day',                  trustScore:92, netRate:2400, otaRate:3600, image:'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80', funFact:'Franschhoek, Stellenbosch, Paarl — three valleys in one day.', region_tags:['cape-town'], upgrades:{ options:[{label:'Shared tour',extra:0},{label:'Private guide & vehicle',extra:3200}], extras:[{label:'Standard',extra:0},{label:'Private cellar tastings',extra:800}] } },
+  { id:9, name:'Great Migration River Crossing', type:'Wildlife',     duration:'Full day river camp',       trustScore:98, netRate:3600, otaRate:5400, image:'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', funFact:'Wildebeest cross with crocs waiting — raw nature at its most dramatic.', region_tags:['masai-mara'], upgrades:{ options:[{label:'Group vehicle',extra:0},{label:'Private vehicle all day',extra:4500}], extras:[{label:'Standard',extra:0},{label:'Sundowner at river',extra:680}] } },
 ];
 
 const SPECIALISTS = [
@@ -305,10 +344,14 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode,
 // ─────────────────────────────────────────────────────────────────────────────
 type ValidationIssue = { severity:'hard'|'warning'; code:string; message:string; };
 
-function validateItinerary(params: { cities:ItineraryCity[]; checkinDate:string; infants:number; }): ValidationIssue[] {
+function validateItinerary(params: { cities:ItineraryCity[]; checkinDate:string; infants:number; hasOwnFlights?:boolean; arrivalFlightNo?:string; }): ValidationIssue[] {
   const { cities, checkinDate, infants } = params;
   const issues: ValidationIssue[] = [];
-  if (!checkinDate) issues.push({ severity:'hard', code:'NO_DATES', message:'No travel dates selected. Set your check-in date before proceeding to payment.' });
+  // Warn if own flights but no arrival details — needed to build first transfer
+  if (params.hasOwnFlights && !params.arrivalFlightNo && cities.length > 0) {
+    issues.push({ severity:'warning', code:'NO_ARRIVAL_DETAILS', message:'No arrival flight details provided. Your Journey Specialist will contact you to arrange your airport transfer and first-night timing.' });
+  }
+  if (!checkinDate) issues.push({ severity:'warning', code:'NO_DATES', message:'No specific dates selected. Pricing is indicative — your Journey Specialist will confirm availability once dates are set.' });
   cities.forEach(c => { if (c.nights===1) issues.push({ severity:'hard', code:'ONE_NIGHT_STAY', message:`${c.city}: 1-night stay is below minimum. Extend to at least 2 nights or remove this destination.` }); });
   if (infants>0) cities.forEach(c => {
     const slug = CITY_TO_SLUG[c.city?.toLowerCase().trim()??'']??'';
@@ -398,141 +441,336 @@ function ImageMiniChat({ hotel, slide, edition, onEscalate, onClose }: { hotel:H
 // ─────────────────────────────────────────────────────────────────────────────
 // [V5-8] UPGRADE / PERSONALISE BOTTOM SHEET
 // ─────────────────────────────────────────────────────────────────────────────
-function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: { hotel:Hotel; stayPrefs:{rooms:number;basis:number;flexibility:number}; kbEntries:KBEntry[]; fmt:(n:number)=>string; onSelect:(key:string,opt:any)=>void; onClose:()=>void; }) {
-  const [tab, setTab] = useState<'rooms'|'includes'|'kb'|'reviews'>('rooms');
-  const kbEntry = kbEntries.find(e=>e.active && e.type==='property' && e.linkedTo?.toLowerCase().includes(hotel.name.toLowerCase()));
+const M_HOTELS = 1.15; // margin multiplier — defined here so all components can use it
 
-  const tabs = [
-    { id:'rooms',    label:'Rooms & Rates', show:true },
-    { id:'includes', label:'Inclusions',    show:!!hotel.upgrades?.basis?.length },
-    { id:'kb',       label:'✦ Specialist',  show:!!kbEntry },
-    { id:'reviews',  label:'Reviews',       show:!!hotel.reviewScore },
-  ].filter(t=>t.show);
+function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose, selectedActivityIds, onActivityToggle, regionSlug }: { hotel:Hotel; stayPrefs:{rooms:number;basis:number;flexibility:number}; kbEntries:KBEntry[]; fmt:(n:number)=>string; onSelect:(key:string,opt:any)=>void; onClose:()=>void; selectedActivityIds:string[]; onActivityToggle:(id:string)=>void; regionSlug:string; }) {
+
+  // Image carousel state
+  const [heroSlide, setHeroSlide] = useState(0);
+  const kbEntry = kbEntries.find(e => e.active && e.type==='property' && e.linkedTo?.toLowerCase().includes(hotel.name.toLowerCase()));
+  const allSlides = buildSlides(hotel);
+
+  // Room-type image state: roomIdx → slideIdx within that room's images
+  // For now we use the main slides array per room (future: room-specific images from Supabase)
+  const [roomSlides, setRoomSlides]   = useState<Record<number,number>>({});
+  const [expandedRoom, setExpandedRoom] = useState<number | null>(null);
+
+  // Activities filtered to this region
+  const regionActs = ACTIVITIES.filter(a =>
+    !a.region_tags?.length || a.region_tags.includes(regionSlug)
+  );
+
+  // Running additions cost for this property
+  const roomExtra  = hotel.upgrades?.rooms?.[stayPrefs.rooms]?.extra ?? 0;
+  const flexExtra  = hotel.upgrades?.flexibility?.[stayPrefs.flexibility]?.extra ?? 0;
+  const actCost    = ACTIVITIES.filter(a => selectedActivityIds.includes(String(a.id)))
+                               .reduce((s,a) => s + Math.round(a.netRate * 1.18), 0);
+  const addedCost  = roomExtra + flexExtra + actCost;
 
   return (
-    <div className="overlay" onClick={e => { if (e.target===e.currentTarget) onClose(); }}>
-      <div style={{ background:'#141414', border:`0.5px solid ${T.border}`, borderRadius:'20px 20px 0 0', width:'100%', maxWidth:640, maxHeight:'88vh', overflowY:'auto', animation:'slideUp 0.3s ease', display:'flex', flexDirection:'column' }}>
-        {/* Header */}
-        <div style={{ padding:'20px 20px 0', flexShrink:0 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4 }}>
-            <div>
-              <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{hotel.name}</div>
+    <div className="overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      {/* Full-screen sheet — 95vh, scrollable, no tabs */}
+      <div style={{
+        background:'#0f0f0f',
+        borderRadius:'20px 20px 0 0',
+        width:'100%',
+        maxWidth:680,
+        height:'95vh',
+        display:'flex',
+        flexDirection:'column',
+        animation:'slideUp 0.3s ease',
+        overflow:'hidden',
+      }}>
+
+        {/* ── STICKY HEADER ── */}
+        <div style={{ flexShrink:0, padding:'18px 20px 14px', borderBottom:`0.5px solid rgba(255,255,255,0.08)`, background:'#0f0f0f' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.12em', fontWeight:700, marginBottom:3 }}>✦ Upgrade &amp; Personalise</div>
+              <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif", lineHeight:1.2 }}>{hotel.name}</div>
               <div style={{ fontSize:12, color:T.textDim, marginTop:2 }}>{hotel.destination} · {hotel.country}</div>
             </div>
-            <button onClick={onClose} style={{ background:'rgba(255,255,255,0.08)', border:'none', color:T.textMid, width:34, height:34, borderRadius:'50%', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>×</button>
+            <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:T.textMid, width:34, height:34, borderRadius:'50%', cursor:'pointer', fontSize:17, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginLeft:12 }}>×</button>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:8, marginBottom:16, paddingBottom:16, borderBottom:`0.5px solid ${T.border}` }}>
-            <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(hotel.netRate * M_HOTELS)}<span style={{ fontSize:12, color:T.textDim, fontWeight:400 }}>/night</span></div>
-            {hotel.otaRate && <div style={{ fontSize:11, color:T.green }}>Save {fmt((hotel.otaRate - hotel.netRate * M_HOTELS) > 0 ? hotel.otaRate - hotel.netRate * M_HOTELS : 0)}/night vs booking direct</div>}
-            {hotel.trustScore && <div style={{ fontSize:11, color:T.textDim, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'2px 8px' }}>★ {hotel.trustScore}/100</div>}
-            {hotel.reviewScore && <div style={{ fontSize:11, color:T.textDim }}>{hotel.reviewScore}★ {hotel.reviewCount ? `(${hotel.reviewCount} reviews)` : ''}</div>}
-          </div>
-          {/* Tab bar */}
-          <div style={{ display:'flex', gap:4, marginBottom:0 }}>
-            {tabs.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id as any)} style={{ padding:'8px 14px', borderRadius:'8px 8px 0 0', border:`0.5px solid ${tab===t.id?T.borderGold:T.border}`, borderBottom:'none', background:tab===t.id?T.goldDim:'transparent', color:tab===t.id?T.gold:T.textMid, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:tab===t.id?600:400 }}>{t.label}</button>
-            ))}
+          {/* Price summary bar */}
+          <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:10, flexWrap:'wrap' }}>
+            <div style={{ fontSize:20, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>
+              {fmt(hotel.netRate * M_HOTELS)}
+              <span style={{ fontSize:11, color:T.textDim, fontWeight:400 }}>/night base</span>
+            </div>
+            {addedCost > 0 && (
+              <div style={{ fontSize:12, color:T.green }}>+ {fmt(addedCost)} in selected add-ons</div>
+            )}
+            {hotel.otaRate && (
+              <div style={{ fontSize:11, color:T.textDim, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'2px 10px' }}>
+                Save {fmt(Math.max(0, hotel.otaRate - hotel.netRate * M_HOTELS))}/night vs direct
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Tab content */}
-        <div style={{ padding:'16px 20px 40px', overflowY:'auto' }}>
+        {/* ── SCROLLABLE BODY ── */}
+        <div style={{ flex:1, overflowY:'auto', padding:'0 0 120px' }}>
 
-          {tab==='rooms' && (
-            <div>
-              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:12 }}>Room type</div>
-              {hotel.upgrades?.rooms?.map((opt:any) => {
-                const sel = opt.tier===stayPrefs.rooms;
+          {/* ══ SECTION 1: PROPERTY HERO IMAGE CAROUSEL ══ */}
+          {allSlides.length > 0 && (
+            <div style={{ position:'relative', height:240, overflow:'hidden', background:'#111' }}>
+              {allSlides[heroSlide] && (
+                allSlides[heroSlide].type === 'reel' || allSlides[heroSlide].type === 'video'
+                  ? <video src={allSlides[heroSlide].url} poster={allSlides[heroSlide].poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                  : <img src={allSlides[heroSlide].url} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+              )}
+              <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.5) 0%,transparent 60%)' }} />
+              {/* Inner image nav */}
+              {heroSlide > 0 && (
+                <button onClick={() => setHeroSlide(i => i-1)} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:30, height:30, borderRadius:'50%', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>‹</button>
+              )}
+              {heroSlide < allSlides.length - 1 && (
+                <button onClick={() => setHeroSlide(i => i+1)} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:30, height:30, borderRadius:'50%', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>›</button>
+              )}
+              {/* Slide label + dots */}
+              <div style={{ position:'absolute', bottom:10, left:0, right:0, display:'flex', justifyContent:'space-between', alignItems:'flex-end', padding:'0 14px' }}>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,0.5)', background:'rgba(0,0,0,0.4)', borderRadius:4, padding:'2px 7px' }}>
+                  {allSlides[heroSlide]?.label || ''}{allSlides[heroSlide]?.roomType ? ` · ${allSlides[heroSlide].roomType}` : ''}
+                </div>
+                {allSlides.length > 1 && (
+                  <div style={{ display:'flex', gap:3 }}>
+                    {allSlides.map((_,i) => <div key={i} onClick={() => setHeroSlide(i)} style={{ width:i===heroSlide?14:4, height:4, borderRadius:2, background:i===heroSlide?T.gold:'rgba(255,255,255,0.35)', cursor:'pointer', transition:'all 0.2s' }} />)}
+                  </div>
+                )}
+              </div>
+              {/* KB diamond for this image */}
+              {(() => { const note = allSlides[heroSlide] ? getSlideKB(hotel, allSlides[heroSlide], kbEntries) : null; return note ? (
+                <div title={note} style={{ position:'absolute', top:10, right:10, zIndex:8 }}>
+                  <div style={{ width:26, height:26, background:'linear-gradient(135deg,#c8a020,#f0c840)', transform:'rotate(45deg)', borderRadius:4, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span style={{ transform:'rotate(-45deg)', fontSize:10, color:'#0a0a0a', fontWeight:900 }}>✦</span>
+                  </div>
+                </div>
+              ) : null; })()}
+            </div>
+          )}
+
+          <div style={{ padding:'20px 20px 0' }}>
+
+            {/* ══ SECTION 2: PROPERTY DESCRIPTION + FAST FACTS ══ */}
+            {hotel.funFact && (
+              <div style={{ marginBottom:20 }}>
+                <div style={{ fontSize:14, color:T.textMid, lineHeight:1.75 }}>{hotel.funFact}</div>
+              </div>
+            )}
+            {/* Trust + review row */}
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:20 }}>
+              <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'4px 12px', fontSize:12, color:T.green }}>★ {hotel.trustScore}/100 trust score</div>
+              {hotel.malariaFree && <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'4px 12px', fontSize:12, color:T.green }}>✓ Malaria-free</div>}
+              {(hotel as any).reviewScore && <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'4px 12px', fontSize:12, color:T.textMid }}>{(hotel as any).reviewScore}★ guest rating</div>}
+            </div>
+
+            {/* ══ SECTION 3: SPECIALIST NOTES (KB) — if available ══ */}
+            {kbEntry && (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:10 }}>✦ Our Specialist Notes</div>
+                {kbEntry.specialistNotes && (
+                  <div style={{ background:'rgba(212,175,55,0.07)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'14px 16px', marginBottom:12, fontSize:13, color:'rgba(240,237,230,0.85)', lineHeight:1.75 }}>{kbEntry.specialistNotes}</div>
+                )}
+                {Object.entries(kbEntry.structuredFields ?? {}).filter(([,v]) => typeof v === 'string' && (v as string).length > 10).map(([key, val]) => (
+                  <div key={key} style={{ display:'flex', gap:10, marginBottom:8, alignItems:'flex-start' }}>
+                    <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:700, minWidth:80, paddingTop:2, flexShrink:0 }}>{key.replace(/_/g,' ')}</div>
+                    <div style={{ fontSize:12, color:T.textMid, lineHeight:1.6, flex:1 }}>{String(val)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ══ SECTION 4: ROOM TYPES ══ */}
+            <div style={{ marginBottom:24 }}>
+              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:12 }}>Room types &amp; upgrades</div>
+              {(hotel.upgrades?.rooms ?? []).map((opt:any, roomIdx:number) => {
+                const sel      = opt.tier === stayPrefs.rooms;
+                const expanded = expandedRoom === roomIdx;
+                // Room-specific slides: use all slides tagged with this room type, fall back to hero
+                const roomSlideList = allSlides.filter(s => !s.roomType || s.roomType?.toLowerCase().includes(opt.label.toLowerCase()));
+                const rSlideIdx = roomSlides[roomIdx] ?? 0;
+                const rSlide    = roomSlideList[rSlideIdx] ?? allSlides[0];
+
                 return (
-                  <button key={opt.label} onClick={() => onSelect('rooms', opt)} style={{ width:'100%', padding:'12px 14px', background:sel?T.goldDim:'rgba(255,255,255,0.04)', border:`1.5px solid ${sel?T.gold:T.border}`, borderRadius:11, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'inherit', textAlign:'left' as const, marginBottom:8 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                      <div style={{ width:16, height:16, borderRadius:4, border:`1.5px solid ${sel?T.gold:'rgba(255,255,255,0.22)'}`, background:sel?T.gold:'transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#0a0a0a', fontWeight:800 }}>{sel?'✓':''}</div>
-                      <div style={{ fontSize:13, fontWeight:sel?600:400, color:sel?T.text:T.textMid }}>{opt.label}</div>
+                  <div key={opt.label} style={{ marginBottom:10, borderRadius:12, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?'rgba(212,175,55,0.04)':T.surface, overflow:'hidden', transition:'border-color 0.2s' }}>
+                    {/* Room image carousel — always visible */}
+                    <div style={{ position:'relative', height:160, overflow:'hidden', cursor:'pointer' }} onClick={() => { onSelect('rooms', opt); }}>
+                      {rSlide && (rSlide.type==='reel'||rSlide.type==='video'
+                        ? <video src={rSlide.url} poster={rSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                        : <img src={rSlide.url} alt={opt.label} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                      )}
+                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.7) 0%,transparent 50%)' }} />
+                      {/* Room image nav — only if multiple slides */}
+                      {roomSlideList.length > 1 && rSlideIdx > 0 && (
+                        <button onClick={e => { e.stopPropagation(); setRoomSlides(prev => ({ ...prev, [roomIdx]: rSlideIdx-1 })); }} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.5)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:24, height:24, borderRadius:'50%', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>‹</button>
+                      )}
+                      {roomSlideList.length > 1 && rSlideIdx < roomSlideList.length-1 && (
+                        <button onClick={e => { e.stopPropagation(); setRoomSlides(prev => ({ ...prev, [roomIdx]: rSlideIdx+1 })); }} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.5)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:24, height:24, borderRadius:'50%', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>›</button>
+                      )}
+                      {/* Bottom row inside image */}
+                      <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
+                        <div>
+                          <div style={{ fontSize:14, fontWeight:700, color:'#fff', fontFamily:"'Playfair Display',serif" }}>{opt.label}</div>
+                          {roomSlideList.length > 1 && (
+                            <div style={{ display:'flex', gap:3, marginTop:4 }}>
+                              {roomSlideList.map((_,i) => <div key={i} style={{ width:i===rSlideIdx?12:4, height:4, borderRadius:2, background:i===rSlideIdx?T.gold:'rgba(255,255,255,0.35)', transition:'all 0.2s' }} />)}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                          {sel && <div style={{ fontSize:10, color:'#0a0a0a', background:T.gold, borderRadius:20, padding:'2px 8px', fontWeight:800 }}>Selected</div>}
+                          <div style={{ fontSize:14, fontWeight:700, color:T.gold }}>{opt.extra===0?'Included':`+${fmt(opt.extra)}/night`}</div>
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize:13, fontWeight:600, color:opt.extra===0?T.textDim:T.gold }}>{opt.extra===0?'Included':`+${fmt(opt.extra)}/night`}</div>
-                  </button>
+                    {/* Expandable detail row */}
+                    <div style={{ padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                      <button
+                        onClick={() => setExpandedRoom(expanded ? null : roomIdx)}
+                        style={{ background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:12, color:T.textDim, display:'flex', alignItems:'center', gap:4 }}
+                      >
+                        {expanded ? '▲ Hide details' : '▼ Room details'}
+                      </button>
+                      <button
+                        onClick={() => onSelect('rooms', opt)}
+                        style={{ padding:'7px 16px', borderRadius:8, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?700:400 }}
+                      >
+                        {sel ? '✓ Selected' : 'Select this room'}
+                      </button>
+                    </div>
+                    {expanded && (
+                      <div style={{ padding:'0 14px 14px', borderTop:`0.5px solid ${T.border}` }}>
+                        <div style={{ fontSize:12, color:T.textMid, lineHeight:1.65, paddingTop:10 }}>
+                          {/* In production this comes from room-level KB or Supabase room description */}
+                          {kbEntry?.structuredFields?.best_room && opt.tier === 1
+                            ? String(kbEntry.structuredFields.best_room)
+                            : `${opt.label} — ${opt.extra === 0 ? 'included in your base rate' : `upgrade at ${fmt(opt.extra)}/night`}. All meals and game activities included.`}
+                        </div>
+                        {/* Meal basis for this room */}
+                        {hotel.upgrades?.basis && (
+                          <div style={{ marginTop:10, display:'flex', gap:6, flexWrap:'wrap' }}>
+                            {hotel.upgrades.basis.map((b:any) => (
+                              <div key={b.label} style={{ fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'3px 10px' }}>✓ {b.label}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
+              {/* Cancellation policy */}
               {hotel.upgrades?.flexibility && (
-                <>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:12, marginTop:20 }}>Cancellation</div>
-                  {hotel.upgrades.flexibility.map((opt:any) => {
-                    const sel = opt.tier===stayPrefs.flexibility;
-                    return (
-                      <button key={opt.label} onClick={() => onSelect('flexibility', opt)} style={{ width:'100%', padding:'12px 14px', background:sel?T.goldDim:'rgba(255,255,255,0.04)', border:`1.5px solid ${sel?T.gold:T.border}`, borderRadius:11, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', fontFamily:'inherit', textAlign:'left' as const, marginBottom:8 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                          <div style={{ width:16, height:16, borderRadius:4, border:`1.5px solid ${sel?T.gold:'rgba(255,255,255,0.22)'}`, background:sel?T.gold:'transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#0a0a0a', fontWeight:800 }}>{sel?'✓':''}</div>
-                          <div style={{ fontSize:13, fontWeight:sel?600:400, color:sel?T.text:T.textMid }}>{opt.label}</div>
-                        </div>
-                        <div style={{ fontSize:13, fontWeight:600, color:opt.extra===0?T.textDim:T.gold }}>{opt.extra===0?'Included':`+${fmt(opt.extra)}/night`}</div>
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          )}
-
-          {tab==='includes' && hotel.upgrades?.basis && (
-            <div>
-              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:12 }}>Meal basis</div>
-              {hotel.upgrades.basis.map((opt:any) => (
-                <div key={opt.label} style={{ padding:'12px 14px', background:'rgba(212,175,55,0.06)', border:`0.5px solid ${T.borderGold}`, borderRadius:11, marginBottom:8, display:'flex', justifyContent:'space-between' }}>
-                  <div style={{ fontSize:13, color:T.text }}>✓ {opt.label}</div>
-                  <div style={{ fontSize:12, color:T.textDim }}>Included</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tab==='kb' && kbEntry && (
-            <div>
-              <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:12 }}>✦ Specialist Notes · {hotel.name}</div>
-              {kbEntry.specialistNotes && (
-                <div style={{ background:'rgba(212,175,55,0.06)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'14px 16px', marginBottom:16, fontSize:13, color:T.textMid, lineHeight:1.7 }}>{kbEntry.specialistNotes}</div>
-              )}
-              {Object.entries(kbEntry.structuredFields ?? {}).map(([key, val]) => (
-                <div key={key} style={{ marginBottom:12 }}>
-                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:4 }}>{key.replace(/_/g,' ')}</div>
-                  <div style={{ fontSize:13, color:T.textMid, lineHeight:1.6 }}>{String(val)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tab==='reviews' && hotel.reviewScore && (
-            <div>
-              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:16 }}>Guest review score</div>
-              <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:20, textAlign:'center' as const }}>
-                <div style={{ fontSize:48, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{hotel.reviewScore}</div>
-                <div style={{ fontSize:13, color:T.textDim, marginTop:4 }}>out of 10{hotel.reviewCount ? ` · ${hotel.reviewCount} verified reviews` : ''}</div>
-              </div>
-              {(hotel as any).socialLinks && (
-                <div style={{ marginTop:16 }}>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:10 }}>Follow this property</div>
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                    {Object.entries((hotel as any).socialLinks).map(([platform, url]:any) => url && (
-                      <a key={platform} href={url} target="_blank" rel="noopener noreferrer" style={{ padding:'7px 14px', background:'rgba(255,255,255,0.06)', border:`0.5px solid ${T.border}`, borderRadius:8, fontSize:12, color:T.textMid, textDecoration:'none', textTransform:'capitalize' as const }}>{platform}</a>
-                    ))}
+                <div style={{ marginTop:8 }}>
+                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:8 }}>Cancellation</div>
+                  <div style={{ display:'flex', gap:8 }}>
+                    {hotel.upgrades.flexibility.map((opt:any) => {
+                      const sel = opt.tier === stayPrefs.flexibility;
+                      return (
+                        <button key={opt.label} onClick={() => onSelect('flexibility', opt)} style={{ flex:1, padding:'9px 12px', borderRadius:9, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?600:400, textAlign:'left' as const }}>
+                          <div style={{ fontWeight:sel?700:400 }}>{opt.label}</div>
+                          <div style={{ fontSize:10, marginTop:2, color:opt.extra===0?T.textDim:T.gold }}>{opt.extra===0?'No extra cost':`+${fmt(opt.extra)}/night`}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
             </div>
+
+            {/* ══ SECTION 5: ACTIVITIES — anchored to this lodge's region ══ */}
+            {regionActs.length > 0 && (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6 }}>
+                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600 }}>Experiences near {hotel.destination}</div>
+                  {selectedActivityIds.length > 0 && <div style={{ fontSize:11, color:T.gold }}>{selectedActivityIds.length} selected</div>}
+                </div>
+                <div style={{ fontSize:12, color:T.textDim, marginBottom:14, lineHeight:1.5 }}>Add to your package · all priced per person · confirmed by your Journey Specialist</div>
+                {/* Horizontal scroll carousel */}
+                <div style={{ display:'flex', gap:12, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, marginLeft:-20, marginRight:-20, paddingLeft:20, paddingRight:20, paddingBottom:4 }}>
+                  {regionActs.map(act => {
+                    const isSel   = selectedActivityIds.includes(String(act.id));
+                    const display = Math.round(act.netRate * 1.18);
+                    const saving  = act.otaRate ? Math.round(act.otaRate - display) : 0;
+                    return (
+                      <div
+                        key={act.id}
+                        onClick={() => onActivityToggle(String(act.id))}
+                        style={{ flexShrink:0, width:'min(70vw, 240px)', scrollSnapAlign:'start', borderRadius:12, border:`1.5px solid ${isSel?T.gold:T.border}`, background:isSel?'rgba(212,175,55,0.06)':T.surface, cursor:'pointer', overflow:'hidden', transition:'border-color 0.2s' }}
+                      >
+                        <div style={{ position:'relative', height:130, overflow:'hidden' }}>
+                          <img src={act.image} alt={act.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 50%)' }} />
+                          {isSel && <div style={{ position:'absolute', top:8, right:8, width:20, height:20, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#0a0a0a', fontWeight:800 }}>✓</div>}
+                          <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'8px 10px' }}>
+                            <div style={{ fontSize:12, fontWeight:700, color:'#fff', lineHeight:1.2, fontFamily:"'Playfair Display',serif" }}>{act.name}</div>
+                            <div style={{ fontSize:10, color:'rgba(255,255,255,0.5)', marginTop:1 }}>{act.duration}</div>
+                          </div>
+                        </div>
+                        <div style={{ padding:'10px 12px' }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4 }}>
+                            <div style={{ fontSize:11, color:T.textDim }}>★ {act.trustScore}/100</div>
+                            <div style={{ textAlign:'right' as const }}>
+                              <div style={{ fontSize:14, fontWeight:700, color:isSel?T.gold:T.text }}>{fmt(display)}<span style={{ fontSize:9, color:T.textDim, fontWeight:400 }}>/pp</span></div>
+                              {saving > 0 && <div style={{ fontSize:9, color:T.green }}>Save {fmt(saving)}</div>}
+                            </div>
+                          </div>
+                          <div style={{ fontSize:10, color:T.textDim, lineHeight:1.4 }}>{act.funFact}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {selectedActivityIds.length > 0 && (
+                  <div style={{ marginTop:10, padding:'9px 14px', background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, display:'flex', justifyContent:'space-between', fontSize:12 }}>
+                    <span style={{ color:T.gold, fontWeight:600 }}>{selectedActivityIds.length} activit{selectedActivityIds.length===1?'y':'ies'} added</span>
+                    <span style={{ color:T.textMid }}>{fmt(ACTIVITIES.filter(a=>selectedActivityIds.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*1.18),0))}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ══ SECTION 6: SOCIAL LINKS (if available) ══ */}
+            {(hotel as any).socialLinks && (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:10 }}>Follow this property</div>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                  {Object.entries((hotel as any).socialLinks).map(([platform, url]:any) => url && (
+                    <a key={platform} href={url} target="_blank" rel="noopener noreferrer" style={{ padding:'7px 14px', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, borderRadius:8, fontSize:12, color:T.textMid, textDecoration:'none', textTransform:'capitalize' as const }}>{platform}</a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>{/* end scroll padding wrapper */}
+        </div>{/* end scrollable body */}
+
+        {/* ── STICKY FOOTER ── */}
+        <div style={{ flexShrink:0, padding:'14px 20px 24px', borderTop:`0.5px solid rgba(255,255,255,0.08)`, background:'#0f0f0f' }}>
+          {addedCost > 0 && (
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:10 }}>
+              <span style={{ color:T.textDim }}>Base rate + add-ons</span>
+              <span style={{ color:T.gold, fontWeight:600 }}>{fmt(hotel.netRate * M_HOTELS + addedCost)}/night equivalent</span>
+            </div>
           )}
+          <button onClick={onClose} className="btn-gold" style={{ width:'100%', padding:15, fontSize:15 }}>
+            Confirm &amp; return to itinerary →
+          </button>
+          <div style={{ textAlign:'center' as const, fontSize:11, color:T.textDim, marginTop:8 }}>
+            Tap outside or press × to close without saving
+          </div>
         </div>
 
-        <div style={{ padding:'0 20px 20px', flexShrink:0 }}>
-          <button onClick={onClose} className="btn-gold" style={{ width:'100%', padding:14, fontSize:14 }}>Confirm selections →</button>
-        </div>
       </div>
     </div>
   );
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // [V5-4] NESTED PEEKING CAROUSEL — core component
 // ─────────────────────────────────────────────────────────────────────────────
-const M_HOTELS = 1.15; // margin multiplier used outside the main component
 
 // ─────────────────────────────────────────────────────────────────────────────
 // [V5-4] NESTED PEEKING CAROUSEL — real scroll-snap implementation
@@ -561,20 +799,23 @@ function NestedPropertyCarousel({
   destinationLabel, destinationSlug, cityNights, onNightsChange,
   hotels, selectedHotelId, onSelectHotel, stayPrefs, onUpgradeSelect,
   kbEntries, fmt, edition, onEscalateChat,
+  selectedActivityIds, onActivityToggle,
 }: {
-  destinationLabel: string;
-  destinationSlug:  string;
-  cityNights:       number;
-  onNightsChange:   (delta: number) => void;
-  hotels:           Hotel[];
-  selectedHotelId:  string | number;
-  onSelectHotel:    (hotel: Hotel) => void;
-  stayPrefs:        { rooms: number; basis: number; flexibility: number };
-  onUpgradeSelect:  (key: string, opt: any) => void;
-  kbEntries:        KBEntry[];
-  fmt:              (n: number) => string;
-  edition:          EditionConfig;
-  onEscalateChat:   (context: string) => void;
+  destinationLabel:     string;
+  destinationSlug:      string;
+  cityNights:           number;
+  onNightsChange:       (delta: number) => void;
+  hotels:               Hotel[];
+  selectedHotelId:      string | number;
+  onSelectHotel:        (hotel: Hotel) => void;
+  stayPrefs:            { rooms: number; basis: number; flexibility: number };
+  onUpgradeSelect:      (key: string, opt: any) => void;
+  kbEntries:            KBEntry[];
+  fmt:                  (n: number) => string;
+  edition:              EditionConfig;
+  onEscalateChat:       (context: string) => void;
+  selectedActivityIds:  string[];
+  onActivityToggle:     (id: string) => void;
 }) {
   // Which property is currently centred in the outer strip
   const [activeIdx,   setActiveIdx]   = useState(() => {
@@ -832,8 +1073,7 @@ function NestedPropertyCarousel({
                         <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)', marginTop:2 }}>{hotel.destination} · ★ {hotel.trustScore}/100</div>
                       </div>
                       <div style={{ textAlign:'right' as const }}>
-                        <div style={{ fontSize:19, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{fmt(tileTotal)}</div>
-                        <div style={{ fontSize:10, color:'rgba(255,255,255,0.4)', marginTop:1 }}>{cityNights}n all-in</div>
+                        <div style={{ fontSize:10, color:'rgba(255,255,255,0.45)', background:'rgba(0,0,0,0.35)', borderRadius:6, padding:'3px 8px' }}>{cityNights}n selected</div>
                       </div>
                     </div>
                   </div>
@@ -904,6 +1144,9 @@ function NestedPropertyCarousel({
                     fmt={fmt}
                     onSelect={(key, opt) => { onSelectHotel(hotel); onUpgradeSelect(key, opt); }}
                     onClose={() => setUpgradeOpenId(null)}
+                    selectedActivityIds={selectedActivityIds}
+                    onActivityToggle={onActivityToggle}
+                    regionSlug={destinationSlug}
                   />
                 )}
               </div>
@@ -943,6 +1186,359 @@ function NestedPropertyCarousel({
     </div>
   );
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATE SELECTOR — 4 modes: specific date | month | window | flexible
+// Placed in the journey summary banner on the Price & Book screen.
+// ─────────────────────────────────────────────────────────────────────────────
+const MONTHS_AHEAD = Array.from({ length: 18 }, (_, i) => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + i + 1);
+  return {
+    value: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,
+    label: d.toLocaleDateString('en-GB', { month:'long', year:'numeric' }),
+  };
+});
+
+function DateSelector({ checkinDate, setCheckinDate, dateMode, setDateMode, flexMonth, setFlexMonth, windowStart, setWindowStart, windowEnd, setWindowEnd, nights }: {
+  checkinDate:    string; setCheckinDate:  (v:string)=>void;
+  dateMode:       'specific'|'month'|'window'|'flexible';
+  setDateMode:    (v:'specific'|'month'|'window'|'flexible')=>void;
+  flexMonth:      string; setFlexMonth:    (v:string)=>void;
+  windowStart:    string; setWindowStart:  (v:string)=>void;
+  windowEnd:      string; setWindowEnd:    (v:string)=>void;
+  nights:         number;
+}) {
+  const isSet = !!(checkinDate || flexMonth || (windowStart && windowEnd) || dateMode==='flexible');
+  const modeLabel: Record<string, string> = { specific:'Specific date', month:'Month', window:'Date window', flexible:"I'm flexible" };
+
+  return (
+    <div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+        <div style={{ fontSize:12, fontWeight:600, color:T.text }}>Travel dates</div>
+        <div style={{ fontSize:11, color:isSet?T.green:T.amber, fontWeight:600 }}>{isSet?'✓ Set':'Required before payment'}</div>
+      </div>
+      {/* Mode selector tabs */}
+      <div style={{ display:'flex', gap:6, marginBottom:12, flexWrap:'wrap' }}>
+        {(['specific','month','window','flexible'] as const).map(mode => (
+          <button key={mode} onClick={() => setDateMode(mode)} style={{ padding:'6px 12px', borderRadius:20, border:`1.5px solid ${dateMode===mode?T.gold:T.border}`, background:dateMode===mode?T.goldDim:'transparent', color:dateMode===mode?T.gold:T.textMid, fontSize:11, cursor:'pointer', fontFamily:'inherit', fontWeight:dateMode===mode?600:400 }}>
+            {modeLabel[mode]}
+          </button>
+        ))}
+      </div>
+
+      {/* Specific date */}
+      {dateMode==='specific' && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          <input type="date" value={checkinDate} onChange={e=>setCheckinDate(e.target.value)} style={{ background:T.bg3, border:`1.5px solid ${checkinDate?T.borderGold:T.border}`, color:T.text, borderRadius:9, padding:'8px 12px', fontSize:13, outline:'none', fontFamily:'inherit', flexShrink:0 }} />
+          {checkinDate && nights > 0 && (
+            <div style={{ fontSize:11, color:T.textDim }}>
+              Check-out: {new Date(new Date(checkinDate).getTime() + nights*86400000).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Month */}
+      {dateMode==='month' && (
+        <select value={flexMonth} onChange={e=>setFlexMonth(e.target.value)} style={{ width:'100%', background:T.bg3, border:`1.5px solid ${flexMonth?T.borderGold:T.border}`, color:flexMonth?T.text:T.textDim, borderRadius:9, padding:'9px 12px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
+          <option value="">Select a month…</option>
+          {MONTHS_AHEAD.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
+      )}
+
+      {/* Date window */}
+      {dateMode==='window' && (
+        <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+          <div>
+            <div style={{ fontSize:10, color:T.textDim, marginBottom:4, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Earliest</div>
+            <input type="date" value={windowStart} onChange={e=>setWindowStart(e.target.value)} style={{ background:T.bg3, border:`1.5px solid ${windowStart?T.borderGold:T.border}`, color:T.text, borderRadius:9, padding:'7px 11px', fontSize:12, outline:'none', fontFamily:'inherit' }} />
+          </div>
+          <div style={{ fontSize:14, color:T.textDim, paddingTop:18 }}>→</div>
+          <div>
+            <div style={{ fontSize:10, color:T.textDim, marginBottom:4, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Latest</div>
+            <input type="date" value={windowEnd} min={windowStart} onChange={e=>setWindowEnd(e.target.value)} style={{ background:T.bg3, border:`1.5px solid ${windowEnd?T.borderGold:T.border}`, color:T.text, borderRadius:9, padding:'7px 11px', fontSize:12, outline:'none', fontFamily:'inherit' }} />
+          </div>
+          {windowStart && windowEnd && <div style={{ fontSize:11, color:T.green, paddingTop:18 }}>✓ Window set</div>}
+        </div>
+      )}
+
+      {/* Flexible */}
+      {dateMode==='flexible' && (
+        <div style={{ background:'rgba(212,175,55,0.06)', border:`0.5px solid ${T.borderGold}`, borderRadius:10, padding:'12px 14px' }}>
+          <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:4 }}>We'll find the best available dates for you</div>
+          <div style={{ fontSize:12, color:T.textDim, lineHeight:1.6 }}>
+            Your Journey Specialist will check live availability across your preferred travel window and recommend the best-value dates — including any savings from shifting ±14 days.
+          </div>
+          <div style={{ marginTop:8, fontSize:11, color:T.gold }}>✦ Flexible dates often unlock 10–20% savings on lodge rates.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSFER CAROUSEL — same peeking scroll-snap pattern as property carousel
+// Sits between destination sections. Shows 3–5 transfer options per route.
+// Options: Road Transfer | Commercial Flight | Private Charter | Combo
+// Each option shows: mode, provider, duration, estimated cost, quality badges
+// Recommended option (from KB) marked prominently.
+// Cost is always labelled "est." — updates grandTotal as estimate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type TransferOption = {
+  id:          string;
+  mode:        'road' | 'commercial' | 'charter' | 'combo' | 'boat';
+  icon:        string;
+  label:       string;
+  provider:    string;
+  duration:    string;
+  estimatedCostZAR: number;
+  badges:      Array<{ text:string; color:string }>;
+  aiNote:      string;
+  recommended: boolean;
+};
+
+function buildTransferOptions(fromSlug: string, toSlug: string): TransferOption[] {
+  const leg = getInternalLeg(fromSlug, toSlug);
+  if (!leg) return [];
+
+  // Generate options array from the base leg data
+  const options: TransferOption[] = [];
+
+  // Always include the KB-recommended option first
+  options.push({
+    id: 'recommended',
+    mode: leg.mode,
+    icon: leg.mode==='charter' ? '✈' : leg.mode==='road' ? '🚗' : leg.mode==='scheduled' ? '🛫' : '🛥',
+    label: leg.mode==='charter' ? 'Private Charter' : leg.mode==='road' ? 'Road Transfer' : leg.mode==='scheduled' ? 'Commercial Flight' : 'Boat / Charter',
+    provider: leg.provider,
+    duration: leg.duration,
+    estimatedCostZAR: leg.estimatedCostZAR,
+    badges: [{ text:'✦ Recommended', color:T.gold }, { text:'Most efficient', color:T.green }],
+    aiNote: leg.aiNote,
+    recommended: true,
+  });
+
+  // Add alternative options based on route type
+  const base = leg.estimatedCostZAR;
+
+  if (leg.mode === 'charter') {
+    // Cheaper commercial alternative
+    options.push({
+      id: 'commercial',
+      mode: 'commercial',
+      icon: '🛫',
+      label: 'Commercial Flight',
+      provider: 'Scheduled airline connection via hub',
+      duration: `+45–90 min vs charter`,
+      estimatedCostZAR: Math.round(base * 0.55),
+      badges: [{ text:'Cheapest', color:'#60a5fa' }],
+      aiNote: 'Connects via a regional hub. Saves cost but adds transfer time and baggage handling.',
+      recommended: false,
+    });
+    // Combo option if long route
+    if (base > 12000) {
+      options.push({
+        id: 'combo',
+        mode: 'combo',
+        icon: '🔀',
+        label: 'Combo Transfer',
+        provider: 'Commercial to hub + road transfer to lodge',
+        duration: `${leg.duration} + 1h road`,
+        estimatedCostZAR: Math.round(base * 0.45),
+        badges: [{ text:'Budget option', color:'#a78bfa' }],
+        aiNote: 'Mix of commercial flight and private vehicle. Best value for price-sensitive travellers.',
+        recommended: false,
+      });
+    }
+  } else if (leg.mode === 'scheduled') {
+    // Upgrade to private charter
+    options.push({
+      id: 'charter-upgrade',
+      mode: 'charter',
+      icon: '✈',
+      label: 'Private Charter',
+      provider: 'Direct charter — no connections',
+      duration: `Faster — no layover`,
+      estimatedCostZAR: Math.round(base * 1.8),
+      badges: [{ text:'Fastest', color:T.green }, { text:'Most comfortable', color:T.gold }],
+      aiNote: 'Direct charter eliminates connection risk. Recommended for guests with tight schedules or peak season.',
+      recommended: false,
+    });
+    // Road option if under 5h
+    if (base < 15000) {
+      options.push({
+        id: 'road',
+        mode: 'road',
+        icon: '🚗',
+        label: 'Private Road Transfer',
+        provider: 'Private vehicle with refreshments',
+        duration: '3–5 hrs depending on route',
+        estimatedCostZAR: Math.round(base * 0.3),
+        badges: [{ text:'Cheapest', color:'#60a5fa' }, { text:'Scenic', color:'#4ade80' }],
+        aiNote: 'Scenic drive through the lowveld or bushveld. Relaxed pacing — stop when you want.',
+        recommended: false,
+      });
+    }
+  } else if (leg.mode === 'road') {
+    options.push({
+      id: 'charter-upgrade',
+      mode: 'charter',
+      icon: '✈',
+      label: 'Light Aircraft Charter',
+      provider: 'Private charter — fly over the reserve',
+      duration: '20–45 min vs 2–4hr road',
+      estimatedCostZAR: Math.round(base * 4.5),
+      badges: [{ text:'Fastest', color:T.green }, { text:'Aerial views', color:T.gold }],
+      aiNote: 'Arrive in style with aerial views over the reserve. Dramatically faster than road.',
+      recommended: false,
+    });
+  }
+
+  return options;
+}
+
+function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect }: {
+  fromSlug:           string;
+  toSlug:             string;
+  fromLabel:          string;
+  toLabel:            string;
+  fmt:                (n:number) => string;
+  kbEntries:          KBEntry[];
+  selectedTransferId: string | null;
+  onSelect:           (id:string) => void;
+}) {
+  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug), [fromSlug, toSlug]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [spinning,  setSpinning]  = useState(true);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // Brief spin on mount to show it's loading options
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSpinning(false);
+      // Auto-select recommended
+      const rec = options.find(o => o.recommended);
+      if (rec && !selectedTransferId) onSelect(rec.id);
+    }, 800);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const scrollToIdx = (idx: number) => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const cards = strip.querySelectorAll<HTMLElement>('[data-transfer-card]');
+    cards[idx]?.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+    setActiveIdx(idx);
+  };
+
+  if (!options.length) return null;
+
+  const selected = selectedTransferId
+    ? options.find(o => o.id === selectedTransferId) ?? options[0]
+    : options[0];
+
+  return (
+    <div style={{ marginBottom:24 }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, padding:'0 2px' }}>
+        <div style={{ flex:1, height:1, background:'rgba(96,165,250,0.15)' }} />
+        <div style={{ fontSize:11, color:'#60a5fa', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' as const }}>
+          ✈ {fromLabel} → {toLabel}
+        </div>
+        <div style={{ flex:1, height:1, background:'rgba(96,165,250,0.15)' }} />
+      </div>
+
+      {spinning ? (
+        /* Mini spinner while options load */
+        <div style={{ background:'rgba(96,165,250,0.06)', border:'0.5px solid rgba(96,165,250,0.2)', borderRadius:10, padding:'16px', display:'flex', alignItems:'center', gap:12 }}>
+          <div className="spinner" style={{ width:20, height:20, borderWidth:2 }} />
+          <div style={{ fontSize:12, color:'#60a5fa' }}>Finding transfer options…</div>
+        </div>
+      ) : (
+        <div style={{ position:'relative' as const }}>
+          {/* Left arrow */}
+          {activeIdx > 0 && (
+            <button onClick={() => scrollToIdx(activeIdx-1)} style={{ position:'absolute', left:-16, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.9)', border:'0.5px solid rgba(96,165,250,0.3)', color:'#60a5fa', width:30, height:44, borderRadius:'0 8px 8px 0', cursor:'pointer', fontSize:16, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
+          )}
+          {activeIdx < options.length-1 && (
+            <button onClick={() => scrollToIdx(activeIdx+1)} style={{ position:'absolute', right:-16, top:'50%', transform:'translateY(-50%)', zIndex:10, background:'rgba(10,10,10,0.9)', border:'0.5px solid rgba(96,165,250,0.3)', color:'#60a5fa', width:30, height:44, borderRadius:'8px 0 0 8px', cursor:'pointer', fontSize:16, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+          )}
+
+          {/* Scroll strip */}
+          <div ref={stripRef} style={{ display:'flex', gap:10, overflowX:'auto', scrollSnapType:'x mandatory' as const, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingLeft:20, paddingRight:20, paddingBottom:2 }}>
+            {options.map((opt, idx) => {
+              const isSel = selectedTransferId === opt.id || (!selectedTransferId && opt.recommended);
+              return (
+                <div
+                  key={opt.id}
+                  data-transfer-card={idx}
+                  onClick={() => { onSelect(opt.id); scrollToIdx(idx); }}
+                  style={{ flexShrink:0, width:'min(78vw, 360px)', scrollSnapAlign:'center', borderRadius:12, overflow:'hidden', border:`1.5px solid ${isSel?'#60a5fa':T.border}`, background:isSel?'rgba(96,165,250,0.07)':T.surface, cursor:'pointer', transition:'border-color 0.2s, background 0.2s', opacity:idx===activeIdx?1:0.72 }}
+                >
+                  <div style={{ padding:'14px 16px' }}>
+                    {/* Mode header */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <span style={{ fontSize:22 }}>{opt.icon}</span>
+                        <div>
+                          <div style={{ fontSize:14, fontWeight:700, color:isSel?'#93c5fd':T.text }}>{opt.label}</div>
+                          <div style={{ fontSize:11, color:T.textDim, marginTop:1 }}>{opt.provider}</div>
+                        </div>
+                      </div>
+                      {isSel && <div style={{ fontSize:10, color:'#60a5fa', background:'rgba(96,165,250,0.12)', border:'0.5px solid rgba(96,165,250,0.3)', borderRadius:20, padding:'2px 8px', fontWeight:700 }}>Selected</div>}
+                    </div>
+
+                    {/* Badges */}
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+                      {opt.badges.map((b,i) => (
+                        <span key={i} style={{ fontSize:10, color:b.color, background:`${b.color}14`, border:`0.5px solid ${b.color}40`, borderRadius:20, padding:'2px 8px', fontWeight:700 }}>{b.text}</span>
+                      ))}
+                    </div>
+
+                    {/* Duration + cost */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                      <div style={{ fontSize:13, color:T.textMid }}>{opt.duration}</div>
+                      <div style={{ textAlign:'right' as const }}>
+                        <div style={{ fontSize:15, fontWeight:700, color:'#60a5fa' }}>{fmt(opt.estimatedCostZAR)}</div>
+                        <div style={{ fontSize:9, color:T.textDim }}>est. · subject to confirmation</div>
+                      </div>
+                    </div>
+
+                    {/* AI note */}
+                    <div style={{ fontSize:11, color:T.textDim, lineHeight:1.55, background:'rgba(96,165,250,0.04)', borderRadius:7, padding:'7px 10px' }}>{opt.aiNote}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Position dots */}
+          {options.length > 1 && (
+            <div style={{ display:'flex', justifyContent:'center', gap:4, marginTop:8 }}>
+              {options.map((_,i) => (
+                <div key={i} onClick={() => scrollToIdx(i)} style={{ width:i===activeIdx?16:5, height:5, borderRadius:3, background:i===activeIdx?'#60a5fa':'rgba(255,255,255,0.2)', cursor:'pointer', transition:'all 0.2s' }} />
+              ))}
+            </div>
+          )}
+
+          {/* Selected summary */}
+          {selected && (
+            <div style={{ marginTop:10, padding:'8px 12px', background:'rgba(96,165,250,0.06)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ fontSize:11, color:'#60a5fa' }}>{selected.icon} {selected.label} · {selected.duration}</div>
+              <div style={{ fontSize:11, color:T.textDim }}>{fmt(selected.estimatedCostZAR)} est.</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1101,6 +1697,23 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [cityStays, setCityStays] = useState<Array<{ hotelId:string|number; nights:number; prefs:{rooms:number;basis:number;flexibility:number} }>>([]);
 
   const [checkinDate,        setCheckinDate]        = useState('');
+  // Date mode: 'specific' | 'month' | 'window' | 'flexible'
+  const [dateMode,      setDateMode]      = useState<'specific'|'month'|'window'|'flexible'>('specific');
+  const [flexMonth,     setFlexMonth]     = useState('');      // e.g. '2026-08'
+  const [windowStart,   setWindowStart]   = useState('');
+  const [windowEnd,     setWindowEnd]     = useState('');
+  // Transfer selection: legKey → transferOptionId
+  const [selectedTransferIds, setSelectedTransferIds] = useState<Record<string,string>>({});
+  // City transfer selections: citySlug → transferOptionId
+  const [cityTransferIds, setCityTransferIds] = useState<Record<string,string>>({});
+  // Activity selections: citySlug → Set of activity ids
+  const [selectedActivities, setSelectedActivities] = useState<Record<string, string[]>>({});
+  // Activities section open per city
+  const [activitiesOpen, setActivitiesOpen] = useState<Record<string,boolean>>({});
+  // Arrival details (for own-flight travellers)
+  const [arrivalAirport, setArrivalAirport] = useState('');
+  const [arrivalFlightNo, setArrivalFlightNo] = useState('');
+  const [arrivalTime, setArrivalTime] = useState('');
   const [includeIntlFlight,  setIncludeIntlFlight]  = useState(false);
   const [builderIntlOrigin,  setBuilderIntlOrigin]  = useState('LHR');
   const [showValidation,     setShowValidation]     = useState(false);
@@ -1151,7 +1764,9 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   // [V5-9] Grand total — sum of selected hotels across all cities
   const grandTotal = useMemo(() => {
     if (!itinerary?.cities || cityStays.length===0) return 0;
-    return itinerary.cities.reduce((sum, city, i) => {
+
+    // Lodge costs
+    const lodgeCost = itinerary.cities.reduce((sum, city, i) => {
       const stay = cityStays[i];
       if (!stay) return sum;
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
@@ -1162,7 +1777,44 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       const extra = Object.values(resolved).reduce((s:number,v:any)=>s+(v?.extra??0),0);
       return sum + Math.round((hotel.netRate*stay.nights+extra)*M.hotels);
     }, 0);
-  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels]);
+
+    // Transfer costs — sum all selected transfer options between cities
+    // Each selectedTransferIds[legKey] maps to a TransferOption id.
+    // We re-derive the cost from buildTransferOptions to stay in sync with carousel.
+    const transferCost = itinerary.cities.reduce((sum, city, i) => {
+      if (i >= itinerary.cities.length - 1) return sum;
+      const nextCity = itinerary.cities[i + 1];
+      const fromSlug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
+      const toSlug   = CITY_TO_SLUG[nextCity.city.toLowerCase().trim()] ?? '';
+      if (!fromSlug || !toSlug) return sum;
+      const legKey  = `${fromSlug}→${toSlug}`;
+      const options = buildTransferOptions(fromSlug, toSlug);
+      if (!options.length) return sum;
+      const selId   = selectedTransferIds[legKey];
+      const chosen  = selId ? options.find(o => o.id === selId) : options.find(o => o.recommended) ?? options[0];
+      return sum + (chosen?.estimatedCostZAR ?? 0);
+    }, 0);
+
+    // Activity costs — sum all selected activities per city
+    const activityCost = itinerary.cities.reduce((sum, city) => {
+      const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
+      const sel = selectedActivities[slug] ?? [];
+      return sum + ACTIVITIES.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + a.netRate, 0);
+    }, 0);
+
+    // City transfer costs (airport ↔ hotel for city-type destinations)
+    const cityXferCost = itinerary.cities.reduce((sum, city) => {
+      const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
+      if (!CITY_TYPE_SLUGS.has(slug)) return sum;
+      const opts = CITY_TRANSFERS[slug] ?? [];
+      if (!opts.length) return sum;
+      const selId = cityTransferIds[slug];
+      const chosen = selId ? opts.find(o => o.id === selId) : opts.find(o => o.recommended) ?? opts[0];
+      return sum + (chosen?.estimatedCostZAR ?? 0);
+    }, 0);
+
+    return lodgeCost + transferCost + activityCost + cityXferCost;
+  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds]);
 
   const rankedCurated = useMemo(() => {
     return [...CURATED_JOURNEYS].map(j => {
@@ -1300,7 +1952,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     setCheckoutLoading(false);
   };
 
-  const validationIssues = useMemo(() => validateItinerary({ cities:itinerary?.cities??[], checkinDate, infants }), [itinerary?.cities, checkinDate, infants]);
+  const validationIssues = useMemo(() => validateItinerary({ cities:itinerary?.cities??[], checkinDate, infants, hasOwnFlights:!includeIntlFlight, arrivalFlightNo }), [itinerary?.cities, checkinDate, infants, includeIntlFlight, arrivalFlightNo]);
 
   const navProps = { edition, setScreen, currency, setCurrency, chatOpen, setChatOpen, totalZAR:grandTotal, fmt, hasPricedItems:grandTotal>0 };
 
@@ -1327,7 +1979,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               {/* [V5-2] Bigger CTAs with descriptor sub-text */}
               <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
                 {[
-                  { label:'✦ Plan My Journey', sub:'AI builds your itinerary in 30 seconds', action:()=>setScreen('inspire-input'), primary:true },
+                  { label:'✦ Plan My Journey', sub:"We'll build your dream trip in a few clicks", action:()=>setScreen('inspire-input'), primary:true },
                   { label:'Curated Journeys', sub:'Ready to book — from price', action:()=>setScreen('curated'), primary:false },
                   { label:'Send Your Brief', sub:'Write anything — we\'ll handle the rest', action:()=>setScreen('my-brief'), primary:false },
                 ].map(btn => (
@@ -1465,6 +2117,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                   <select value={origin} onChange={e=>setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
                     {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
                   </select>
+
                 </div>
               )}
             </div>
@@ -1564,11 +2217,9 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                   <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(itinerary.totalEstimate)}</div>
                 </div>
               </div>
-              {/* Date picker */}
-              <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}`, flexWrap:'wrap' }}>
-                <div style={{ fontSize:11, color:checkinDate?T.green:T.amber, fontWeight:600 }}>{checkinDate?'✓ Dates set':'⚠ Set travel dates'}</div>
-                <input type="date" value={checkinDate} onChange={e=>setCheckinDate(e.target.value)} style={{ background:T.bg3, border:`1.5px solid ${checkinDate?T.borderGold:'rgba(251,191,36,0.4)'}`, color:T.text, borderRadius:9, padding:'7px 12px', fontSize:12, outline:'none', fontFamily:'inherit' }} />
-                {!checkinDate&&<div style={{ fontSize:11, color:T.amber }}>Required before payment</div>}
+              {/* Date selector */}
+              <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}` }}>
+                <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
               </div>
               {/* [V5-1] Collapsible adjust chat */}
               <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}` }}>
@@ -1609,8 +2260,59 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               const safePool = pool.length>0 ? pool : hotelsByMargin;
               const currentStay = cityStays[cityIdx] ?? { hotelId:safePool[0]?.id??0, nights:city.nights, prefs:{ rooms:0, basis:0, flexibility:0 } };
 
+              // Show city transfer if always-on OR if KB has a city_transfer entry for this slug
+              const isCityAlways = CITY_TYPE_ALWAYS.has(slug);
+              const isCityKB     = CITY_TYPE_KB.has(slug) && kbEntries.some(e => e.active && e.type === 'city_transfer' && (e.linkedTo ?? '').toLowerCase().includes(slug.replace(/-/g,' ')));
+              const isCityDest   = isCityAlways || isCityKB;
+              const cityXferOpts = isCityDest ? (CITY_TRANSFERS[slug] ?? []) : [];
+              const selCityXferId = cityTransferIds[slug];
+
               return (
                 <div key={cityIdx}>
+
+                  {/* [GAP 2] City airport transfer card — auto-shown for city-type destinations */}
+                  {isCityDest && cityXferOpts.length > 0 && (
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
+                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+                        <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
+                          🚗 Airport transfer — {destLabel}
+                        </div>
+                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+                      </div>
+                      <div style={{ display:'flex', gap:10, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingBottom:2 }}>
+                        {cityXferOpts.map(opt => {
+                          const isSel = selCityXferId ? selCityXferId===opt.id : opt.recommended;
+                          return (
+                            <div key={opt.id} onClick={() => setCityTransferIds(prev => ({ ...prev, [slug]: opt.id }))} style={{ flexShrink:0, width:'min(75vw,320px)', scrollSnapAlign:'center', borderRadius:12, border:`1.5px solid ${isSel?T.green:T.border}`, background:isSel?'rgba(74,222,128,0.07)':T.surface, cursor:'pointer', padding:'14px 16px', transition:'border-color 0.2s' }}>
+                              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+                                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                                  <span style={{ fontSize:20 }}>{opt.icon}</span>
+                                  <div>
+                                    <div style={{ fontSize:13, fontWeight:700, color:isSel?T.green:T.text }}>{opt.label}</div>
+                                    <div style={{ fontSize:11, color:T.textDim, marginTop:1 }}>{opt.provider}</div>
+                                  </div>
+                                </div>
+                                {isSel && <div style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.12)', border:'0.5px solid rgba(74,222,128,0.3)', borderRadius:20, padding:'2px 8px', fontWeight:700 }}>Selected</div>}
+                              </div>
+                              {opt.recommended && <div style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:700, display:'inline-block', marginBottom:8 }}>✦ Recommended</div>}
+                              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                                <div style={{ fontSize:12, color:T.textMid }}>{opt.duration}</div>
+                                <div style={{ textAlign:'right' as const }}>
+                                  <div style={{ fontSize:14, fontWeight:700, color:T.green }}>{fmt(opt.estimatedCostZAR)}</div>
+                                  <div style={{ fontSize:9, color:T.textDim }}>est.</div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5, background:'rgba(74,222,128,0.04)', borderRadius:7, padding:'7px 10px' }}>{opt.note}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+
+
                   <NestedPropertyCarousel
                     destinationLabel={destLabel}
                     destinationSlug={slug}
@@ -1642,25 +2344,34 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                     fmt={fmt}
                     edition={edition}
                     onEscalateChat={escalateToSpecialist}
+                    selectedActivityIds={selectedActivities[slug] ?? []}
+                    onActivityToggle={id => setSelectedActivities(prev => {
+                      const cur = prev[slug] ?? [];
+                      const next = cur.includes(id) ? cur.filter(x=>x!==id) : [...cur, id];
+                      return { ...prev, [slug]: next };
+                    })}
                   />
 
-                  {/* Internal leg between cities */}
+
+                  {/* Transfer carousel between cities */}
                   {cityIdx < itinerary.cities.length-1 && (() => {
                     const nextCity = itinerary.cities[cityIdx+1];
                     const fromSlug = slug;
                     const toSlug = CITY_TO_SLUG[nextCity.city.toLowerCase().trim()] ?? '';
                     if (!fromSlug||!toSlug) return null;
-                    const leg = getInternalLeg(fromSlug, toSlug);
-                    if (!leg) return null;
-                    const modeIcon = leg.mode==='charter'||leg.mode==='scheduled' ? '✈' : leg.mode==='road' ? '🚗' : '🛥';
+                    const legKey = `${fromSlug}→${toSlug}`;
                     return (
-                      <div style={{ margin:'0 0 24px', background:'rgba(96,165,250,0.07)', border:'0.5px solid rgba(96,165,250,0.2)', borderRadius:10, padding:'10px 16px' }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                          <div style={{ fontSize:12, color:'#60a5fa', fontWeight:600 }}>{modeIcon} {leg.fromLabel} → {leg.toLabel}</div>
-                          <div style={{ fontSize:11, color:T.textDim }}>{leg.duration} · {fmt(leg.estimatedCostZAR)}</div>
-                        </div>
-                        <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{leg.aiNote}</div>
-                      </div>
+                      <TransferCarousel
+                        key={legKey}
+                        fromSlug={fromSlug}
+                        toSlug={toSlug}
+                        fromLabel={itinerary.cities[cityIdx].city}
+                        toLabel={nextCity.city}
+                        fmt={fmt}
+                        kbEntries={kbEntries}
+                        selectedTransferId={selectedTransferIds[legKey] ?? null}
+                        onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))}
+                      />
                     );
                   })()}
                 </div>
@@ -1680,9 +2391,20 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
           <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:90, background:'rgba(10,10,10,0.97)', backdropFilter:'blur(20px)', borderTop:`0.5px solid ${T.borderGold}`, padding:'14px 20px' }}>
             <div style={{ maxWidth:680, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
               <div>
-                <div style={{ fontSize:11, color:T.textDim }}>Package total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights</div>
-                <div style={{ fontSize:24, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(grandTotal)}</div>
-                <div style={{ fontSize:10, color:T.textDim }}>All flights, lodges & transfers</div>
+                <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>Package total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights</div>
+                <div style={{ fontSize:24, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{fmt(grandTotal)}</div>
+                {(() => {
+                  const actCost = itinerary.cities.reduce((sum,city) => {
+                    const sl = CITY_TO_SLUG[city.city.toLowerCase().trim()]??'';
+                    const sel = selectedActivities[sl]??[];
+                    return sum + ACTIVITIES.filter(a=>sel.includes(String(a.id))).reduce((s,a)=>s+a.netRate,0);
+                  },0);
+                  return actCost > 0 ? (
+                    <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>
+                      Lodges & transfers: {fmt(grandTotal - actCost)} · Activities: {fmt(actCost)}
+                    </div>
+                  ) : <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>Lodges, transfers & activities</div>;
+                })()}
               </div>
               <button className="btn-gold" style={{ padding:'14px 28px', fontSize:15, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
                 {checkoutLoading ? 'Saving…' : 'Validate & Pay →'}
