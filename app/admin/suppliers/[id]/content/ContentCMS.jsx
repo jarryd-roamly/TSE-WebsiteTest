@@ -1122,105 +1122,86 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                       const isDragging = dragIdx === idx;
                       return (
                         <div key={img.url ?? idx} style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div
-                          draggable={!locked || isAdmin}
-                          onDragStart={e => onDragStart(e, idx)}
-                          onDragOver={e => onDragOver(e, idx)}
-                          onDrop={e => onDrop(e, idx)}
-                          onDragEnd={onDragEnd}
-                          className={`${isDragging ? 'dragging' : ''} ${isActive ? 'drag-over' : ''}`}
-                          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.bg3, border: `0.5px solid ${isActive ? T.gold : T.border}`, borderRadius: 10, transition: 'all 0.15s', cursor: locked && !isAdmin ? 'default' : 'grab' }}
-                        >
-                          {/* Drag handle */}
-                          <div className="drag-handle" style={{ color: T.textDim, fontSize: 16, flexShrink: 0, paddingRight: 4 }}>⠿</div>
 
-                          {/* Thumbnail */}
-                          <div style={{ width: 64, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#111' }}>
-                            <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
+                          {/* Draggable row */}
+                          <div
+                            draggable={!locked || isAdmin}
+                            onDragStart={e => onDragStart(e, idx)}
+                            onDragOver={e => onDragOver(e, idx)}
+                            onDrop={e => onDrop(e, idx)}
+                            onDragEnd={onDragEnd}
+                            className={`${isDragging ? 'dragging' : ''} ${isActive ? 'drag-over' : ''}`}
+                            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.bg3, border: `0.5px solid ${isActive ? T.gold : T.border}`, borderRadius: 10, transition: 'all 0.15s', cursor: locked && !isAdmin ? 'default' : 'grab' }}
+                          >
+                            <div className="drag-handle" style={{ color: T.textDim, fontSize: 16, flexShrink: 0, paddingRight: 4 }}>&#8942;</div>
+
+                            <div style={{ width: 64, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#111' }}>
+                              <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {img.caption || img.room_type || 'Image ' + (idx + 1)}
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                                {img.is_primary && <span style={{ fontSize: 9, color: T.gold, background: T.goldDim, border: '0.5px solid ' + T.borderGold, borderRadius: 20, padding: '1px 7px', fontWeight: 700 }}>Primary</span>}
+                                {img.room_type && <span style={{ fontSize: 9, color: T.textDim, background: 'rgba(255,255,255,0.05)', border: '0.5px solid ' + T.border, borderRadius: 20, padding: '1px 7px' }}>{img.room_type}</span>}
+                                {img.status && img.status !== 'approved' && <span style={{ fontSize: 9, color: T.amber, background: 'rgba(251,191,36,0.08)', border: '0.5px solid rgba(251,191,36,0.2)', borderRadius: 20, padding: '1px 7px' }}>{img.status}</span>}
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              <button onClick={() => setPrimary(idx)} title="Set as primary" style={{ background: img.is_primary ? T.goldDim : 'rgba(255,255,255,0.04)', border: '0.5px solid ' + (img.is_primary ? T.borderGold : T.border), borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.is_primary ? T.gold : T.textDim }}>
+                                {img.is_primary ? '★' : '☆'}
+                              </button>
+                              <button onClick={() => moveImage(idx, -1)} disabled={idx === 0 || (locked && !isAdmin)} style={{ background: 'rgba(255,255,255,0.04)', border: '0.5px solid ' + T.border, borderRadius: 7, width: 28, height: 28, cursor: idx === 0 || (locked && !isAdmin) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, opacity: idx === 0 ? 0.3 : 1 }}>↑</button>
+                              <button onClick={() => moveImage(idx, 1)} disabled={idx === images.length - 1 || (locked && !isAdmin)} style={{ background: 'rgba(255,255,255,0.04)', border: '0.5px solid ' + T.border, borderRadius: 7, width: 28, height: 28, cursor: idx === images.length - 1 || (locked && !isAdmin) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, opacity: idx === images.length - 1 ? 0.3 : 1 }}>↓</button>
+                              <button onClick={() => openEdit(idx)} title="Edit" style={{ background: editIdx === idx ? T.goldDim : 'rgba(255,255,255,0.04)', border: '0.5px solid ' + (editIdx === idx ? T.borderGold : T.border), borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: editIdx === idx ? T.gold : T.textDim, fontFamily: 'inherit' }}>&#9998;</button>
+                            </div>
                           </div>
 
-                          {/* Meta */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {img.caption || img.room_type || `Image ${idx + 1}`}
+                          {/* Inline edit form — expands below the row */}
+                          {editIdx === idx && editDraft && (
+                            <div style={{ background: T.bg3, border: '0.5px solid ' + T.borderGold, borderRadius: 10, padding: '14px', marginTop: 4, marginBottom: 4 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+                                <div>
+                                  <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Caption</div>
+                                  <input value={editDraft.caption} onChange={e => setEditDraft({ ...editDraft, caption: e.target.value.slice(0, 120) })} placeholder="e.g. Sundowner deck overlooking the river" style={{ width: '100%', background: T.surface, border: '0.5px solid ' + T.border, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Room type (optional)</div>
+                                  <input value={editDraft.room_type} onChange={e => setEditDraft({ ...editDraft, room_type: e.target.value.slice(0, 50) })} placeholder="e.g. Boulders Suite, Pool" list={'room-types-' + supplierId} style={{ width: '100%', background: T.surface, border: '0.5px solid ' + T.border, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                                  <datalist id={'room-types-' + supplierId}>
+                                    {Array.from(new Set(images.map(i => i.room_type).filter(Boolean))).map(rt => (
+                                      <option key={rt} value={rt} />
+                                    ))}
+                                  </datalist>
+                                </div>
+                              </div>
+                              <div style={{ marginBottom: 10 }}>
+                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Tags (comma-separated)</div>
+                                <input value={editDraft.tags} onChange={e => setEditDraft({ ...editDraft, tags: e.target.value.slice(0, 200) })} placeholder="e.g. sundowner, riverside, suite, romantic" style={{ width: '100%', background: T.surface, border: '0.5px solid ' + T.border, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                              </div>
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Status</div>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  {['approved', 'pending', 'rejected'].map(s => (
+                                    <button key={s} onClick={() => setEditDraft({ ...editDraft, status: s })} style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1.5px solid ' + (editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.border), background: editDraft.status === s ? (s === 'approved' ? 'rgba(74,222,128,0.1)' : s === 'pending' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)') : 'transparent', color: editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize', fontWeight: editDraft.status === s ? 700 : 400 }}>
+                                      {s}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+                                <button onClick={() => deleteImage(idx)} style={{ padding: '7px 14px', background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', borderRadius: 7, color: '#f87171', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button onClick={() => { setEditIdx(null); setEditDraft(null); }} style={{ padding: '7px 14px', background: T.surface, border: '0.5px solid ' + T.border, borderRadius: 7, color: T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                                  <button onClick={saveEdit} style={{ padding: '7px 16px', background: 'linear-gradient(135deg,' + T.gold + ',' + T.goldLight + ')', border: 'none', borderRadius: 7, color: '#0a0a0a', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Save changes</button>
+                                </div>
+                              </div>
                             </div>
-                            <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                              {img.is_primary && <span style={{ fontSize: 9, color: T.gold, background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 20, padding: '1px 7px', fontWeight: 700 }}>Primary</span>}
-                              {img.room_type && <span style={{ fontSize: 9, color: T.textDim, background: 'rgba(255,255,255,0.05)', border: `0.5px solid ${T.border}`, borderRadius: 20, padding: '1px 7px' }}>{img.room_type}</span>}
-                              {img.status && img.status !== 'approved' && <span style={{ fontSize: 9, color: T.amber, background: 'rgba(251,191,36,0.08)', border: '0.5px solid rgba(251,191,36,0.2)', borderRadius: 20, padding: '1px 7px' }}>{img.status}</span>}
-                            </div>
-                          </div>
+                          )}
 
-                          {/* Controls */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                            {/* Set primary star */}
-                            <button
-                              onClick={() => setPrimary(idx)}
-                              title="Set as primary hero image"
-                              style={{ background: img.is_primary ? T.goldDim : 'rgba(255,255,255,0.04)', border: `0.5px solid ${img.is_primary ? T.borderGold : T.border}`, borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.is_primary ? T.gold : T.textDim }}
-                            >
-                              {img.is_primary ? '★' : '☆'}
-                            </button>
-                            {/* Move up */}
-                            <button
-                              onClick={() => moveImage(idx, -1)}
-                              disabled={idx === 0 || (locked && !isAdmin)}
-                              style={{ background: 'rgba(255,255,255,0.04)', border: `0.5px solid ${T.border}`, borderRadius: 7, width: 28, height: 28, cursor: idx === 0 || (locked && !isAdmin) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, opacity: idx === 0 ? 0.3 : 1 }}
-                            >↑</button>
-                            {/* Move down */}
-                            <button
-                              onClick={() => moveImage(idx, 1)}
-                              disabled={idx === images.length - 1 || (locked && !isAdmin)}
-                              style={{ background: 'rgba(255,255,255,0.04)', border: `0.5px solid ${T.border}`, borderRadius: 7, width: 28, height: 28, cursor: idx === images.length - 1 || (locked && !isAdmin) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, opacity: idx === images.length - 1 ? 0.3 : 1 }}
-                            >↓</button>
-                            {/* Edit row (inline expansion — one open at a time) */}
-                            <button
-                              onClick={() => openEdit(idx)}
-                              title="Edit caption, room type, tags"
-                              style={{ background: editIdx === idx ? T.goldDim : 'rgba(255,255,255,0.04)', border: `0.5px solid ${editIdx === idx ? T.borderGold : T.border}`, borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', color: editIdx === idx ? T.gold : T.textDim, fontFamily: 'inherit' }}
-                            >{'✎'}</button>
-                          </div>
-                        </div>
-                        </div>
-                        {/* INLINE EDIT FORM (below the draggable row, same outer wrapper) */}
-                        {editIdx === idx && editDraft && (
-                          <div style={{ background: T.bg3, border: `0.5px solid ${T.borderGold}`, borderRadius: 10, padding: '14px 14px', marginTop: 4, marginBottom: 4 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
-                              <div>
-                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Caption</div>
-                                <input value={editDraft.caption} onChange={e => setEditDraft({ ...editDraft, caption: e.target.value.slice(0, 120) })} placeholder="e.g. Sundowner deck overlooking the river" style={{ width: '100%', background: T.surface, border: `0.5px solid ${T.border}`, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                              </div>
-                              <div>
-                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Room type (optional)</div>
-                                <input value={editDraft.room_type} onChange={e => setEditDraft({ ...editDraft, room_type: e.target.value.slice(0, 50) })} placeholder="e.g. Boulders Suite, Standard Room, Pool" list={`room-types-${supplierId}`} style={{ width: '100%', background: T.surface, border: `0.5px solid ${T.border}`, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                                <datalist id={`room-types-${supplierId}`}>
-                                  {Array.from(new Set(images.map(i => i.room_type).filter(Boolean))).map(rt => <option key={rt} value={rt} />)}
-                                </datalist>
-                              </div>
-                            </div>
-                            <div style={{ marginBottom: 10 }}>
-                              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Tags (comma-separated)</div>
-                              <input value={editDraft.tags} onChange={e => setEditDraft({ ...editDraft, tags: e.target.value.slice(0, 200) })} placeholder="e.g. sundowner, riverside, suite, romantic" style={{ width: '100%', background: T.surface, border: `0.5px solid ${T.border}`, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                            </div>
-                            <div style={{ marginBottom: 12 }}>
-                              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Status</div>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                {['approved', 'pending', 'rejected'].map(s => (
-                                  <button key={s} onClick={() => setEditDraft({ ...editDraft, status: s })} style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: `1.5px solid ${editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.border}`, background: editDraft.status === s ? (s === 'approved' ? 'rgba(74,222,128,0.1)' : s === 'pending' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)') : 'transparent', color: editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize', fontWeight: editDraft.status === s ? 700 : 400 }}>
-                                    {s}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
-                              <button onClick={() => deleteImage(idx)} style={{ padding: '7px 14px', background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', borderRadius: 7, color: '#f87171', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <button onClick={() => { setEditIdx(null); setEditDraft(null); }} style={{ padding: '7px 14px', background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-                                <button onClick={saveEdit} style={{ padding: '7px 16px', background: `linear-gradient(135deg, ${T.gold}, ${T.goldLight})`, border: 'none', borderRadius: 7, color: '#0a0a0a', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Save changes</button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
                         </div>
                       );
                     })}
