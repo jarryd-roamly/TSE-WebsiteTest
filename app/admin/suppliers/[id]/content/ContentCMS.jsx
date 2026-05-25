@@ -1181,7 +1181,7 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                             >{'✎'}</button>
                           </div>
                         </div>
-                        </div>{/* end draggable row */}
+                        </div>
                         {/* INLINE EDIT FORM (below the draggable row, same outer wrapper) */}
                         {editIdx === idx && editDraft && (
                           <div style={{ background: T.bg3, border: `0.5px solid ${T.borderGold}`, borderRadius: 10, padding: '14px 14px', marginTop: 4, marginBottom: 4 }}>
@@ -1221,7 +1221,7 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                             </div>
                           </div>
                         )}
-                        </div>{/* end outer column wrapper */}
+                        </div>
                       );
                     })}
                   </div>
