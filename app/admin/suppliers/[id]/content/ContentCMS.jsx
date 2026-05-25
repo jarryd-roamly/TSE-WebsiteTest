@@ -25,7 +25,7 @@
 //   images JSONB objects need: display_order, is_video_hero, kb_note_id
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 // ─── Theme — mirrors page.tsx T object ───────────────────────────────────────
 const T = {
