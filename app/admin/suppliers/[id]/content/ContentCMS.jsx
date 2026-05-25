@@ -546,6 +546,96 @@ function YouTubePopup({ onSave, onClose, existing }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONTENT SCORE ENGINE — 65 points total (room descriptions + social = future)
+// Computed live from the in-memory supplier + images + reels state.
+// ═══════════════════════════════════════════════════════════════════════════════
+function computeContentScore(supplier, images, reels, kbEntryCount = 0) {
+  const approved = (images ?? []).filter(i => i.status === 'approved');
+
+  // 1. Property description (15 pts)
+  const desc = (supplier?.description ?? '').trim();
+  const descWords = desc.split(/\s+/).filter(Boolean).length;
+  let descPts = 0;
+  if (descWords >= 150) descPts = 15;
+  else if (descWords >= 100) descPts = 11;
+  else if (descWords >= 50) descPts = 7;
+  else if (descWords >= 20) descPts = 4;
+  else if (descWords > 0) descPts = 1;
+
+  // 2. Photography (20 pts) — 12+ approved images full marks, scaled below
+  const imgCount = approved.length;
+  let imgPts = 0;
+  if (imgCount >= 12) imgPts = 20;
+  else if (imgCount >= 8) imgPts = 16;
+  else if (imgCount >= 5) imgPts = 11;
+  else if (imgCount >= 2) imgPts = 6;
+  else if (imgCount >= 1) imgPts = 2;
+
+  // 3. Reels (20 pts) — 2 approved reels full marks. 3rd = bonus capped at 20.
+  const reelCount = (reels ?? []).length;
+  let reelPts = 0;
+  if (reelCount >= 2) reelPts = 20;
+  else if (reelCount === 1) reelPts = 12;
+
+  // 4. Knowledge Base entries (10 pts) — 3+ specialist notes full marks
+  let kbPts = 0;
+  if (kbEntryCount >= 3) kbPts = 10;
+  else if (kbEntryCount === 2) kbPts = 7;
+  else if (kbEntryCount === 1) kbPts = 4;
+
+  // 5. Keywords & tags (5 pts) — 5+ tags full marks
+  const tagCount = Array.isArray(supplier?.tags) ? supplier.tags.length : 0;
+  const kwCount  = Array.isArray(supplier?.keywords) ? supplier.keywords.length : 0;
+  const totalTags = tagCount + kwCount;
+  let tagPts = 0;
+  if (totalTags >= 5) tagPts = 5;
+  else if (totalTags >= 3) tagPts = 3;
+  else if (totalTags >= 1) tagPts = 1;
+
+  // 6. Content freshness (5 pts) — updated in last 12 months
+  let freshPts = 0;
+  if (supplier?.updated_at) {
+    const ageDays = (Date.now() - new Date(supplier.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (ageDays <= 90) freshPts = 5;
+    else if (ageDays <= 180) freshPts = 3;
+    else if (ageDays <= 365) freshPts = 1;
+  }
+
+  const total = descPts + imgPts + reelPts + kbPts + tagPts + freshPts;
+
+  return {
+    total,
+    max: 65,
+    pct: Math.round((total / 65) * 100),
+    dimensions: [
+      { id: 'desc',  label: 'Property description',  pts: descPts,  max: 15,
+        suggestion: descWords === 0 ? 'Add a property description — 150+ words for full marks.'
+          : descWords < 150 ? `Add ${150 - descWords} more words to your description for full marks.`
+          : 'Full marks. ✓' },
+      { id: 'img',   label: 'Photography',           pts: imgPts,   max: 20,
+        suggestion: imgCount === 0 ? 'Upload at least 12 approved images for full marks.'
+          : imgCount < 12 ? `Upload ${12 - imgCount} more approved image${12 - imgCount === 1 ? '' : 's'} for full marks.`
+          : 'Full marks. ✓' },
+      { id: 'reel',  label: 'Reels (short video)',   pts: reelPts,  max: 20,
+        suggestion: reelCount === 0 ? 'Add 2 reels — e.g. arrival experience + room walkthrough.'
+          : reelCount < 2 ? 'Add 1 more reel for full marks.'
+          : 'Full marks. ✓' },
+      { id: 'kb',    label: 'Knowledge Base entries', pts: kbPts,   max: 10,
+        suggestion: kbEntryCount === 0 ? 'Add 3+ specialist notes (booking tips, room recommendations, seasonal advice).'
+          : kbEntryCount < 3 ? `Add ${3 - kbEntryCount} more KB note${3 - kbEntryCount === 1 ? '' : 's'} for full marks.`
+          : 'Full marks. ✓' },
+      { id: 'tags',  label: 'Keywords & tags',       pts: tagPts,   max: 5,
+        suggestion: totalTags < 5 ? `Add ${5 - totalTags} more tag${5 - totalTags === 1 ? '' : 's'} to improve discoverability.`
+          : 'Full marks. ✓' },
+      { id: 'fresh', label: 'Content freshness',     pts: freshPts, max: 5,
+        suggestion: freshPts === 5 ? 'Updated recently. ✓'
+          : freshPts >= 1 ? 'Refresh any content this month to bump to full marks.'
+          : 'No recent updates detected. Any content change will reset this.' },
+    ],
+  };
+}
+
 export default function ContentCMS({ supplierId, isAdmin = false }) {
   const [supplier,      setSupplier]      = useState(null);
   const [images,        setImages]        = useState([]);   // local working copy
@@ -554,6 +644,20 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
   const [reels,         setReels]         = useState([]);      // saved YouTube reels
   const [showYTPopup,   setShowYTPopup]   = useState(false);
   const [editingReel,   setEditingReel]   = useState(null);    // null = new, obj = editing
+
+  // ── Upload zone state ──────────────────────────────────────────────────────
+  const [uploads,       setUploads]       = useState([]);  // [{id, name, status, pct, error, lowRes?}]
+  const [uploadDrag,    setUploadDrag]    = useState(false);
+  const fileInputRef = useRef(null);
+
+  // ── Inline edit state ──────────────────────────────────────────────────────
+  // Only one image row may be open at a time. Stores the local working copy.
+  const [editIdx,       setEditIdx]       = useState(null);
+  const [editDraft,     setEditDraft]     = useState(null);
+
+  // ── Score panel ─────────────────────────────────────────────────────────────
+  const [scoreOpen,     setScoreOpen]     = useState(true);
+  const [expandedDim,   setExpandedDim]   = useState(null);
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(false);
   const [saved,         setSaved]         = useState(false);
@@ -642,6 +746,115 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
     [next[idx], next[target]] = [next[target], next[idx]];
     setImages(next.map((img, i) => ({ ...img, display_order: i + 1 })));
   };
+
+  // ── Upload handlers ────────────────────────────────────────────────────────
+  // Posts to /api/upload — server uses SERVICE_ROLE_KEY, writes to suppliers.images.
+  // Refreshes the local images state on success so the row appears immediately.
+  const uploadOne = async (file) => {
+    const id = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // Pre-check: dimensions warning (warn only — never block)
+    let lowRes = false;
+    try {
+      const dims = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => { res({ w: img.width, h: img.height }); URL.revokeObjectURL(img.src); };
+        img.onerror = () => { rej(new Error('not-an-image')); URL.revokeObjectURL(img.src); };
+        img.src = URL.createObjectURL(file);
+      });
+      if (dims.w < 1200) lowRes = true;
+    } catch { /* not an image we can preview — proceed anyway */ }
+
+    setUploads(u => [...u, { id, name: file.name, status: 'uploading', pct: 0, lowRes }]);
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('supplier_id', supplierId);
+      fd.append('media_type', 'images');
+      fd.append('caption', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80));
+      fd.append('uploaded_by', isAdmin ? 'admin' : 'supplier');
+
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.text().catch(() => 'Upload failed');
+        throw new Error(err || `Status ${res.status}`);
+      }
+      const data = await res.json();
+
+      // The API route has already inserted the image record into suppliers.images.
+      // Refetch the supplier so our local state reflects the new ordering & URL.
+      const fresh = await db.getSupplier(supplierId);
+      if (fresh) {
+        let imgs = [];
+        try {
+          imgs = Array.isArray(fresh.images) ? fresh.images : (fresh.images ? JSON.parse(fresh.images) : []);
+        } catch { imgs = []; }
+        const normalised = imgs.map((img, i) => ({ ...img, display_order: img.display_order ?? i + 1 }));
+        setImages(normalised);
+      }
+
+      setUploads(u => u.map(x => x.id === id ? { ...x, status: 'done', pct: 100 } : x));
+      // Clear successful row after 4s
+      setTimeout(() => setUploads(u => u.filter(x => x.id !== id)), 4000);
+    } catch (e) {
+      setUploads(u => u.map(x => x.id === id ? { ...x, status: 'error', error: e.message } : x));
+    }
+  };
+
+  const handleFiles = async (fileList) => {
+    if (!fileList || !fileList.length) return;
+    const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+    if (!files.length) return;
+    // Upload in parallel but cap at 4 concurrent to avoid hammering the route
+    const chunks = [];
+    for (let i = 0; i < files.length; i += 4) chunks.push(files.slice(i, i + 4));
+    for (const chunk of chunks) {
+      await Promise.all(chunk.map(uploadOne));
+    }
+  };
+
+  const onUploadDrop = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setUploadDrag(false);
+    handleFiles(e.dataTransfer?.files);
+  };
+
+  // ── Inline edit handlers ────────────────────────────────────────────────────
+  const openEdit = (idx) => {
+    if (editIdx === idx) { setEditIdx(null); setEditDraft(null); return; }
+    setEditIdx(idx);
+    const img = images[idx] ?? {};
+    setEditDraft({
+      caption:   img.caption   ?? '',
+      room_type: img.room_type ?? '',
+      tags:      Array.isArray(img.tags) ? img.tags.join(', ') : (img.tags ?? ''),
+      status:    img.status    ?? 'approved',
+    });
+  };
+
+  const saveEdit = () => {
+    if (editIdx === null || !editDraft) return;
+    const tagList = String(editDraft.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+    setImages(prev => prev.map((img, i) => i === editIdx
+      ? { ...img, caption: editDraft.caption, room_type: editDraft.room_type, tags: tagList, status: editDraft.status }
+      : img));
+    setEditIdx(null); setEditDraft(null);
+    setSaved(false);
+  };
+
+  const deleteImage = (idx) => {
+    if (!window.confirm('Remove this image from the supplier? (You can re-upload it.)')) return;
+    setImages(prev => prev.filter((_, i) => i !== idx).map((img, i) => ({ ...img, display_order: i + 1 })));
+    setEditIdx(null); setEditDraft(null);
+    setSaved(false);
+  };
+
+  // ── Compute live content score ─────────────────────────────────────────────
+  const kbForThisSupplier = 0; // Could be wired to a KB count later; safe default for now
+  const score = useMemo(
+    () => computeContentScore(supplier, images, reels, kbForThisSupplier),
+    [supplier, images, reels]
+  );
 
   // ── Set primary image ──────────────────────────────────────────────────────
   const setPrimary = (idx) => {
@@ -758,6 +971,125 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                 )}
               </div>
 
+              {/* ══ CONTENT SCORE PANEL — live, computed from supplier + images + reels ══ */}
+              <div style={{ background: T.surface, border: `0.5px solid ${score.pct >= 80 ? T.borderGold : T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
+                <div onClick={() => setScoreOpen(o => !o)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Content score</div>
+                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>{score.pct >= 80 ? 'Strong — featured eligible' : score.pct >= 60 ? 'Good — keep going' : 'Needs work — see suggestions'}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: score.pct >= 80 ? T.gold : score.pct >= 60 ? T.text : T.amber, fontFamily: "'Playfair Display', serif", lineHeight: 1 }}>{score.total}<span style={{ fontSize: 13, color: T.textDim, fontWeight: 400 }}>/65</span></div>
+                      <div style={{ fontSize: 10, color: T.textDim, marginTop: 3 }}>{score.pct}%</div>
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textDim }}>{scoreOpen ? '▲' : '▼'}</div>
+                  </div>
+                </div>
+                {/* Progress bar */}
+                <div style={{ marginTop: 12, height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ width: `${score.pct}%`, height: '100%', background: score.pct >= 80 ? `linear-gradient(90deg, ${T.gold}, ${T.goldLight})` : score.pct >= 60 ? T.gold : T.amber, transition: 'width 0.4s ease' }} />
+                </div>
+
+                {scoreOpen && (
+                  <div style={{ marginTop: 16, borderTop: `0.5px solid ${T.border}`, paddingTop: 14 }}>
+                    {score.dimensions.map(dim => {
+                      const isExpanded = expandedDim === dim.id;
+                      const full = dim.pts === dim.max;
+                      return (
+                        <div key={dim.id} style={{ marginBottom: 8 }}>
+                          <div onClick={() => setExpandedDim(isExpanded ? null : dim.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '6px 0' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                              <div style={{ width: 16, fontSize: 11, color: full ? T.green : T.textDim, flexShrink: 0 }}>{full ? '✓' : '·'}</div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, color: T.text, fontWeight: 500 }}>{dim.label}</div>
+                              </div>
+                              <div style={{ width: 80, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+                                <div style={{ width: `${(dim.pts / dim.max) * 100}%`, height: '100%', background: full ? T.green : T.gold, transition: 'width 0.3s' }} />
+                              </div>
+                              <div style={{ fontSize: 11, color: T.textMid, minWidth: 36, textAlign: 'right' }}>{dim.pts}/{dim.max}</div>
+                              <div style={{ fontSize: 10, color: T.textDim, width: 12, textAlign: 'right' }}>{isExpanded ? '▲' : '▼'}</div>
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div style={{ marginLeft: 26, marginTop: 4, marginBottom: 8, fontSize: 11, color: T.textDim, lineHeight: 1.55, background: T.bg3, borderLeft: `2px solid ${full ? T.green : T.gold}`, padding: '8px 12px', borderRadius: '0 6px 6px 0' }}>
+                              {dim.suggestion}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(96,165,250,0.05)', border: '0.5px solid rgba(96,165,250,0.2)', borderRadius: 8, fontSize: 11, color: '#93c5fd', lineHeight: 1.55 }}>
+                      ℹ Up to <strong>+25 more points</strong> available once room descriptions (15) and social media verification (10) are added in a future update.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ══ UPLOAD ZONE — drag/drop or click. Posts to /api/upload. ══ */}
+              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Upload images</div>
+                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>Drop JPG / PNG / WEBP · {isAdmin ? 'Goes live immediately' : 'Pending admin review'}</div>
+                  </div>
+                  <div style={{ fontSize: 10, color: T.textDim }}>Max 10MB per file · 1600px+ recommended</div>
+                </div>
+
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragEnter={e => { e.preventDefault(); setUploadDrag(true); }}
+                  onDragOver={e => { e.preventDefault(); setUploadDrag(true); }}
+                  onDragLeave={e => { e.preventDefault(); setUploadDrag(false); }}
+                  onDrop={onUploadDrop}
+                  style={{
+                    border: `1.5px dashed ${uploadDrag ? T.gold : T.border}`,
+                    borderRadius: 12,
+                    padding: '28px 16px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: uploadDrag ? T.goldDim : 'rgba(255,255,255,0.02)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>📷</div>
+                  <div style={{ fontSize: 13, color: T.text, marginBottom: 4 }}>Drag photos here or click to choose</div>
+                  <div style={{ fontSize: 11, color: T.textDim }}>Multiple files supported · uploads in parallel</div>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
+                  style={{ display: 'none' }}
+                />
+
+                {/* Upload progress / status list */}
+                {uploads.length > 0 && (
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {uploads.map(u => (
+                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg3, border: `0.5px solid ${u.status === 'error' ? 'rgba(248,113,113,0.3)' : u.status === 'done' ? 'rgba(74,222,128,0.3)' : T.border}`, borderRadius: 8 }}>
+                        <div style={{ fontSize: 13, flexShrink: 0 }}>
+                          {u.status === 'uploading' ? '↑' : u.status === 'done' ? '✓' : '⚠'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
+                          <div style={{ fontSize: 10, color: u.status === 'error' ? '#f87171' : u.lowRes ? T.amber : T.textDim, marginTop: 2 }}>
+                            {u.status === 'uploading' && 'Uploading…'}
+                            {u.status === 'done' && (u.lowRes ? '✓ Uploaded — low res, consider 1600px+ next time' : '✓ Uploaded')}
+                            {u.status === 'error' && (u.error || 'Failed')}
+                          </div>
+                        </div>
+                        {u.status === 'error' && (
+                          <button onClick={() => setUploads(prev => prev.filter(x => x.id !== u.id))} style={{ background: 'transparent', border: 'none', color: T.textDim, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>×</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Image reorder list */}
               <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -841,8 +1173,53 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                               disabled={idx === images.length - 1 || (locked && !isAdmin)}
                               style={{ background: 'rgba(255,255,255,0.04)', border: `0.5px solid ${T.border}`, borderRadius: 7, width: 28, height: 28, cursor: idx === images.length - 1 || (locked && !isAdmin) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, opacity: idx === images.length - 1 ? 0.3 : 1 }}
                             >↓</button>
+                            {/* Edit row (inline expansion — one open at a time) */}
+                            <button
+                              onClick={() => openEdit(idx)}
+                              title="Edit caption, room type, tags"
+                              style={{ background: editIdx === idx ? T.goldDim : 'rgba(255,255,255,0.04)', border: `0.5px solid ${editIdx === idx ? T.borderGold : T.border}`, borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', color: editIdx === idx ? T.gold : T.textDim, fontFamily: 'inherit' }}
+                            >✎</button>
                           </div>
                         </div>
+                        {/* INLINE EDIT FORM (below the row) */}
+                        {editIdx === idx && editDraft && (
+                          <div style={{ background: T.bg3, border: `0.5px solid ${T.borderGold}`, borderRadius: 10, padding: '14px 14px', marginTop: -2, marginBottom: 4 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Caption</div>
+                                <input value={editDraft.caption} onChange={e => setEditDraft({ ...editDraft, caption: e.target.value.slice(0, 120) })} placeholder="e.g. Sundowner deck overlooking the river" style={{ width: '100%', background: T.surface, border: `0.5px solid ${T.border}`, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Room type (optional)</div>
+                                <input value={editDraft.room_type} onChange={e => setEditDraft({ ...editDraft, room_type: e.target.value.slice(0, 50) })} placeholder="e.g. Boulders Suite, Standard Room, Pool" list={`room-types-${supplierId}`} style={{ width: '100%', background: T.surface, border: `0.5px solid ${T.border}`, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                                <datalist id={`room-types-${supplierId}`}>
+                                  {Array.from(new Set(images.map(i => i.room_type).filter(Boolean))).map(rt => <option key={rt} value={rt} />)}
+                                </datalist>
+                              </div>
+                            </div>
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Tags (comma-separated)</div>
+                              <input value={editDraft.tags} onChange={e => setEditDraft({ ...editDraft, tags: e.target.value.slice(0, 200) })} placeholder="e.g. sundowner, riverside, suite, romantic" style={{ width: '100%', background: T.surface, border: `0.5px solid ${T.border}`, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                            </div>
+                            <div style={{ marginBottom: 12 }}>
+                              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Status</div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                {['approved', 'pending', 'rejected'].map(s => (
+                                  <button key={s} onClick={() => setEditDraft({ ...editDraft, status: s })} style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: `1.5px solid ${editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.border}`, background: editDraft.status === s ? (s === 'approved' ? 'rgba(74,222,128,0.1)' : s === 'pending' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)') : 'transparent', color: editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize', fontWeight: editDraft.status === s ? 700 : 400 }}>
+                                    {s}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+                              <button onClick={() => deleteImage(idx)} style={{ padding: '7px 14px', background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', borderRadius: 7, color: '#f87171', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button onClick={() => { setEditIdx(null); setEditDraft(null); }} style={{ padding: '7px 14px', background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                                <button onClick={saveEdit} style={{ padding: '7px 16px', background: `linear-gradient(135deg, ${T.gold}, ${T.goldLight})`, border: 'none', borderRadius: 7, color: '#0a0a0a', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Save changes</button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       );
                     })}
                   </div>
