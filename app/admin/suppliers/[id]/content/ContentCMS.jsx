@@ -1121,8 +1121,8 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                       const isActive = dragOverIdx === idx;
                       const isDragging = dragIdx === idx;
                       return (
+                        <div key={img.url ?? idx} style={{ display: 'flex', flexDirection: 'column' }}>
                         <div
-                          key={img.url ?? idx}
                           draggable={!locked || isAdmin}
                           onDragStart={e => onDragStart(e, idx)}
                           onDragOver={e => onDragOver(e, idx)}
@@ -1178,12 +1178,13 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                               onClick={() => openEdit(idx)}
                               title="Edit caption, room type, tags"
                               style={{ background: editIdx === idx ? T.goldDim : 'rgba(255,255,255,0.04)', border: `0.5px solid ${editIdx === idx ? T.borderGold : T.border}`, borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', color: editIdx === idx ? T.gold : T.textDim, fontFamily: 'inherit' }}
-                            >✎</button>
+                            >{'✎'}</button>
                           </div>
                         </div>
-                        {/* INLINE EDIT FORM (below the row) */}
+                        </div>{/* end draggable row */}
+                        {/* INLINE EDIT FORM (below the draggable row, same outer wrapper) */}
                         {editIdx === idx && editDraft && (
-                          <div style={{ background: T.bg3, border: `0.5px solid ${T.borderGold}`, borderRadius: 10, padding: '14px 14px', marginTop: -2, marginBottom: 4 }}>
+                          <div style={{ background: T.bg3, border: `0.5px solid ${T.borderGold}`, borderRadius: 10, padding: '14px 14px', marginTop: 4, marginBottom: 4 }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
                               <div>
                                 <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Caption</div>
@@ -1220,6 +1221,7 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
                             </div>
                           </div>
                         )}
+                        </div>{/* end outer column wrapper */}
                       );
                     })}
                   </div>
