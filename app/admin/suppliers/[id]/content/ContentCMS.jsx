@@ -328,13 +328,13 @@ function parseYouTubeId(url) {
   return null;
 }
 
-const CLIP_DURATION = 15; // seconds — end always starts at start + this
+const CLIP_DURATION = 15;   // seconds — end always starts at start + this
+const MAX_VID_SECONDS = 600; // 10min ceiling — no YouTube duration API needed
 const MIN_CLIP = 5;
 
 function YouTubePopup({ onSave, onClose, existing }) {
   const [url,      setUrl]      = useState(existing?.video_id ? `https://youtu.be/${existing.video_id}` : '');
   const [videoId,  setVideoId]  = useState(existing?.video_id ?? null);
-  const [vidDur,   setVidDur]   = useState(120); // fallback; YouTube iframe API gives real value
   const [start,    setStart]    = useState(existing?.start ?? 0);
   const [end,      setEnd]      = useState(existing?.end   ?? CLIP_DURATION);
   const [speed,    setSpeed]    = useState(existing?.speed ?? 1);
@@ -359,20 +359,20 @@ function YouTubePopup({ onSave, onClose, existing }) {
   // Moving START: end follows automatically (start + CLIP_DURATION)
   // unless the user has already manually shortened the end
   const handleStartChange = (val) => {
-    const s = Math.max(0, Math.min(val, vidDur - MIN_CLIP));
-    const newEnd = Math.min(s + CLIP_DURATION, vidDur);
+    const s = Math.max(0, Math.min(val, MAX_VID_SECONDS - MIN_CLIP));
+    const newEnd = Math.min(s + CLIP_DURATION, MAX_VID_SECONDS);
     setStart(s);
     setEnd(newEnd);
   };
 
   // Moving END independently (only shorten — can't exceed start + CLIP_DURATION)
   const handleEndChange = (val) => {
-    const e = Math.max(start + MIN_CLIP, Math.min(val, Math.min(start + CLIP_DURATION, vidDur)));
+    const e = Math.max(start + MIN_CLIP, Math.min(val, Math.min(start + CLIP_DURATION, MAX_VID_SECONDS)));
     setEnd(e);
   };
 
   const clipLen = Math.round(end - start);
-  const pct = (v) => `${Math.round((v / Math.max(vidDur, 1)) * 100)}%`;
+  const pct = (v) => `${Math.round((v / MAX_VID_SECONDS) * 100)}%`;
 
   const previewSrc = videoId
     ? `https://www.youtube.com/embed/${videoId}?start=${Math.round(start)}&end=${Math.round(end)}&autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&rel=0&playbackRate=${speed}`
@@ -444,43 +444,46 @@ function YouTubePopup({ onSave, onClose, existing }) {
             <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700 }}>Clip window</div>
-                <div style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{clipLen}s clip · {Math.round(start)}s → {Math.round(end)}s</div>
+                <div style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>
+            {clipLen}s clip &nbsp;·&nbsp;
+            {Math.floor(start/60)}:{String(Math.round(start%60)).padStart(2,'0')} → {Math.floor(end/60)}:{String(Math.round(end%60)).padStart(2,'0')}
+          </div>
               </div>
 
               {/* Visual timeline bar */}
               <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 12, overflow: 'visible' }}>
                 {/* Selected region highlight */}
-                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.25)', borderRadius: 4 }} />
+                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / MAX_VID_SECONDS) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.25)', borderRadius: 4 }} />
 
                 {/* START handle */}
                 <input
                   type="range"
                   min={0}
-                  max={vidDur}
+                  max={MAX_VID_SECONDS}
                   step={0.5}
                   value={start}
                   onChange={e => handleStartChange(Number(e.target.value))}
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
                 />
                 {/* Visual start handle */}
-                <div style={{ position: 'absolute', left: `calc(${pct(start)} - 10px)`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: T.gold, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#0a0a0a', fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+                <div style={{ position: 'absolute', left: `calc(${pct(start)} - 14px)`, top: '50%', transform: 'translateY(-50%)', width: 28, height: 40, background: T.gold, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#0a0a0a', fontWeight: 900, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
                   ◂
                 </div>
               </div>
 
               {/* END handle — separate row */}
               <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 10, overflow: 'visible' }}>
-                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / Math.max(vidDur, 1)) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.15)', borderRadius: 4 }} />
+                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / MAX_VID_SECONDS) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.15)', borderRadius: 4 }} />
                 <input
                   type="range"
                   min={start + MIN_CLIP}
-                  max={Math.min(start + CLIP_DURATION, vidDur)}
+                  max={Math.min(start + CLIP_DURATION, MAX_VID_SECONDS)}
                   step={0.5}
                   value={end}
                   onChange={e => handleEndChange(Number(e.target.value))}
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
                 />
-                <div style={{ position: 'absolute', left: `calc(${pct(end)} - 10px)`, top: '50%', transform: 'translateY(-50%)', width: 20, height: 28, background: '#fff', border: `2px solid ${T.gold}`, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: T.gold, fontWeight: 800, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
+                <div style={{ position: 'absolute', left: `calc(${pct(end)} - 14px)`, top: '50%', transform: 'translateY(-50%)', width: 28, height: 40, background: '#fff', border: `2.5px solid ${T.gold}`, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.gold, fontWeight: 900, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
                   ▸
                 </div>
               </div>
@@ -494,13 +497,13 @@ function YouTubePopup({ onSave, onClose, existing }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
                 <div>
                   <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>Start (seconds)</div>
-                  <input type="number" value={Math.round(start * 10) / 10} min={0} max={vidDur - MIN_CLIP} step={0.5}
+                  <input type="number" value={Math.round(start * 10) / 10} min={0} max={MAX_VID_SECONDS - MIN_CLIP} step={0.5}
                     onChange={e => handleStartChange(Number(e.target.value))}
                     style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>End (seconds)</div>
-                  <input type="number" value={Math.round(end * 10) / 10} min={start + MIN_CLIP} max={Math.min(start + CLIP_DURATION, vidDur)} step={0.5}
+                  <input type="number" value={Math.round(end * 10) / 10} min={start + MIN_CLIP} max={Math.min(start + CLIP_DURATION, MAX_VID_SECONDS)} step={0.5}
                     onChange={e => handleEndChange(Number(e.target.value))}
                     style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
                 </div>
@@ -783,7 +786,7 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
 
       // The API route has already inserted the image record into suppliers.images.
       // Refetch the supplier so our local state reflects the new ordering & URL.
-      const fresh = await db.getSupplier(supplierId);
+      const fresh = await db.fetchSupplier(supplierId);
       if (fresh) {
         let imgs = [];
         try {
