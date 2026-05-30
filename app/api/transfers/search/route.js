@@ -67,10 +67,16 @@ export async function POST(request) {
       const perPax = totalAmount / pax;                                  // per person
 
       fares[destination] = Number(perPax.toFixed(2));
+      const seg0 = cheapest.slices?.[0]?.segments?.[0];
+      const segLast = cheapest.slices?.[0]?.segments?.[cheapest.slices[0].segments.length - 1];
+      const stops = (cheapest.slices?.[0]?.segments?.length || 1) - 1;
       meta[destination] = {
         currency: cheapest.total_currency,
         carrier: cheapest.owner?.name,
         duration_min: cheapest.slices?.reduce((t,s)=>t+parseDuration(s.duration),0),
+        departing_at: seg0?.departing_at || null,
+        arriving_at: segLast?.arriving_at || null,
+        stops,
         offers: offers.length,
       };
     } catch {
