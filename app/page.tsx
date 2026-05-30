@@ -1222,6 +1222,7 @@ function buildTransferOptions(
   pax: number = 2,
   usdToZar: number = 18.62,
   commercialFareZarByAirport?: Record<string, number>,
+  commercialMetaByAirport?: Record<string, any>,
 ): TransferOption[] {
   // Cape Town is the arrival city — its airport transfer is handled by CityTransferStrip, not here.
   if (toSlug === 'cape-town') return [];
@@ -1249,6 +1250,22 @@ function buildTransferOptions(
     const isEstimate = liveFare == null;
     const priced = priceTransfer(lm, commercialZar, usdToZar, pax);
 
+    const meta = commercialMetaByAirport?.[targetAirport];
+    const fmtT = (iso?: string) => { if (!iso) return ''; try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } };
+    const airline = meta?.carrier ? String(meta.carrier).replace(/ Airways$/,'') : null;
+    const depT = fmtT(meta?.departing_at);
+    const arrT = fmtT(meta?.arriving_at);
+    const stops = meta?.stops;
+    const durH = meta?.duration_min ? `${Math.floor(meta.duration_min/60)}h${meta.duration_min%60?` ${meta.duration_min%60}m`:''}` : null;
+    // Build a human commercial-leg descriptor: "Airlink · 09:35→11:40 · direct · 2h 5m"
+    const flightBits = [
+      airline,
+      (depT && arrT) ? `${depT}→${arrT}` : null,
+      (typeof stops === 'number') ? (stops === 0 ? 'direct' : `${stops} stop${stops>1?'s':''}`) : null,
+      durH,
+    ].filter(Boolean);
+    const flightLine = flightBits.length ? flightBits.join(' · ') : null;
+
     const badges: Array<{text:string;color:string}> = [];
     if (lm.recommended) badges.push({ text:'✦ Recommended', color:T.gold });
     if (lm.perCharter)  badges.push({ text:'Private charter', color:'#a78bfa' });
@@ -1259,18 +1276,19 @@ function buildTransferOptions(
       mode: (lm.mode==='charter'?'charter':lm.mode==='road'?'road':'commercial') as TransferOption['mode'],
       icon: iconFor(lm.mode),
       label: lm.label,
-      provider: `Flight to ${targetAirport} + ${lm.label}`,
-      duration: `${lm.durationMin} min last leg`,
+      // Provider now names the commercial flight when we have it.
+      provider: flightLine ? `${flightLine}  →  ${lm.label}` : `Flight to ${targetAirport} + ${lm.label}`,
+      duration: durH ? `${durH} flight + ${lm.durationMin} min ${lm.mode==='road'?'drive':'hop'}` : `${lm.durationMin} min last leg`,
       estimatedCostZAR: priced.totalZar,
       badges,
-      aiNote: `${lm.note ?? ''}${isEstimate ? ' Commercial fare estimated until dates confirmed.' : ''}`.trim(),
+      aiNote: `${flightLine ? `Commercial: ${flightLine}. ` : ''}${lm.note ?? ''}${isEstimate ? ' Commercial fare estimated until dates confirmed.' : ''}`.trim(),
       recommended: !!lm.recommended,
     };
   });
 }
 
-function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar, commercialFares }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; commercialFares?:Record<string,number>; }) {
-  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62, commercialFares), [fromSlug, toSlug, destLodge, pax, usdToZar, commercialFares]);
+function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar, commercialFares, commercialMeta }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; }) {
+  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62, commercialFares, commercialMeta), [fromSlug, toSlug, destLodge, pax, usdToZar, commercialFares, commercialMeta]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [spinning, setSpinning] = useState(true);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -1415,7 +1433,15 @@ function CityTransferStrip({ slug, destLabel, opts, selectedId, onSelect, fmt }:
 }
 
 
-function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, departureHubId, setDepartureHubId, showDepartureXfer, setShowDepartureXfer }: { lastCity:any; lastSlug:string; includeIntlFlight:boolean; fmt:(n:number)=>string; kbEntries:KBEntry[]; departureHubId:string; setDepartureHubId:(v:string)=>void; showDepartureXfer:boolean; setShowDepartureXfer:(v:boolean)=>void; }) {
+function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, departureHubId, setDepartureHubId, showDepartureXfer, setShowDepartureXfer, flightSelected, departureGateway }: { lastCity:any; lastSlug:string; includeIntlFlight:boolean; fmt:(n:number)=>string; kbEntries:KBEntry[]; departureHubId:string; setDepartureHubId:(v:string)=>void; showDepartureXfer:boolean; setShowDepartureXfer:(v:boolean)=>void; flightSelected?:boolean; departureGateway?:string; }) {
+  // Readable airport names for the known departure gateways.
+  const GATEWAY_LABEL: Record<string,string> = {
+    JNB:'O.R. Tambo International (JNB)', CPT:'Cape Town International (CPT)',
+    VFA:'Victoria Falls (VFA)', LVI:'Livingstone (LVI)', MUB:'Maun (MUB)',
+    HDS:'Hoedspruit (HDS)', MQP:'Kruger Mpumalanga (MQP)', SZK:'Skukuza (SZK)', BBK:'Kasane (BBK)',
+  };
+  // We "know" the departure point only once a flight is actually selected.
+  const knownGateway = flightSelected && departureGateway ? (GATEWAY_LABEL[departureGateway] ?? departureGateway) : null;
   const hubs: {code:string; label:string; airport:string; note:string}[] = lastSlug === 'cape-town'
     ? [{ code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Direct international departures to London, Amsterdam, Frankfurt, New York and more.' }]
     : lastSlug === 'masai-mara'
@@ -1427,8 +1453,14 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
   return (
     <div style={{ marginBottom:24, background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
       <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
-      <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>Where do you fly home from?</div>
-      <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>{includeIntlFlight ? 'Your return flight is included. Your Journey Specialist will confirm your departure timing and final transfer.' : "Select your departure airport — we'll add your final lodge-to-airport transfer."}</div>
+      <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>{knownGateway ? 'Your departure is set' : 'Where do you fly home from?'}</div>
+      <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>{
+        knownGateway
+          ? `Flying home from ${knownGateway}, on your selected international flight. We'll add the final transfer from your last lodge to the airport.`
+          : includeIntlFlight
+            ? 'Your return flight is included. Your Journey Specialist will confirm your departure timing and final transfer.'
+            : "Select your departure airport — we'll add your final lodge-to-airport transfer."
+      }</div>
       {!includeIntlFlight && (<>
         <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:selectedHub ? 14 : 0 }}>
           {hubs.map(hub => {
@@ -1480,7 +1512,7 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
           );
         })()}
       </>)}
-      {includeIntlFlight && (<div style={{ fontSize:11, color:T.green }}>✓ Return flight included — your Journey Specialist handles all final transfers and airport timing.</div>)}
+      {includeIntlFlight && (<div style={{ fontSize:11, color:T.green }}>{knownGateway ? `✓ Return flight included from ${knownGateway} — final lodge-to-airport transfer arranged for you.` : '✓ Return flight included — your Journey Specialist handles all final transfers and airport timing.'}</div>)}
       <div style={{ marginTop:12, fontSize:11, color:T.textDim, borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>💬 Your Journey Specialist will confirm all final logistics before travel.</div>
     </div>
   );
@@ -1636,6 +1668,8 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   // [Transfers v2] Live Duffel commercial-leg fares, keyed by target airport, in ZAR per person.
   // Populated once per itinerary (see useEffect). Empty = every leg uses its estimate fallback.
   const [transferFares, setTransferFares] = useState<Record<string, number>>({});
+  // Commercial-leg detail per airport (airline, times, stops) for tile display.
+  const [transferMeta, setTransferMeta] = useState<Record<string, any>>({});
 
   // [V7.1] Smart default: ~120 days out (plausible, non-blank so it stops blocking checkout).
   // Traveller can change it; this just removes the empty-field friction.
@@ -1766,6 +1800,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
         const zarFares: Record<string, number> = {};
         Object.entries(data.fares).forEach(([ap, usd]) => { zarFares[ap] = Math.round((usd as number) * usdToZar); });
         setTransferFares(zarFares);
+        if (data.meta) setTransferMeta(data.meta);
       })
       .catch(() => { /* keep empty -> estimates used */ });
     return () => { cancelled = true; };
@@ -1795,7 +1830,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       const nextPool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
       const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
       const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
-      const options = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate, transferFares);
+      const options = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate, transferFares, transferMeta);
       if (!options.length) return sum;
       const selId   = selectedTransferIds[legKey];
       const chosen  = selId ? options.find(o => o.id === selId) : options.find(o => o.recommended) ?? options[0];
@@ -1829,7 +1864,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     if (!itinerary?.cities || itinerary.cities.length < 2) return null;
     const slugOf = (c: string) => CITY_TO_SLUG[c?.toLowerCase().trim() ?? ''] ?? '';
     const legCost = (from: string, to: string) => {
-      const opts = buildTransferOptions(from, to, undefined, Math.max(adults + children, 1), CURRENCIES.find(c=>c.code==='USD')?.rate ?? 18.62, transferFares);
+      const opts = buildTransferOptions(from, to, undefined, Math.max(adults + children, 1), CURRENCIES.find(c=>c.code==='USD')?.rate ?? 18.62, transferFares, transferMeta);
       if (!opts.length) return 0;
       return (opts.find(o => o.recommended) ?? opts[0])?.estimatedCostZAR ?? 0;
     };
@@ -2420,7 +2455,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                     const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
                     const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
                     return (
-                      <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} />
+                      <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} />
                     );
                   })()}
                 </div>
@@ -2431,7 +2466,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               const lastCity = itinerary.cities[itinerary.cities.length - 1];
               const lastSlug = CITY_TO_SLUG[lastCity?.city?.toLowerCase().trim() ?? ''] ?? '';
               return (
-                <DepartureCard lastCity={lastCity} lastSlug={lastSlug} includeIntlFlight={includeIntlFlight} fmt={fmt} kbEntries={kbEntries} departureHubId={departureHubId} setDepartureHubId={setDepartureHubId} showDepartureXfer={showDepartureXfer} setShowDepartureXfer={setShowDepartureXfer} />
+                <DepartureCard lastCity={lastCity} lastSlug={lastSlug} includeIntlFlight={includeIntlFlight} fmt={fmt} kbEntries={kbEntries} departureHubId={departureHubId} setDepartureHubId={setDepartureHubId} showDepartureXfer={showDepartureXfer} setShowDepartureXfer={setShowDepartureXfer} flightSelected={!!selectedFlightOffer} departureGateway={flightDepartureGateway} />
               );
             })()}
 
