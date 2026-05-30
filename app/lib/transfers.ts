@@ -146,6 +146,25 @@ export function lastMileZar(lm: LastMile, usdToZar: number, pax: number): number
   return lm.perCharter ? Math.round(base) : Math.round(base * pax);
 }
 
+// ── EXIT LEG (origin region → its hub) ───────────────────────────────────────
+// For a multi-stop journey, leaving a region means: lodge -> region hub airport,
+// then a commercial hub->hub flight. The exit hop is the SAME physical hop as the
+// arrival last-mile (e.g. Okavango lodge <-> MUB via MackAir), so we reuse that data.
+// Cape Town is a city with direct commercial service — no exit hop (returns []).
+export function exitLastMileFor(originLodge: string, fromRegionSlug: string): LastMile[] {
+  if (fromRegionSlug === 'cape-town') return []; // fly commercial straight out of CPT
+  return lastMileFor(originLodge, fromRegionSlug);
+}
+
+// The hub airport you reach after the exit hop (where you catch the commercial flight).
+// = the recommended exit last-mile's fromAirport. For Cape Town, it's CPT itself.
+export function originHubAirport(originLodge: string, fromRegionSlug: string): AirportCode {
+  if (fromRegionSlug === 'cape-town') return 'CPT';
+  const ex = exitLastMileFor(originLodge, fromRegionSlug);
+  const rec = ex.find(l => l.recommended) ?? ex[0];
+  return rec ? rec.fromAirport : (REGION_COMMERCIAL_AIRPORTS[fromRegionSlug]?.[0] ?? 'JNB');
+}
+
 // The commercial leg target is ALWAYS the chosen last-mile's fromAirport.
 // This is the single source of truth that prevents flight/last-mile mismatch.
 export function commercialTargetForOption(option: LastMile): AirportCode {
