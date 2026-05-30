@@ -1269,8 +1269,8 @@ function buildTransferOptions(
   });
 }
 
-function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; }) {
-  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62), [fromSlug, toSlug, destLodge, pax, usdToZar]);
+function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar, commercialFares }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; commercialFares?:Record<string,number>; }) {
+  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62, commercialFares), [fromSlug, toSlug, destLodge, pax, usdToZar, commercialFares]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [spinning, setSpinning] = useState(true);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -1633,6 +1633,9 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [itinerary,   setItinerary]   = useState<Itinerary|null>(null);
 
   const [cityStays, setCityStays] = useState<Array<{ hotelId:string|number; nights:number; prefs:{rooms:number;basis:number;flexibility:number} }>>([]);
+  // [Transfers v2] Live Duffel commercial-leg fares, keyed by target airport, in ZAR per person.
+  // Populated once per itinerary (see useEffect). Empty = every leg uses its estimate fallback.
+  const [transferFares, setTransferFares] = useState<Record<string, number>>({});
 
   // [V7.1] Smart default: ~120 days out (plausible, non-blank so it stops blocking checkout).
   // Traveller can change it; this just removes the empty-field friction.
@@ -1727,6 +1730,47 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
   const M = edition.margins;
 
+  // [Transfers v2] Fetch live regional commercial fares once per itinerary.
+  // The transfer engine adds the LAST-MILE on top of these (two-part model).
+  useEffect(() => {
+    if (!itinerary?.cities || itinerary.cities.length === 0) { setTransferFares({}); return; }
+    // Origin = where the regional hops start. Use the regional origin (JNB/CPT/DUR).
+    // intlOrigin (e.g. LHR) is for the international flight, not the bush legs.
+    const regionalOrigin = origin || 'JNB';
+    // Collect the commercial target airport for each city's chosen lodge.
+    const targets = new Set<string>();
+    itinerary.cities.forEach((city, i) => {
+      const toSlug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
+      if (!toSlug || toSlug === 'cape-town') return; // CPT is arrival, no regional flight
+      const stay = cityStays[i];
+      const pool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
+      const lodge = pool.find(h => String(h.id) === String(stay?.hotelId)) ?? pool[0];
+      const ap = defaultCommercialTarget(lodge?.name ?? '', toSlug);
+      if (ap) targets.add(ap);
+    });
+    if (targets.size === 0) { setTransferFares({}); return; }
+
+    const depDate = checkinDate || todayPlusDays(120);
+    const pax = Math.max(adults + children, 1);
+    const usdToZar = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
+
+    let cancelled = false;
+    fetch('/api/transfers/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ origin: regionalOrigin, targets: [...targets], departure_date: depDate, passengers: pax }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data?.fares) return;
+        // Convert per-person USD fares -> per-person ZAR (buildTransferOptions multiplies by pax).
+        const zarFares: Record<string, number> = {};
+        Object.entries(data.fares).forEach(([ap, usd]) => { zarFares[ap] = Math.round((usd as number) * usdToZar); });
+        setTransferFares(zarFares);
+      })
+      .catch(() => { /* keep empty -> estimates used */ });
+    return () => { cancelled = true; };
+  }, [itinerary?.cities, cityStays, origin, checkinDate, adults, children, hotelsByMargin]);
+
   const grandTotal = useMemo(() => {
     if (!itinerary?.cities || cityStays.length===0) return 0;
     const lodgeCost = itinerary.cities.reduce((sum, city, i) => {
@@ -1751,7 +1795,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       const nextPool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
       const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
       const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
-      const options = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate);
+      const options = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate, transferFares);
       if (!options.length) return sum;
       const selId   = selectedTransferIds[legKey];
       const chosen  = selId ? options.find(o => o.id === selId) : options.find(o => o.recommended) ?? options[0];
@@ -1778,14 +1822,14 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
       : 0;
     return lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
-  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children, activities]);
+  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children, activities, transferFares]);
 
   // [V7-4] Route reversal — uses real INTERNAL_LEGS transfer costs. Fires after itinerary builds.
   const routeReversalResult = useMemo(() => {
     if (!itinerary?.cities || itinerary.cities.length < 2) return null;
     const slugOf = (c: string) => CITY_TO_SLUG[c?.toLowerCase().trim() ?? ''] ?? '';
     const legCost = (from: string, to: string) => {
-      const opts = buildTransferOptions(from, to, undefined, Math.max(adults + children, 1), CURRENCIES.find(c=>c.code==='USD')?.rate ?? 18.62);
+      const opts = buildTransferOptions(from, to, undefined, Math.max(adults + children, 1), CURRENCIES.find(c=>c.code==='USD')?.rate ?? 18.62, transferFares);
       if (!opts.length) return 0;
       return (opts.find(o => o.recommended) ?? opts[0])?.estimatedCostZAR ?? 0;
     };
@@ -2376,7 +2420,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                     const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
                     const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
                     return (
-                      <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} />
+                      <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} />
                     );
                   })()}
                 </div>
