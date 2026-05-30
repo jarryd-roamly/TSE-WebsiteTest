@@ -115,8 +115,18 @@ export async function POST(request) {
           },
         };
       })
-      .sort((a, b) => a.display_price - b.display_price)
-      .slice(0, 10);
+      // [V7.1] Curated ranking: blend price + routing convenience, return top 3.
+      // Not a raw search dump — the system recommends the best few, traveller refines.
+      .map(o => {
+        const stops = (o.slices || []).reduce((s, sl) => s + (sl.stops || 0), 0);
+        const durH  = (o.total_duration_minutes || 0) / 60;
+        // Lower is better. Price dominates; each stop ~ +8% penalty; long hauls lightly penalised.
+        o._rankScore = o.display_price * (1 + stops * 0.08) + durH * 2;
+        return o;
+      })
+      .sort((a, b) => a._rankScore - b._rankScore)
+      .slice(0, 3)
+      .map(o => { delete o._rankScore; return o; });
 
     return Response.json({
       offer_request_id: offerRequestData.data?.id,
