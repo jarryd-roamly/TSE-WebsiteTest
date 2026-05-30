@@ -26,6 +26,19 @@ export async function POST(request) {
     }
 
     const FLIGHT_MARGIN = 0.08;
+    // ─── PACKAGE MARGIN OPTIMISER HOOK (dormant — hybrid mode) ───────────────
+    // Today: flat FLIGHT_MARGIN (8%) on every flight.
+    // Later: flight margin flexes to bring the BLENDED PACKAGE margin to TARGET,
+    //        never letting any pillar drop below FLOOR. The frontend already passes
+    //        package context, so switching this on is a one-function change.
+    const PKG_TARGET_MARGIN = 0.21; // aim ABOVE the floor (spec blended GM 18–24%)
+    const PKG_FLOOR_MARGIN  = 0.18; // hard floor — contribution-margin KPI
+    function computeFlightMargin(/* packageMarginSoFar, packageNetSoFar */) {
+      // HYBRID: return flat margin for now. When the optimiser goes live, compute
+      // the flight markup that lifts blended package margin toward PKG_TARGET_MARGIN
+      // without breaching PKG_FLOOR_MARGIN on any pillar.
+      return FLIGHT_MARGIN;
+    }
     const effectiveDepartureGateway = departure_gateway || arrival_gateway;
     const isOpenJaw = is_open_jaw && (departure_gateway !== arrival_gateway);
     const isReturn  = !!return_date;
@@ -67,7 +80,7 @@ export async function POST(request) {
       .map(offer => {
         const basePrice       = parseFloat(offer.total_amount);
         const currency        = offer.total_currency;
-        const priceWithMargin = basePrice * (1 + FLIGHT_MARGIN);
+        const priceWithMargin = basePrice * (1 + computeFlightMargin());
         return {
           id:           offer.id,
           expires_at:   offer.expires_at,
@@ -115,18 +128,49 @@ export async function POST(request) {
           },
         };
       })
-      // [V7.1] Curated ranking: blend price + routing convenience, return top 3.
-      // Not a raw search dump — the system recommends the best few, traveller refines.
-      .map(o => {
-        const stops = (o.slices || []).reduce((s, sl) => s + (sl.stops || 0), 0);
-        const durH  = (o.total_duration_minutes || 0) / 60;
-        // Lower is better. Price dominates; each stop ~ +8% penalty; long hauls lightly penalised.
-        o._rankScore = o.display_price * (1 + stops * 0.08) + durH * 2;
-        return o;
-      })
-      .sort((a, b) => a._rankScore - b._rankScore)
-      .slice(0, 3)
-      .map(o => { delete o._rankScore; return o; });
+      ; // (processedOffers is the full mapped list)
+
+    // ─── PICK THREE DISTINCT, LABELLED OFFERS ────────────────────────────────
+    // Cheapest = lowest display_price. Quickest = shortest total duration.
+    // Recommended = best price+routing blend within 15% of cheapest (and the
+    // optimiser hook will later bias this within the band). All three deduped so
+    // the traveller never sees the same flight twice.
+    const stopsOf = (o) => (o.slices || []).reduce((s, sl) => s + (sl.stops || 0), 0);
+    const byPrice = [...processedOffers].sort((a, b) => a.display_price - b.display_price);
+    const byTime  = [...processedOffers].sort((a, b) => (a.total_duration_minutes||0) - (b.total_duration_minutes||0));
+
+    const cheapest = byPrice[0] || null;
+    const quickest = byTime[0]  || null;
+
+    // Recommended: within 15% of cheapest price AND no worse than cheapest+1 stop,
+    // then best blended score. Falls back to cheapest if nothing qualifies.
+    let recommended = null;
+    if (cheapest) {
+      const priceCap = cheapest.display_price * 1.15;
+      const stopCap  = stopsOf(cheapest) + 1;
+      const eligible = processedOffers
+        .filter(o => o.display_price <= priceCap && stopsOf(o) <= stopCap)
+        .map(o => ({ o, score: o.display_price * (1 + stopsOf(o) * 0.08) + (o.total_duration_minutes||0)/60 * 2 }))
+        .sort((a, b) => a.score - b.score);
+      recommended = eligible.length ? eligible[0].o : cheapest;
+    }
+
+    // Build the labelled, deduped tile set in display order: recommended, quickest, cheapest.
+    const seen = new Set();
+    const labelled = [];
+    const pushUnique = (offer, label) => {
+      if (!offer || seen.has(offer.id)) return;
+      seen.add(offer.id);
+      labelled.push({ ...offer, tile_label: label });
+    };
+    pushUnique(recommended, 'recommended');
+    pushUnique(quickest,    'quickest');
+    pushUnique(cheapest,    'cheapest');
+    // If dedupe collapsed the list (e.g. recommended === cheapest === quickest),
+    // backfill with next-best distinct offers so we always try to show up to 3.
+    for (const o of byPrice) { if (labelled.length >= 3) break; pushUnique(o, 'option'); }
+
+    const tiles = labelled.slice(0, 3);
 
     return Response.json({
       offer_request_id: offerRequestData.data?.id,
@@ -134,7 +178,8 @@ export async function POST(request) {
       is_return: isReturn,
       is_open_jaw: isOpenJaw,
       search: { origin, arrival_gateway, departure_gateway: effectiveDepartureGateway, departure_date, return_date: return_date || null, passengers, cabin_class: cabin_class || 'economy' },
-      offers: processedOffers,
+      offers: tiles,                      // 3 labelled tiles for the UI
+      all_offers: processedOffers,        // full set (for future 'see more options')
       total_offers_available: offers.length,
     });
 
