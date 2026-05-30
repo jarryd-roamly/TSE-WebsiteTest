@@ -2,15 +2,15 @@
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // THE TRAVEL CATALOGUE — page.tsx
-// Safari Edition · v6.0
-// CHANGES IN v6.0:
-//  [V6-1] Adults counter aligned with Children/Infants (consistent pill row)
-//  [V6-2] Default currency = USD
-//  [V6-3] Activities removed from UpgradeSheet — separate spool below property
-//  [V6-4] Auto-select on swipe — centred property is always selected
-//  [V6-5] Single "Customise ✦" button (Select property removed)
-//  [V6-6] Customise sheet has Rooms tab + Chat tab with quick actions
-//         (Make it cheaper · Upgrade · Extend +2 · Add city · Flexible dates · Fewer)
+// Safari Edition · v7.0
+// CHANGES IN v7.0 (additive to v6.0):
+//  [V7-1] International flight module wired in (Duffel) — FlightSelector component
+//  [V7-2] Flight intent: include / own / flexible (replaces simple boolean)
+//  [V7-3] Open-jaw routing support (system finds cheapest gateway combination)
+//  [V7-4] Route reversal optimisation tip (uses real INTERNAL_LEGS transfer costs)
+//  [V7-5] Corrected deposit handled at checkout: flights 100% + 30% package balance
+//  [V7-6] YouTube reels from CMS rendered in property tiles — NO controls visible
+//         Reads `reels` JSONB column: {source, video_id, start, end, speed, caption, status}
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
@@ -22,6 +22,7 @@ import { preloadHotels, findAlternativeDate,
          addDays, todayPlusDays }            from './lib/availability';
 import { resolveHotelUpgrades, makeFmt }     from './lib/pricing';
 import { applyDeterministicChange }          from './lib/chatEngine';
+import FlightSelector                        from '@/components/FlightSelector';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
               InterTransferState, UpgradeState, Itinerary,
               ItineraryCity, Currency, KBEntry, ChatMessage,
@@ -211,12 +212,46 @@ function filterWarnings(warnings: string[]): string[] {
   return (warnings ?? []).filter(w => w && !skip.some(re => re.test(w)));
 }
 
-type Slide = { type:'image'|'video'|'reel'; url:string; poster?:string; label?:string; roomType?:string; };
+type Slide = { type:'image'|'video'|'reel'|'youtube'; url:string; poster?:string; label?:string; roomType?:string; speed?:number; caption?:string; };
+
+// Build a clean autoplay/looping YouTube embed — zero visible controls or branding.
+function buildYouTubeEmbedUrl(reel: { video_id: string; start?: number; end?: number; speed?: number }): string {
+  if (!reel?.video_id) return '';
+  const start = Math.round(reel.start ?? 0);
+  const end   = Math.round(reel.end ?? (start + 15));
+  const params = new URLSearchParams({
+    start: String(start), end: String(end), autoplay: '1', mute: '1', loop: '1',
+    playlist: reel.video_id, controls: '0', rel: '0', modestbranding: '1',
+    playsinline: '1', disablekb: '1', fs: '0', iv_load_policy: '3',
+  });
+  return `https://www.youtube.com/embed/${reel.video_id}?${params.toString()}`;
+}
 
 function buildSlides(hotel: Hotel): Slide[] {
   const slides: Slide[] = [];
   if (hotel.image) slides.push({ type:'image', url:hotel.image, label:'Hero' });
-  if (hotel.reelUrl) slides.push({ type:'reel', url:hotel.reelUrl, poster:hotel.image, label:'Reel' });
+
+  // CMS YouTube reels — {source, video_id, start, end, speed, caption, status}
+  const reels = (hotel as any)._reels as any[] | undefined;
+  if (Array.isArray(reels)) {
+    reels
+      .filter(r => r?.video_id && (r.status === 'approved' || !r.status))
+      .forEach(r => slides.push({
+        type:'youtube',
+        url: buildYouTubeEmbedUrl(r),
+        poster: `https://img.youtube.com/vi/${r.video_id}/hqdefault.jpg`,
+        label: r.type === 'room' ? 'Room tour' : 'Reel',
+        roomType: r.room_type || undefined,
+        speed: r.speed ?? 1,
+        caption: r.caption || undefined,
+      }));
+  }
+
+  // Legacy single reel URL — only if no CMS reels
+  if ((!reels || reels.length === 0) && hotel.reelUrl) {
+    slides.push({ type:'reel', url:hotel.reelUrl, poster:hotel.image, label:'Reel' });
+  }
+
   const extras = (hotel as any)._images as Slide[] | undefined;
   if (extras) {
     extras.forEach(img => {
@@ -274,6 +309,7 @@ function mapSupplierRow(s: any): Hotel {
     reviewScore:s.review_score??null, reviewCount:s.review_count??null,
     socialLinks:s.social_media_links??null,
     _images:extraSlides,
+    _reels:(() => { try { return Array.isArray(s.reels) ? s.reels : (s.reels ? JSON.parse(s.reels) : []); } catch { return []; } })(),
     upgrades:{
       rooms:[{label:'Standard Suite',extra:0,tier:0},{label:'Premium Suite',extra:Math.round(netRate*0.4),tier:1}],
       basis:[{label:'All-inclusive',extra:0,tier:0}],
@@ -540,7 +576,9 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
               {allSlides.length > 0 && (
                 <div style={{ position:'relative', height:240, overflow:'hidden', background:'#111' }}>
                   {allSlides[heroSlide] && (
-                    allSlides[heroSlide].type === 'reel' || allSlides[heroSlide].type === 'video'
+                    allSlides[heroSlide].type === 'youtube'
+                      ? <iframe src={allSlides[heroSlide].url} title={hotel.name} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
+                    : allSlides[heroSlide].type === 'reel' || allSlides[heroSlide].type === 'video'
                       ? <video src={allSlides[heroSlide].url} poster={allSlides[heroSlide].poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                       : <img src={allSlides[heroSlide].url} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                   )}
@@ -607,7 +645,9 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                     return (
                       <div key={opt.label} style={{ marginBottom:10, borderRadius:12, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?'rgba(212,175,55,0.04)':T.surface, overflow:'hidden', transition:'border-color 0.2s' }}>
                         <div style={{ position:'relative', height:160, overflow:'hidden', cursor:'pointer' }} onClick={() => { handleSelect('rooms', opt); }}>
-                          {rSlide && (rSlide.type==='reel'||rSlide.type==='video'
+                          {rSlide && (rSlide.type==='youtube'
+                            ? <iframe src={rSlide.url} title={opt.label} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
+                            : rSlide.type==='reel'||rSlide.type==='video'
                             ? <video src={rSlide.url} poster={rSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                             : <img src={rSlide.url} alt={opt.label} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                           )}
@@ -947,7 +987,9 @@ function NestedPropertyCarousel({
 
                 <div style={{ position:'relative' as const, height:240, overflow:'hidden', cursor:'ew-resize', userSelect:'none' }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
                   {currentSlide && (
-                    currentSlide.type === 'reel' || currentSlide.type === 'video'
+                    currentSlide.type === 'youtube'
+                      ? <iframe src={currentSlide.url} title={hotel.name} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
+                    : currentSlide.type === 'reel' || currentSlide.type === 'video'
                       ? <video src={currentSlide.url} poster={currentSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                       : <img src={currentSlide.url} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover', transition:'opacity 0.18s' }} />
                   )}
@@ -966,7 +1008,7 @@ function NestedPropertyCarousel({
                     </div>
                   )}
 
-                  {(currentSlide?.type==='reel'||currentSlide?.type==='video') && (
+                  {(currentSlide?.type==='reel'||currentSlide?.type==='video'||currentSlide?.type==='youtube') && (
                     <div style={{ position:'absolute', bottom:52, left:10, fontSize:9, color:'rgba(255,255,255,0.6)', background:'rgba(0,0,0,0.45)', borderRadius:4, padding:'2px 6px' }}>▶ Reel</div>
                   )}
                   {currentSlide?.roomType && (
@@ -1545,6 +1587,16 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [builderIntlOrigin,  setBuilderIntlOrigin]  = useState('LHR');
   const [showValidation,     setShowValidation]     = useState(false);
 
+  // [V7-2] Flight intent — richer than the needsIntlFlight boolean
+  const [flightIntent,           setFlightIntent]           = useState<'include'|'own'|'flexible'|null>(null);
+  const [gatewayPreference,      setGatewayPreference]      = useState<'return'|'open_jaw'|'custom'>('open_jaw');
+  const [flightArrivalGateway,   setFlightArrivalGateway]   = useState<string>('JNB');
+  const [flightDepartureGateway, setFlightDepartureGateway] = useState<string>('JNB');
+  const [selectedFlightOffer,    setSelectedFlightOffer]    = useState<any>(null);
+  const [flightAncillaryTotal,   setFlightAncillaryTotal]   = useState<number>(0);
+  const [ownFlightDetails,       setOwnFlightDetails]       = useState<any>(null);
+  const [routeReversalDismissed, setRouteReversalDismissed] = useState(false);
+
   const [curTheme,  setCurTheme]  = useState('all');
   const [curRegion, setCurRegion] = useState('all');
   const [curNights, setCurNights] = useState('all');
@@ -1627,6 +1679,27 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     }, 0);
     return lodgeCost + transferCost + activityCost + cityXferCost;
   }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds]);
+
+  // [V7-4] Route reversal — uses real INTERNAL_LEGS transfer costs. Fires after itinerary builds.
+  const routeReversalResult = useMemo(() => {
+    if (!itinerary?.cities || itinerary.cities.length < 2) return null;
+    const slugOf = (c: string) => CITY_TO_SLUG[c?.toLowerCase().trim() ?? ''] ?? '';
+    const legCost = (from: string, to: string) => {
+      const opts = buildTransferOptions(from, to);
+      if (!opts.length) return 0;
+      return (opts.find(o => o.recommended) ?? opts[0])?.estimatedCostZAR ?? 0;
+    };
+    const cities = itinerary.cities;
+    let original = 0;
+    for (let i = 0; i < cities.length - 1; i++) original += legCost(slugOf(cities[i].city), slugOf(cities[i+1].city));
+    const rev = [...cities].reverse();
+    let reversed = 0;
+    for (let i = 0; i < rev.length - 1; i++) reversed += legCost(slugOf(rev[i].city), slugOf(rev[i+1].city));
+    const saving = original - reversed;
+    const threshold = 150 * (currency.rate || 18.62);
+    if (saving <= threshold) return null;
+    return { saving, reversed_city_order: rev.map(c => c.city), is_cheaper: true };
+  }, [itinerary?.cities, currency.rate]);
 
   const rankedCurated = useMemo(() => {
     return [...CURATED_JOURNEYS].map(j => {
@@ -1890,28 +1963,53 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
             <p style={{ fontSize:14, color:T.textMid, marginBottom:28, lineHeight:1.65 }}>We'll build a fully-priced, bookable itinerary in under 30 seconds.</p>
 
             <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'16px 18px', marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:12 }}>Do you need international flights included?</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:needsIntlFlight===true?12:0 }}>
-                {[{val:true,label:"Yes — include from my home country",icon:'✈'},{val:false,label:"No — I'll arrange my own flights",icon:'🏠'}].map(opt=>(
-                  <button key={String(opt.val)} onClick={()=>setNeedsIntlFlight(opt.val)} style={{ padding:'12px 14px', borderRadius:10, border:`1.5px solid ${needsIntlFlight===opt.val?T.gold:T.border}`, background:needsIntlFlight===opt.val?T.goldDim:T.bg3, color:needsIntlFlight===opt.val?T.gold:T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const, display:'flex', alignItems:'flex-start', gap:8 }}>
-                    <span style={{ fontSize:16, flexShrink:0 }}>{opt.icon}</span><span style={{ lineHeight:1.4 }}>{opt.label}</span>
+              <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:12 }}>International flights</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom: flightIntent ? 12 : 0 }}>
+                {[
+                  { val:'include' as const, icon:'✈', title:'Find flights for me', sub:"We'll search and include your international flights in the package" },
+                  { val:'own' as const,     icon:'🎫', title:"I've already booked",   sub:'Share your arrival details so we can plan around your schedule' },
+                  { val:'flexible' as const,icon:'📅', title:'Dates still flexible',   sub:'Your Journey Specialist will find the best fares once dates are confirmed' },
+                ].map(opt => (
+                  <button key={opt.val} onClick={() => { setFlightIntent(opt.val); setNeedsIntlFlight(opt.val === 'include'); setIncludeIntlFlight(opt.val === 'include'); }} style={{ padding:'11px 14px', borderRadius:10, textAlign:'left' as const, border:`1.5px solid ${flightIntent===opt.val ? T.gold : T.border}`, background:flightIntent===opt.val ? T.goldDim : T.bg3, color:flightIntent===opt.val ? T.gold : T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'flex-start', gap:10 }}>
+                    <span style={{ fontSize:18, flexShrink:0 }}>{opt.icon}</span>
+                    <div>
+                      <div style={{ fontWeight:600, marginBottom:2 }}>{opt.title}</div>
+                      <div style={{ fontSize:11, opacity:0.7, fontWeight:400 }}>{opt.sub}</div>
+                    </div>
                   </button>
                 ))}
               </div>
-              {needsIntlFlight===true && (
-                <div>
+              {flightIntent === 'include' && (
+                <div style={{ marginTop:12, borderTop:`0.5px solid ${T.border}`, paddingTop:14 }}>
                   <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Flying from</div>
-                  <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
+                  <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit', marginBottom:12 }}>
                     {INTERNATIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
                   </select>
+                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Gateway routing</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+                    {[
+                      { val:'open_jaw' as const, label:'System finds cheapest combination', sub:'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
+                      { val:'return'   as const, label:'Return — same airport in and out',   sub:'e.g. LHR → JNB → LHR' },
+                    ].map(opt => (
+                      <button key={opt.val} onClick={() => setGatewayPreference(opt.val)} style={{ padding:'9px 13px', borderRadius:9, textAlign:'left' as const, border:`1px solid ${gatewayPreference===opt.val ? T.gold : T.border}`, background:gatewayPreference===opt.val ? T.goldDim : 'transparent', cursor:'pointer', fontFamily:'inherit' }}>
+                        <div style={{ fontSize:12, color:gatewayPreference===opt.val ? T.gold : T.text }}>{opt.label}</div>
+                        <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>{opt.sub}</div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-              {needsIntlFlight===false && (
+              {flightIntent === 'own' && (
                 <div style={{ marginTop:12 }}>
                   <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Arriving into</div>
                   <select value={origin} onChange={e=>setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
                     {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
                   </select>
+                </div>
+              )}
+              {flightIntent === 'flexible' && (
+                <div style={{ marginTop:12, background:'rgba(212,175,55,0.06)', border:`0.5px solid ${T.borderGold}`, borderRadius:10, padding:'11px 14px', fontSize:12, color:T.textDim, lineHeight:1.6 }}>
+                  Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
                 </div>
               )}
             </div>
@@ -2055,6 +2153,42 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               </div>
             </div>
 
+            {/* [V7-1] International flights — top of builder */}
+            {(flightIntent === 'include' || flightIntent === 'own' || flightIntent === 'flexible') && (
+              <div style={{ marginBottom:24, background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'16px 18px' }}>
+                <FlightSelector
+                  flightIntent={flightIntent}
+                  originIata={intlOrigin}
+                  gatewayPreference={gatewayPreference}
+                  preferredArrivalGateway={flightArrivalGateway}
+                  preferredDepartureGateway={flightDepartureGateway}
+                  travelDates={{ start: checkinDate, end: checkinDate ? new Date(new Date(checkinDate).getTime() + nights * 86400000).toISOString().split('T')[0] : '' }}
+                  passengers={adults + children}
+                  routeReversalResult={routeReversalResult}
+                  onFlightSelected={(result:any) => {
+                    setSelectedFlightOffer(result.offer);
+                    setFlightAncillaryTotal(result.ancillary_total || 0);
+                    setFlightArrivalGateway(result.arrival_gateway);
+                    setFlightDepartureGateway(result.departure_gateway);
+                    if (result.open_jaw_used) setGatewayPreference('open_jaw');
+                  }}
+                  onOwnFlightDetails={(details:any) => {
+                    setOwnFlightDetails(details);
+                    setArrivalAirport(details.arrivalAirport);
+                    setArrivalTime(details.arrivalTime);
+                  }}
+                  onAcceptRouteReversal={(reversedOrder:string[]) => {
+                    if (!itinerary) return;
+                    const reversedCities = reversedOrder.map(cityName => itinerary.cities.find(c => c.city === cityName)).filter(Boolean) as ItineraryCity[];
+                    setItinerary({ ...itinerary, cities: reversedCities });
+                    setCityStays([...cityStays].reverse());
+                  }}
+                  currency={currency}
+                  fmt={fmt}
+                />
+              </div>
+            )}
+
             {/* Per-destination sections */}
             {itinerary.cities.map((city, cityIdx) => {
               const cityName = city.city.toLowerCase().trim();
@@ -2151,6 +2285,20 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
           {/* Sticky bottom price bar */}
           <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:90, background:'rgba(10,10,10,0.97)', backdropFilter:'blur(20px)', borderTop:`0.5px solid ${T.borderGold}`, padding:'14px 20px' }}>
+            {routeReversalResult?.is_cheaper && !routeReversalDismissed && (
+              <div style={{ maxWidth:680, margin:'0 auto 10px', padding:'9px 12px', background:'rgba(74,222,128,0.06)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:8, display:'flex', alignItems:'center', gap:10 }}>
+                <span style={{ fontSize:14 }}>🔄</span>
+                <div style={{ flex:1, fontSize:11, color:T.green }}>Tip: Reversing your route saves {fmt(routeReversalResult.saving)} on transfers</div>
+                <button onClick={() => { setRouteReversalDismissed(true); if (itinerary) { const reversed = [...itinerary.cities].reverse(); setItinerary({ ...itinerary, cities: reversed }); setCityStays([...cityStays].reverse()); } }} style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.12)', border:'0.5px solid rgba(74,222,128,0.3)', borderRadius:5, padding:'4px 9px', cursor:'pointer', fontFamily:'inherit', fontWeight:600, flexShrink:0 }}>Apply</button>
+                <button onClick={() => setRouteReversalDismissed(true)} style={{ background:'none', border:'none', color:T.textDim, cursor:'pointer', fontSize:14, fontFamily:'inherit' }}>×</button>
+              </div>
+            )}
+            {selectedFlightOffer && (
+              <div style={{ maxWidth:680, margin:'0 auto 6px', fontSize:11, color:T.textDim, display:'flex', justifyContent:'space-between' }}>
+                <span>✈ Flights included ({adults + children} pax) · paid in full at booking</span>
+                <span style={{ color:T.gold }}>{fmt((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * (currency.rate || 18.62))}</span>
+              </div>
+            )}
             <div style={{ maxWidth:680, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
               <div>
                 <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>Package total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights</div>
