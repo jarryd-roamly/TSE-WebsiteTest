@@ -60,7 +60,6 @@ const REGIONS = [
   { id: 'cape-town',  label: 'Cape Town',            icon: '🏔', slug: 'cape-town'        },
   { id: 'madikwe',    label: 'Madikwe',              icon: '🦏', slug: 'madikwe'          },
   { id: 'chobe',      label: 'Chobe / Vic Falls',    icon: '🌊', slug: 'chobe-vic-falls'  },
-  { id: 'masai-mara', label: 'Masai Mara',           icon: '🦒', slug: 'masai-mara'       },
   { id: 'inspire-me', label: 'Inspire Me',           icon: '✨', slug: null               },
 ];
 
@@ -134,16 +133,35 @@ const RESEARCH_STEPS = [
   'Putting your personalised journey together...',
 ];
 
-const ACTIVITIES = [
-  { id:2, name:'Bush Walk with Armed Ranger',    type:'Adventure',    duration:'3 hours · dawn',            trustScore:97, netRate:1800, otaRate:2600, image:'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact:'Tracks, plants — the detail you miss from a vehicle.', region_tags:['kruger-sabi-sand','okavango-delta','masai-mara','madikwe','chobe-vic-falls'], upgrades:{ options:[{label:'Group walk',extra:0},{label:'Private walk',extra:2400}], extras:[{label:'Standard',extra:0},{label:'Breakfast in the bush',extra:680}] } },
-  { id:3, name:'Hot Air Balloon Safari',         type:'Luxury',       duration:'3 hours · dawn',            trustScore:94, netRate:4800, otaRate:7200, image:'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact:'The Mara from above — one of the great experiences on Earth.', region_tags:['masai-mara','kruger-sabi-sand'], upgrades:{ options:[{label:'Shared basket',extra:0},{label:'Private basket',extra:8500}], extras:[{label:'Champagne breakfast',extra:0},{label:'Private bush breakfast',extra:1200}] } },
-  { id:4, name:'Night Drive & Spotlight Safari', type:'Wildlife',     duration:'2.5 hours · 20:00',         trustScore:95, netRate:1200, otaRate:1800, image:'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80', funFact:'Leopards, civets, honey badgers — the nocturnal world.', region_tags:['kruger-sabi-sand','okavango-delta','masai-mara','madikwe','chobe-vic-falls'], upgrades:{ options:[{label:'Group drive',extra:0},{label:'Private drive',extra:2800}], extras:[{label:'Standard',extra:0},{label:'Add sundowners',extra:480}] } },
-  { id:5, name:'Victoria Falls Helicopter',      type:'Scenic',       duration:"15 min 'Flight of Angels'", trustScore:96, netRate:2800, otaRate:4200, image:'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact:'108m high, 1.7km wide — the only way to grasp the scale.', region_tags:['chobe-vic-falls'], upgrades:{ options:[{label:'15-minute flight',extra:0},{label:'30-minute flight',extra:2200}], extras:[{label:'Standard',extra:0},{label:'Private helicopter',extra:5800}] } },
-  { id:6, name:'Rhino Tracking on Foot',         type:'Conservation', duration:'Half day',                  trustScore:93, netRate:2200, otaRate:3200, image:'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact:'One of only a handful of places you can approach white rhino on foot.', region_tags:['madikwe','kruger-sabi-sand'], upgrades:{ options:[{label:'Group tracking',extra:0},{label:'Private with conservationist',extra:3400}], extras:[{label:'Standard',extra:0},{label:'Full conservation day',extra:4800}] } },
-  { id:7, name:'Mokoro Safari',                  type:'Wildlife',     duration:'2 hours',                   trustScore:96, netRate:1600, otaRate:null,  image:'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', funFact:'Silent dugout canoe through papyrus — the sound of the Delta.', region_tags:['okavango-delta'], upgrades:{ options:[{label:'Shared mokoro',extra:0},{label:'Private mokoro',extra:1800}], extras:[{label:'Standard',extra:0},{label:'Sundowner picnic',extra:550}] } },
-  { id:8, name:'Cape Town Winelands Day Tour',   type:'Culture',      duration:'Full day',                  trustScore:92, netRate:2400, otaRate:3600, image:'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80', funFact:'Franschhoek, Stellenbosch, Paarl — three valleys in one day.', region_tags:['cape-town'], upgrades:{ options:[{label:'Shared tour',extra:0},{label:'Private guide & vehicle',extra:3200}], extras:[{label:'Standard',extra:0},{label:'Private cellar tastings',extra:800}] } },
-  { id:9, name:'Great Migration River Crossing', type:'Wildlife',     duration:'Full day river camp',       trustScore:98, netRate:3600, otaRate:5400, image:'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', funFact:'Wildebeest cross with crocs waiting — raw nature at its most dramatic.', region_tags:['masai-mara'], upgrades:{ options:[{label:'Group vehicle',extra:0},{label:'Private vehicle all day',extra:4500}], extras:[{label:'Standard',extra:0},{label:'Sundowner at river',extra:680}] } },
-];
+type Activity = {
+  id: string; region_slug: string; name: string; description?: string;
+  netRate: number; currency: 'ZAR'|'USD'; duration?: string; category?: string;
+  requires_transfer?: boolean; transfer_note?: string; image: string; images?: string[];
+  funFact?: string;
+};
+
+// Activities are now loaded from Supabase at runtime (see useEffect in main component).
+// This empty default is only a safety fallback if the fetch fails.
+const ACTIVITIES_FALLBACK: Activity[] = [];
+
+// Map a Supabase activities row -> Activity. Converts USD net rates to ZAR at the
+// supplied fx rate (USD->ZAR). ZAR rows pass through unchanged.
+function mapActivityRow(a: any, usdToZar: number): Activity {
+  const imgs: string[] = (() => {
+    try { return Array.isArray(a.image_urls) ? a.image_urls : (a.image_urls ? JSON.parse(a.image_urls) : []); }
+    catch { return []; }
+  })();
+  const rawRate = Number(a.net_rate) || 0;
+  const netZar = a.currency === 'USD' ? Math.round(rawRate * usdToZar) : rawRate;
+  return {
+    id: String(a.id), region_slug: a.region_slug, name: a.name, description: a.description || '',
+    netRate: netZar, currency: a.currency || 'ZAR', duration: a.duration || '', category: a.category || '',
+    requires_transfer: !!a.requires_transfer, transfer_note: a.transfer_note || '',
+    image: imgs[0] || 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80',
+    images: imgs,
+    funFact: a.description ? String(a.description).slice(0, 120) : '',
+  };
+}
 
 const SPECIALISTS = [
   { name: 'Sarah Mitchell', role: 'Senior Safari Specialist', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&q=80', tip: 'June–August is peak — book 6 months ahead for Sabi Sand.' },
@@ -754,15 +772,16 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
 // Activities live here now, not inside the Customise sheet.
 // Filtered by region. Tap to add/remove.
 // ═══════════════════════════════════════════════════════════════════════════════
-function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt }: {
+function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities }: {
   regionSlug:  string;
   selectedIds: string[];
   onToggle:    (id:string)=>void;
   fmt:         (n:number)=>string;
+  activities:  Activity[];
 }) {
-  const regionActs = useMemo(() => ACTIVITIES.filter(a =>
-    !a.region_tags?.length || a.region_tags.includes(regionSlug)
-  ), [regionSlug]);
+  const regionActs = useMemo(() => activities.filter(a =>
+    a.region_slug === regionSlug
+  ), [regionSlug, activities]);
 
   const [idx, setIdx] = useState(0);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -836,7 +855,7 @@ function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt }: {
       {selectedIds.length > 0 && (
         <div style={{ marginTop:10, padding:'9px 14px', background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, display:'flex', justifyContent:'space-between', fontSize:12 }}>
           <span style={{ color:T.gold, fontWeight:600 }}>{selectedIds.length} experience{selectedIds.length===1?'':'s'} added</span>
-          <span style={{ color:T.textMid }}>{fmt(ACTIVITIES.filter(a=>selectedIds.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*1.18),0))}</span>
+          <span style={{ color:T.textMid }}>{fmt(regionActs.filter(a=>selectedIds.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*1.18),0))}</span>
         </div>
       )}
     </div>
@@ -1608,6 +1627,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
   const [kbEntries,       setKbEntries]       = useState<KBEntry[]>(DEFAULT_KB);
   const [hotels,          setHotels]          = useState<Hotel[]>(HOTELS_FALLBACK);
+  const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
   const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => b.marginScore-a.marginScore), [hotels]);
 
@@ -1641,6 +1661,25 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       .catch(() => setSuppliersLoaded(true));
   }, [edition.id]);
 
+  // [Activities] Load activities from Supabase (mirrors supplier fetch).
+  // USD-priced rows are converted to ZAR using the USD display rate (XE snapshot
+  // today; swap to live XE later). Falls back silently to empty on any error.
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    const usdToZar = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
+    const query = `${url}/rest/v1/activities?select=*&is_active=eq.true&order=sort_order.asc`;
+    fetch(query, { headers: { apikey: key, Authorization: `Bearer ${key}` } })
+      .then(r => { if (!r.ok) throw new Error(`Supabase ${r.status}`); return r.json(); })
+      .then((rows: any[]) => {
+        if (Array.isArray(rows) && rows.length > 0) {
+          setActivities(rows.map(row => mapActivityRow(row, usdToZar)));
+        }
+      })
+      .catch(() => { /* keep empty fallback — spool just shows nothing */ });
+  }, [edition.id]);
+
   const M = edition.margins;
 
   const grandTotal = useMemo(() => {
@@ -1671,7 +1710,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     const activityCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
       const sel = selectedActivities[slug] ?? [];
-      return sum + ACTIVITIES.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + Math.round(a.netRate * M.activities), 0);
+      return sum + activities.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + Math.round(a.netRate * M.activities), 0);
     }, 0);
     const cityXferCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
@@ -1689,7 +1728,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
       : 0;
     return lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
-  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children]);
+  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children, activities]);
 
   // [V7-4] Route reversal — uses real INTERNAL_LEGS transfer costs. Fires after itinerary builds.
   const routeReversalResult = useMemo(() => {
@@ -2272,6 +2311,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                       return { ...prev, [slug]: next };
                     })}
                     fmt={fmt}
+                    activities={activities}
                   />
 
                   {cityIdx < itinerary.cities.length-1 && (() => {
@@ -2328,7 +2368,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                   const actCost = itinerary.cities.reduce((sum,city) => {
                     const sl = CITY_TO_SLUG[city.city.toLowerCase().trim()]??'';
                     const sel = selectedActivities[sl]??[];
-                    return sum + ACTIVITIES.filter(a=>sel.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*M.activities),0);
+                    return sum + activities.filter(a=>sel.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*M.activities),0);
                   },0);
                   return actCost > 0 ? (
                     <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>Lodges & transfers: {fmt(grandTotal - actCost)} · Activities: {fmt(actCost)}</div>
