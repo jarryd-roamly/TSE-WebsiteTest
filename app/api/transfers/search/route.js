@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/transfers/search
-// Batch-prices the COMMERCIAL leg of regional transfers via Duffel.
-// Body: { origin: 'CPT'|'JNB'|..., targets: ['SZK','MUB',...], departure_date, passengers }
-// Returns: { fares: { SZK: <USD per-person cheapest>, MUB: ... }, currency:'USD' }
-// The caller converts USD->ZAR and adds the last-mile. This route returns ONLY the
-// commercial airport-to-airport fare (cheapest per route). Missing routes are omitted
-// so the caller falls back to its estimate.
+// Prices the COMMERCIAL hub-to-hub leg of regional transfers via Duffel.
+// Body: { routes: [{origin,destination}], departure_date, passengers }
+//   (legacy: { origin, targets:[...], departure_date, passengers } also accepted)
+// Returns: { fares: { "MUB-JNB": <USD per-person>, ... }, meta: {...}, currency:'USD' }
+// The caller converts USD->ZAR and adds the exit + arrival last-miles (three-part chain).
+// Cheapest fare per route. Missing routes omitted -> caller falls back to estimate.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function parseDuration(iso) {
@@ -22,22 +22,35 @@ export async function POST(request) {
   try { body = await request.json(); }
   catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
-  const { origin, targets, departure_date, passengers } = body || {};
-  if (!origin || !Array.isArray(targets) || targets.length === 0 || !departure_date) {
-    return Response.json({ error: 'Missing origin, targets[], or departure_date' }, { status: 400 });
+  const { origin, targets, routes, departure_date, passengers } = body || {};
+  if (!departure_date) {
+    return Response.json({ error: 'Missing departure_date' }, { status: 400 });
   }
 
   const pax = Math.max(parseInt(passengers) || 1, 1);
   const passengersArray = Array.from({ length: pax }, () => ({ type: 'adult' }));
 
-  // De-dupe targets; never search origin->origin.
-  const uniqueTargets = [...new Set(targets)].filter(t => t && t !== origin);
+  // Accept explicit route pairs (preferred) or legacy single-origin fan-out.
+  let routePairs = [];
+  if (Array.isArray(routes) && routes.length) {
+    routePairs = routes.filter(r => r && r.origin && r.destination && r.origin !== r.destination);
+  } else if (origin && Array.isArray(targets)) {
+    routePairs = [...new Set(targets)].filter(t => t && t !== origin).map(t => ({ origin, destination: t }));
+  }
+  if (routePairs.length === 0) {
+    return Response.json({ error: 'No valid routes' }, { status: 400 });
+  }
+  // De-dupe by route key.
+  const seen = new Set();
+  routePairs = routePairs.filter(r => {
+    const k = `${r.origin}-${r.destination}`;
+    if (seen.has(k)) return false; seen.add(k); return true;
+  });
 
   const fares = {};
   const meta = {};
 
-  // Query each route. (Per-itinerary call, so this runs once and is cached client-side.)
-  await Promise.all(uniqueTargets.map(async (destination) => {
+  await Promise.all(routePairs.map(async ({ origin: rOrigin, destination }) => {
     try {
       const res = await fetch('https://api.duffel.com/air/offer_requests?return_offers=true', {
         method: 'POST',
@@ -49,7 +62,7 @@ export async function POST(request) {
         },
         body: JSON.stringify({
           data: {
-            slices: [{ origin, destination, departure_date }],
+            slices: [{ origin: rOrigin, destination, departure_date }],
             passengers: passengersArray,
             cabin_class: 'economy',
           }
@@ -60,17 +73,18 @@ export async function POST(request) {
       const offers = json?.data?.offers || [];
       if (offers.length === 0) return;
 
-      // Cheapest fare per route (total_amount is for ALL passengers in this request).
       const sorted = [...offers].sort((a,b) => parseFloat(a.total_amount) - parseFloat(b.total_amount));
       const cheapest = sorted[0];
-      const totalAmount = parseFloat(cheapest.total_amount);            // all pax
-      const perPax = totalAmount / pax;                                  // per person
+      const perPax = parseFloat(cheapest.total_amount) / pax;
 
-      fares[destination] = Number(perPax.toFixed(2));
       const seg0 = cheapest.slices?.[0]?.segments?.[0];
-      const segLast = cheapest.slices?.[0]?.segments?.[cheapest.slices[0].segments.length - 1];
-      const stops = (cheapest.slices?.[0]?.segments?.length || 1) - 1;
-      meta[destination] = {
+      const segs = cheapest.slices?.[0]?.segments || [];
+      const segLast = segs[segs.length - 1];
+      const stops = (segs.length || 1) - 1;
+
+      const routeKey = `${rOrigin}-${destination}`;
+      fares[routeKey] = Number(perPax.toFixed(2));
+      meta[routeKey] = {
         currency: cheapest.total_currency,
         carrier: cheapest.owner?.name,
         duration_min: cheapest.slices?.reduce((t,s)=>t+parseDuration(s.duration),0),
@@ -85,11 +99,10 @@ export async function POST(request) {
   }));
 
   return Response.json({
-    origin,
     departure_date,
     passengers: pax,
-    currency: 'USD',          // Duffel default; caller converts to ZAR
-    fares,                    // { SZK: 86.32, MUB: 88.81, ... } per person USD
-    meta,
+    currency: 'USD',
+    fares,   // { "MUB-JNB": 58.73, ... } per person USD
+    meta,    // { "MUB-JNB": { carrier, departing_at, ... } }
   }, { status: 200 });
 }
