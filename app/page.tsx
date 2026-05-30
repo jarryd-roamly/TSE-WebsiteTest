@@ -1570,7 +1570,12 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
   const [cityStays, setCityStays] = useState<Array<{ hotelId:string|number; nights:number; prefs:{rooms:number;basis:number;flexibility:number} }>>([]);
 
-  const [checkinDate,        setCheckinDate]        = useState('');
+  // [V7.1] Smart default: ~120 days out (plausible, non-blank so it stops blocking checkout).
+  // Traveller can change it; this just removes the empty-field friction.
+  const [checkinDate,        setCheckinDate]        = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 120);
+    return d.toISOString().split('T')[0];
+  });
   const [dateMode,      setDateMode]      = useState<'specific'|'month'|'window'|'flexible'>('specific');
   const [flexMonth,     setFlexMonth]     = useState('');
   const [windowStart,   setWindowStart]   = useState('');
@@ -1666,7 +1671,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     const activityCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
       const sel = selectedActivities[slug] ?? [];
-      return sum + ACTIVITIES.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + a.netRate, 0);
+      return sum + ACTIVITIES.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + Math.round(a.netRate * M.activities), 0);
     }, 0);
     const cityXferCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
@@ -1677,8 +1682,14 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       const chosen = selId ? opts.find(o => o.id === selId) : opts.find(o => o.recommended) ?? opts[0];
       return sum + (chosen?.estimatedCostZAR ?? 0);
     }, 0);
-    return lodgeCost + transferCost + activityCost + cityXferCost;
-  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds]);
+    // [V7.1] International flights — Duffel offer price is in USD; grandTotal is ZAR.
+    // Convert USD -> ZAR using the fixed USD rate so the package total stays in ZAR.
+    const USD_ZAR = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
+    const flightCostZAR = selectedFlightOffer
+      ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
+      : 0;
+    return lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
+  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children]);
 
   // [V7-4] Route reversal — uses real INTERNAL_LEGS transfer costs. Fires after itinerary builds.
   const routeReversalResult = useMemo(() => {
@@ -2109,8 +2120,8 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                   <div style={{ fontSize:12, color:T.textDim, marginTop:4 }}>{itinerary.routing}</div>
                 </div>
                 <div style={{ textAlign:'right' as const }}>
-                  <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights · all-in estimate</div>
-                  <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(itinerary.totalEstimate)}</div>
+                  <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights · {selectedFlightOffer ? 'incl. flights' : 'excl. flights'}</div>
+                  <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
                 </div>
               </div>
 
@@ -2307,7 +2318,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                   const actCost = itinerary.cities.reduce((sum,city) => {
                     const sl = CITY_TO_SLUG[city.city.toLowerCase().trim()]??'';
                     const sel = selectedActivities[sl]??[];
-                    return sum + ACTIVITIES.filter(a=>sel.includes(String(a.id))).reduce((s,a)=>s+a.netRate,0);
+                    return sum + ACTIVITIES.filter(a=>sel.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*M.activities),0);
                   },0);
                   return actCost > 0 ? (
                     <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>Lodges & transfers: {fmt(grandTotal - actCost)} · Activities: {fmt(actCost)}</div>
