@@ -24,7 +24,8 @@ import { resolveHotelUpgrades, makeFmt }     from './lib/pricing';
 import { applyDeterministicChange }          from './lib/chatEngine';
 import FlightSelector                        from '@/components/FlightSelector';
 import { lastMileFor, lastMileZar, defaultCommercialTarget,
-         priceTransfer, CARRIER_ADJUST }     from './lib/transfers';
+         priceTransfer, CARRIER_ADJUST,
+         exitLastMileFor, originHubAirport }  from './lib/transfers';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
               InterTransferState, UpgradeState, Itinerary,
@@ -1215,21 +1216,24 @@ type TransferOption = { id:string; mode:'road'|'commercial'|'charter'|'combo'|'b
 // destLodge = the booked lodge at the DESTINATION city (resolves the airport).
 // commercialFareZarByAirport = optional live Duffel fares keyed by target airport.
 // pax = passenger count (per-person fares scale; charters are flat).
+// [Transfers v3] THREE-PART CHAIN model:
+//   EXIT (origin lodge -> origin hub)  +  COMMERCIAL (origin hub -> dest hub)  +  ARRIVAL (dest hub -> dest lodge)
+// commercialFareZarByAirport / Meta are keyed by ROUTE "ORIGINHUB-DESTHUB" (e.g. "MUB-JNB").
 function buildTransferOptions(
   fromSlug: string,
   toSlug: string,
   destLodge?: string,
   pax: number = 2,
   usdToZar: number = 18.62,
-  commercialFareZarByAirport?: Record<string, number>,
-  commercialMetaByAirport?: Record<string, any>,
+  commercialFareZarByRoute?: Record<string, number>,
+  commercialMetaByRoute?: Record<string, any>,
+  originLodge?: string,
 ): TransferOption[] {
   // Cape Town is the arrival city — its airport transfer is handled by CityTransferStrip, not here.
   if (toSlug === 'cape-town') return [];
 
-  const lastMiles = lastMileFor(destLodge ?? '', toSlug);
-  if (!lastMiles.length) {
-    // No mapped last-mile (e.g. unknown region) — fall back to legacy estimate so it's never blank.
+  const arrivalLastMiles = lastMileFor(destLodge ?? '', toSlug);
+  if (!arrivalLastMiles.length) {
     const leg = getInternalLeg(fromSlug, toSlug);
     if (!leg) return [];
     return [{ id:'recommended', mode:leg.mode==='charter'?'charter':leg.mode==='road'?'road':'commercial',
@@ -1240,55 +1244,76 @@ function buildTransferOptions(
   }
 
   const iconFor = (m: string) => m==='charter'?'✈':m==='road'?'🚗':m==='mackair'||m==='wilderness'||m==='fedair'?'🛩':'🛫';
+  const fmtT = (iso?: string) => { if (!iso) return ''; try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } };
+  const durStr = (min?: number) => min ? `${Math.floor(min/60)}h${min%60?` ${min%60}m`:''}` : null;
 
-  return lastMiles.map((lm, i) => {
-    const targetAirport = lm.fromAirport;
-    // Commercial leg fare: live Duffel if provided for this airport, else estimated fallback.
-    const liveFare = commercialFareZarByAirport?.[targetAirport];
-    const fallback = COMMERCIAL_FALLBACK_ZAR[targetAirport] ?? 4000;
-    const commercialZar = (liveFare ?? fallback) * pax;
-    const isEstimate = liveFare == null;
-    const priced = priceTransfer(lm, commercialZar, usdToZar, pax);
+  // EXIT leg: origin lodge -> origin hub. Cape Town origin = none (fly direct from CPT).
+  const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
+  const exitRec = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
+  const originHub = originHubAirport(originLodge ?? '', fromSlug);
 
-    const meta = commercialMetaByAirport?.[targetAirport];
-    const fmtT = (iso?: string) => { if (!iso) return ''; try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } };
+  // One transfer OPTION per arrival last-mile (e.g. FedAir vs charter into Madikwe).
+  return arrivalLastMiles.map((arr, i) => {
+    const destHub = arr.fromAirport;                 // commercial flight LANDS here
+    const routeKey = `${originHub}-${destHub}`;       // e.g. "MUB-JNB"
+
+    // COMMERCIAL hub->hub fare (per person). Live Duffel by route, else fallback by dest hub.
+    const liveFare = commercialFareZarByRoute?.[routeKey];
+    const fallback = COMMERCIAL_FALLBACK_ZAR[destHub] ?? 4000;
+    const needCommercial = originHub !== destHub;     // same hub => no commercial leg
+    const commercialPerPax = needCommercial ? (liveFare ?? fallback) : 0;
+    const isEstimate = needCommercial && liveFare == null;
+
+    // EXIT leg cost (origin lodge -> origin hub), per the recommended exit option.
+    const exitZar = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
+    // ARRIVAL leg cost (dest hub -> dest lodge).
+    const arrivalZar = lastMileZar(arr, usdToZar, pax);
+    // COMMERCIAL cost in ZAR for all pax.
+    const commercialZar = Math.round(commercialPerPax * pax);
+
+    const totalZar = exitZar + commercialZar + arrivalZar;
+
+    // Commercial flight descriptor from meta.
+    const meta = commercialMetaByRoute?.[routeKey];
     const airline = meta?.carrier ? String(meta.carrier).replace(/ Airways$/,'') : null;
-    const depT = fmtT(meta?.departing_at);
-    const arrT = fmtT(meta?.arriving_at);
-    const stops = meta?.stops;
-    const durH = meta?.duration_min ? `${Math.floor(meta.duration_min/60)}h${meta.duration_min%60?` ${meta.duration_min%60}m`:''}` : null;
-    // Build a human commercial-leg descriptor: "Airlink · 09:35→11:40 · direct · 2h 5m"
-    const flightBits = [
-      airline,
-      (depT && arrT) ? `${depT}→${arrT}` : null,
-      (typeof stops === 'number') ? (stops === 0 ? 'direct' : `${stops} stop${stops>1?'s':''}`) : null,
-      durH,
+    const depT = fmtT(meta?.departing_at), arrT = fmtT(meta?.arriving_at);
+    const stops = meta?.stops, durH = durStr(meta?.duration_min);
+    const flightBits = [airline, (depT&&arrT)?`${depT}→${arrT}`:null,
+      (typeof stops==='number')?(stops===0?'direct':`${stops} stop${stops>1?'s':''}`):null, durH].filter(Boolean);
+    const commercialLine = needCommercial ? (flightBits.length ? flightBits.join(' · ') : `${originHub}→${destHub}`) : null;
+
+    // Build the full chain descriptor: "MackAir lodge→MUB  ·  Airlink MUB→JNB  ·  FedAir JNB→Madikwe"
+    const chainBits = [
+      exitRec ? `${exitRec.label}` : null,
+      commercialLine,
+      arr.label,
     ].filter(Boolean);
-    const flightLine = flightBits.length ? flightBits.join(' · ') : null;
+    const chainLine = chainBits.join('  →  ');
 
     const badges: Array<{text:string;color:string}> = [];
-    if (lm.recommended) badges.push({ text:'✦ Recommended', color:T.gold });
-    if (lm.perCharter)  badges.push({ text:'Private charter', color:'#a78bfa' });
-    if (isEstimate)     badges.push({ text:'Est. — confirmed by specialist', color:T.textDim });
+    if (arr.recommended) badges.push({ text:'✦ Recommended', color:T.gold });
+    if (arr.perCharter)  badges.push({ text:'Private charter', color:'#a78bfa' });
+    if (isEstimate)      badges.push({ text:'Est. — confirmed by specialist', color:T.textDim });
+
+    const totalMin = (exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 0) + arr.durationMin;
 
     return {
-      id: lm.recommended ? 'recommended' : `${lm.mode}-${i}`,
-      mode: (lm.mode==='charter'?'charter':lm.mode==='road'?'road':'commercial') as TransferOption['mode'],
-      icon: iconFor(lm.mode),
-      label: lm.label,
-      // Provider now names the commercial flight when we have it.
-      provider: flightLine ? `${flightLine}  →  ${lm.label}` : `Flight to ${targetAirport} + ${lm.label}`,
-      duration: durH ? `${durH} flight + ${lm.durationMin} min ${lm.mode==='road'?'drive':'hop'}` : `${lm.durationMin} min last leg`,
-      estimatedCostZAR: priced.totalZar,
+      id: arr.recommended ? 'recommended' : `${arr.mode}-${i}`,
+      mode: (arr.mode==='charter'?'charter':arr.mode==='road'?'road':'commercial') as TransferOption['mode'],
+      icon: iconFor(arr.mode),
+      label: arr.label,
+      provider: chainLine,
+      duration: totalMin ? `~${durStr(totalMin)} total door-to-door` : `${arr.durationMin} min final leg`,
+      estimatedCostZAR: totalZar,
       badges,
-      aiNote: `${flightLine ? `Commercial: ${flightLine}. ` : ''}${lm.note ?? ''}${isEstimate ? ' Commercial fare estimated until dates confirmed.' : ''}`.trim(),
-      recommended: !!lm.recommended,
+      aiNote: `${commercialLine ? `Commercial leg: ${commercialLine}. ` : ''}${arr.note ?? ''}${isEstimate ? ' Commercial fare estimated until dates confirmed.' : ''}`.trim(),
+      recommended: !!arr.recommended,
     };
   });
 }
 
-function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar, commercialFares, commercialMeta }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; }) {
-  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62, commercialFares, commercialMeta), [fromSlug, toSlug, destLodge, pax, usdToZar, commercialFares, commercialMeta]);
+function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; originLodge?:string; }) {
+  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62, commercialFares, commercialMeta, originLodge), [fromSlug, toSlug, destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [spinning, setSpinning] = useState(true);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -1764,25 +1789,30 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
   const M = edition.margins;
 
-  // [Transfers v2] Fetch live regional commercial fares once per itinerary.
-  // The transfer engine adds the LAST-MILE on top of these (two-part model).
+  // [Transfers v3] Fetch live commercial HUB-TO-HUB fares for the three-part chain.
+  // For each inter-region leg we compute originHub -> destHub (e.g. MUB -> JNB) and
+  // search that route. Results keyed by "ORIGINHUB-DESTHUB". Exit + arrival last-miles
+  // are added in buildTransferOptions; this only prices the commercial middle leg.
   useEffect(() => {
-    if (!itinerary?.cities || itinerary.cities.length === 0) { setTransferFares({}); return; }
-    // Origin = where the regional hops start. Use the regional origin (JNB/CPT/DUR).
-    // intlOrigin (e.g. LHR) is for the international flight, not the bush legs.
-    const regionalOrigin = origin || 'JNB';
-    // Collect the commercial target airport for each city's chosen lodge.
-    const targets = new Set<string>();
-    itinerary.cities.forEach((city, i) => {
-      const toSlug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
-      if (!toSlug || toSlug === 'cape-town') return; // CPT is arrival, no regional flight
+    if (!itinerary?.cities || itinerary.cities.length < 2) { setTransferFares({}); setTransferMeta({}); return; }
+    const lodgeFor = (slug: string, i: number) => {
+      const pool = slug ? hotelsByMargin.filter(h => h.subRegion === slug) : hotelsByMargin;
       const stay = cityStays[i];
-      const pool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
-      const lodge = pool.find(h => String(h.id) === String(stay?.hotelId)) ?? pool[0];
-      const ap = defaultCommercialTarget(lodge?.name ?? '', toSlug);
-      if (ap) targets.add(ap);
-    });
-    if (targets.size === 0) { setTransferFares({}); return; }
+      return (pool.find(h => String(h.id) === String(stay?.hotelId)) ?? pool[0])?.name ?? '';
+    };
+
+    // Build the set of origin-hub -> dest-hub routes across all legs.
+    const routeSet = new Map<string, { origin: string; destination: string }>();
+    for (let i = 0; i < itinerary.cities.length - 1; i++) {
+      const fromSlug = CITY_TO_SLUG[itinerary.cities[i].city.toLowerCase().trim()] ?? '';
+      const toSlug   = CITY_TO_SLUG[itinerary.cities[i+1].city.toLowerCase().trim()] ?? '';
+      if (!fromSlug || !toSlug || toSlug === 'cape-town') continue; // CPT dest handled separately
+      const originHub = originHubAirport(lodgeFor(fromSlug, i), fromSlug);
+      const destHub   = defaultCommercialTarget(lodgeFor(toSlug, i+1), toSlug);
+      if (!originHub || !destHub || originHub === destHub) continue; // same hub = no commercial leg
+      routeSet.set(`${originHub}-${destHub}`, { origin: originHub, destination: destHub });
+    }
+    if (routeSet.size === 0) { setTransferFares({}); setTransferMeta({}); return; }
 
     const depDate = checkinDate || todayPlusDays(120);
     const pax = Math.max(adults + children, 1);
@@ -1791,20 +1821,19 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     let cancelled = false;
     fetch('/api/transfers/search', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ origin: regionalOrigin, targets: [...targets], departure_date: depDate, passengers: pax }),
+      body: JSON.stringify({ routes: [...routeSet.values()], departure_date: depDate, passengers: pax }),
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled || !data?.fares) return;
-        // Convert per-person USD fares -> per-person ZAR (buildTransferOptions multiplies by pax).
         const zarFares: Record<string, number> = {};
-        Object.entries(data.fares).forEach(([ap, usd]) => { zarFares[ap] = Math.round((usd as number) * usdToZar); });
+        Object.entries(data.fares).forEach(([routeKey, usd]) => { zarFares[routeKey] = Math.round((usd as number) * usdToZar); });
         setTransferFares(zarFares);
         if (data.meta) setTransferMeta(data.meta);
       })
       .catch(() => { /* keep empty -> estimates used */ });
     return () => { cancelled = true; };
-  }, [itinerary?.cities, cityStays, origin, checkinDate, adults, children, hotelsByMargin]);
+  }, [itinerary?.cities, cityStays, checkinDate, adults, children, hotelsByMargin]);
 
   const grandTotal = useMemo(() => {
     if (!itinerary?.cities || cityStays.length===0) return 0;
@@ -1829,8 +1858,12 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       const nextStay = cityStays[i + 1];
       const nextPool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
       const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
+      // Origin lodge for the EXIT leg = this city's chosen hotel.
+      const thisStay = cityStays[i];
+      const thisPool = fromSlug ? hotelsByMargin.filter(h => h.subRegion === fromSlug) : hotelsByMargin;
+      const originHotel = thisPool.find(h => String(h.id) === String(thisStay?.hotelId)) ?? thisPool[0];
       const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
-      const options = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate, transferFares, transferMeta);
+      const options = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate, transferFares, transferMeta, originHotel?.name);
       if (!options.length) return sum;
       const selId   = selectedTransferIds[legKey];
       const chosen  = selId ? options.find(o => o.id === selId) : options.find(o => o.recommended) ?? options[0];
@@ -1864,7 +1897,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     if (!itinerary?.cities || itinerary.cities.length < 2) return null;
     const slugOf = (c: string) => CITY_TO_SLUG[c?.toLowerCase().trim() ?? ''] ?? '';
     const legCost = (from: string, to: string) => {
-      const opts = buildTransferOptions(from, to, undefined, Math.max(adults + children, 1), CURRENCIES.find(c=>c.code==='USD')?.rate ?? 18.62, transferFares, transferMeta);
+      const opts = buildTransferOptions(from, to, undefined, Math.max(adults + children, 1), CURRENCIES.find(c=>c.code==='USD')?.rate ?? 18.62, transferFares, transferMeta, undefined);
       if (!opts.length) return 0;
       return (opts.find(o => o.recommended) ?? opts[0])?.estimatedCostZAR ?? 0;
     };
@@ -2453,9 +2486,12 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                     const nextStay = cityStays[cityIdx+1];
                     const nextPool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
                     const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
+                    const thisStay = cityStays[cityIdx];
+                    const thisPool = fromSlug ? hotelsByMargin.filter(h => h.subRegion === fromSlug) : hotelsByMargin;
+                    const originHotel = thisPool.find(h => String(h.id) === String(thisStay?.hotelId)) ?? thisPool[0];
                     const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
                     return (
-                      <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} />
+                      <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} originLodge={originHotel?.name} />
                     );
                   })()}
                 </div>
