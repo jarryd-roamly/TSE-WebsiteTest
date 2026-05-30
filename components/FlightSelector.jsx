@@ -1,693 +1,327 @@
 'use client';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FlightSelector — International leg selection
-// Supports: return, open jaw (system or custom), flexible dates (no search)
-// Integrates with DuffelAncillaries for seats/bags
-// Part of Module 2: Experience Designer — builder screen
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// FlightSelector.jsx — v2.0  (Safari Edition / Travel Catalogue)
+// SIMPLIFIED per spec:
+//   1. Departure city is the only required input
+//   2. Flights auto-search on city select (+ when date changes) — no Search button
+//   3. Departure date input; return date derived from package nights (travelDates.end)
+//   4. Three tiles: Recommended (pre-selected, first) · Quickest · Cheapest
+//   5. Selected price flows to package total via onFlightSelected
+//   6. Two buttons: Upgrade (business re-search, price delta) · I'll book my own flights
+//   7. Selected flight's arrival gateway carries into onward transfer logic
+//
+// Margin: handled server-side (route.js). Hybrid — flat 8% today, optimiser hook dormant.
+// Prop + callback contract is UNCHANGED from v1 — page.tsx needs no edits.
+// ═══════════════════════════════════════════════════════════════════════════════
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
-const SA_GATEWAYS = [
-  { iata: 'JNB', city: 'Johannesburg', note: 'Main hub · Kruger, Okavango, Madikwe' },
-  { iata: 'CPT', city: 'Cape Town',    note: 'Direct UK/EU flights · Best for Cape Town start/end' },
-  { iata: 'VFA', city: 'Victoria Falls', note: 'Zimbabwe · Ideal if ending at Vic Falls' },
+// Departure cities travellers fly FROM (international origins)
+const ORIGIN_CITIES = [
+  { code: 'LHR', label: 'London Heathrow',  flag: '🇬🇧' },
+  { code: 'LGW', label: 'London Gatwick',   flag: '🇬🇧' },
+  { code: 'MAN', label: 'Manchester',       flag: '🇬🇧' },
+  { code: 'AMS', label: 'Amsterdam',        flag: '🇳🇱' },
+  { code: 'FRA', label: 'Frankfurt',        flag: '🇩🇪' },
+  { code: 'JFK', label: 'New York (JFK)',   flag: '🇺🇸' },
+  { code: 'LAX', label: 'Los Angeles',      flag: '🇺🇸' },
+  { code: 'DXB', label: 'Dubai',            flag: '🇦🇪' },
+  { code: 'SYD', label: 'Sydney',           flag: '🇦🇺' },
 ];
 
-const CABIN_OPTIONS = [
-  { value: 'economy',         label: 'Economy' },
-  { value: 'premium_economy', label: 'Premium Economy' },
-  { value: 'business',        label: 'Business' },
-  { value: 'first',           label: 'First Class' },
-];
-
-// Cabin imagery — curated per carrier, Unsplash fallback
-const CABIN_IMAGES = {
-  business: 'https://images.unsplash.com/photo-1540339832862-474599807836?w=800&q=80',
-  first:    'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=800&q=80',
-  premium_economy: 'https://images.unsplash.com/photo-1569629743817-70d8db6c323b?w=800&q=80',
-  economy:  null,
+const TILE_META = {
+  recommended: { label: 'Recommended', color: '#d4af37', sub: 'Best blend of price & routing' },
+  quickest:    { label: 'Quickest',    color: '#60a5fa', sub: 'Shortest total travel time' },
+  cheapest:    { label: 'Cheapest',    color: '#4ade80', sub: 'Lowest fare we found' },
+  option:      { label: 'Option',      color: '#a78bfa', sub: 'Alternative' },
 };
 
-function fmt(amount, currency = 'USD') {
-  return new Intl.NumberFormat('en-GB', {
-    style: 'currency', currency,
-    minimumFractionDigits: 0, maximumFractionDigits: 0,
-  }).format(amount);
+function formatTime(dt) {
+  if (!dt) return '';
+  try { return new Date(dt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+}
+function formatDuration(mins) {
+  if (!mins) return '';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `${h}h${m > 0 ? ` ${m}m` : ''}`;
 }
 
-function formatTime(datetime) {
-  if (!datetime) return '—';
-  return new Date(datetime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDate(datetime) {
-  if (!datetime) return '—';
-  return new Date(datetime).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
-function formatDuration(minutes) {
-  if (!minutes) return '—';
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
-const T = {
-  bg:         '#080818',
-  surface:    '#1a1a2e',
-  gold:       '#d4af37',
-  goldDim:    'rgba(212,175,55,0.15)',
-  borderGold: 'rgba(212,175,55,0.3)',
-  text:       '#f5f0e8',
-  textMid:    'rgba(245,240,232,0.6)',
-  textDim:    'rgba(245,240,232,0.35)',
-  border:     'rgba(255,255,255,0.08)',
-  green:      '#4ade80',
-};
-
-const label = {
-  fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase',
-  color: T.textDim, fontFamily: 'inherit', marginBottom: '6px', display: 'block',
-};
-
-const input = {
-  background: 'rgba(255,255,255,0.05)', border: `1px solid ${T.border}`,
-  borderRadius: '8px', color: T.text, fontFamily: 'inherit',
-  fontSize: '13px', padding: '10px 13px', width: '100%', outline: 'none',
-  boxSizing: 'border-box',
-};
-
-const select = {
-  ...input, cursor: 'pointer', appearance: 'none',
-  backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='rgba(255,255,255,0.4)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E")`,
-  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 13px center', paddingRight: '34px',
-};
-
-// ── Flight card ───────────────────────────────────────────────────────────────
-function FlightCard({ offer, isSelected, onSelect, passengers }) {
-  const outbound = offer.slices?.[0];
-  const inbound  = offer.slices?.[1];
-  const carrier  = outbound?.segments?.[0];
-  const dep      = outbound?.departure_datetime;
-  const arr      = outbound?.arrival_datetime;
-
-  return (
-    <div
-      onClick={() => onSelect(offer)}
-      style={{
-        background: isSelected ? 'rgba(212,175,55,0.07)' : 'rgba(255,255,255,0.03)',
-        border: `1px solid ${isSelected ? T.gold : T.border}`,
-        borderRadius: '8px', padding: '16px 18px', cursor: 'pointer',
-        transition: 'all 0.15s ease', marginBottom: '8px', position: 'relative',
-      }}
-    >
-      {isSelected && (
-        <div style={{
-          position: 'absolute', top: '10px', right: '14px',
-          width: '18px', height: '18px', borderRadius: '50%', background: T.gold,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <svg width="10" height="7" viewBox="0 0 10 7" fill="none">
-            <path d="M1 3.5L3.5 6L9 1" stroke="#0a0a0a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-      )}
-
-      {/* Outbound row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* Carrier */}
-        <div style={{ width: '120px', flexShrink: 0 }}>
-          {carrier?.carrier_logo
-            ? <img src={carrier.carrier_logo} alt={carrier.carrier_name} style={{ height: '18px', filter: 'brightness(0) invert(1) opacity(0.6)' }} />
-            : <span style={{ fontSize: '11px', color: T.textDim }}>{carrier?.carrier_name || '—'}</span>
-          }
-          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginTop: '2px' }}>{carrier?.flight_number}</div>
-        </div>
-
-        {/* Dep time */}
-        <div style={{ textAlign: 'center', minWidth: '52px' }}>
-          <div style={{ fontSize: '20px', fontFamily: "'Playfair Display',serif", color: '#fff', lineHeight: 1 }}>{formatTime(dep)}</div>
-          <div style={{ fontSize: '10px', color: T.textDim, marginTop: '2px' }}>{outbound?.origin?.iata}</div>
-        </div>
-
-        {/* Route */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-          <div style={{ fontSize: '10px', color: T.textDim }}>{formatDuration(outbound?.duration_minutes)}</div>
-          <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.12)' }} />
-          <div style={{ fontSize: '10px', color: offer.slices?.[0]?.stops === 0 ? T.green : '#c9a96e' }}>
-            {outbound?.stops === 0 ? 'Direct' : `${outbound?.stops} stop`}
-          </div>
-        </div>
-
-        {/* Arr time */}
-        <div style={{ textAlign: 'center', minWidth: '52px' }}>
-          <div style={{ fontSize: '20px', fontFamily: "'Playfair Display',serif", color: '#fff', lineHeight: 1 }}>{formatTime(arr)}</div>
-          <div style={{ fontSize: '10px', color: T.textDim, marginTop: '2px' }}>{outbound?.destination?.iata}</div>
-        </div>
-
-        {/* Price */}
-        <div style={{ marginLeft: 'auto', paddingLeft: '16px', textAlign: 'right', minWidth: '90px' }}>
-          <div style={{ fontSize: '18px', fontFamily: "'Playfair Display',serif", color: T.gold, lineHeight: 1 }}>
-            {fmt(offer.display_price, offer.currency)}
-          </div>
-          <div style={{ fontSize: '10px', color: T.textDim, marginTop: '2px' }}>per person</div>
-        </div>
-      </div>
-
-      {/* Return / open jaw row */}
-      {inbound && (
-        <>
-          <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', margin: '12px 0' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '120px', flexShrink: 0 }}>
-              <span style={{ fontSize: '10px', color: T.textDim, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                {offer.is_open_jaw ? 'Return (open jaw)' : 'Return'}
-              </span>
-            </div>
-            <div style={{ textAlign: 'center', minWidth: '52px' }}>
-              <div style={{ fontSize: '16px', fontFamily: "'Playfair Display',serif", color: 'rgba(255,255,255,0.65)', lineHeight: 1 }}>{formatTime(inbound?.departure_datetime)}</div>
-              <div style={{ fontSize: '10px', color: T.textDim, marginTop: '2px' }}>{inbound?.origin?.iata}</div>
-            </div>
-            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-            <div style={{ textAlign: 'center', minWidth: '52px' }}>
-              <div style={{ fontSize: '16px', fontFamily: "'Playfair Display',serif", color: 'rgba(255,255,255,0.65)', lineHeight: 1 }}>{formatTime(inbound?.arrival_datetime)}</div>
-              <div style={{ fontSize: '10px', color: T.textDim, marginTop: '2px' }}>{inbound?.destination?.iata}</div>
-            </div>
-            <div style={{ marginLeft: 'auto', paddingLeft: '16px', minWidth: '90px' }} />
-          </div>
-        </>
-      )}
-
-      {/* Conditions */}
-      <div style={{ marginTop: '10px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        {offer.baggage?.length > 0 && (
-          <span style={{ fontSize: '10px', color: T.textDim }}>
-            ✓ {offer.baggage[0].quantity}× {offer.baggage[0].type?.replace('_', ' ')}
-          </span>
-        )}
-        {offer.conditions?.refundable && (
-          <span style={{ fontSize: '10px', color: T.textDim }}>✓ Refundable</span>
-        )}
-        {offer.conditions?.fare_conditions && (
-          <span style={{ fontSize: '10px', color: 'rgba(248,113,113,0.6)' }}>
-            {offer.conditions.fare_conditions}
-          </span>
-        )}
-        {offer.expires_at && (
-          <span style={{ fontSize: '10px', color: 'rgba(212,175,55,0.4)', marginLeft: 'auto' }}>
-            Price held until {formatTime(offer.expires_at)}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Optimisation tip pill ─────────────────────────────────────────────────────
-function OptimisationTip({ icon, text, saving, onAccept, onDismiss, currency = 'USD' }) {
-  return (
-    <div style={{
-      background: 'rgba(74,222,128,0.06)', border: '0.5px solid rgba(74,222,128,0.25)',
-      borderRadius: '10px', padding: '11px 14px', marginBottom: '10px',
-      display: 'flex', alignItems: 'center', gap: '10px',
-    }}>
-      <span style={{ fontSize: '16px', flexShrink: 0 }}>{icon}</span>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: '12px', color: T.green, fontWeight: 600, marginBottom: '2px' }}>{text}</div>
-        {saving > 0 && (
-          <div style={{ fontSize: '11px', color: T.textDim }}>
-            Save {fmt(saving, currency)} total
-          </div>
-        )}
-      </div>
-      <button onClick={onAccept} style={{
-        background: 'rgba(74,222,128,0.15)', border: '0.5px solid rgba(74,222,128,0.4)',
-        color: T.green, borderRadius: '6px', padding: '5px 12px', fontSize: '11px',
-        cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, flexShrink: 0,
-      }}>Apply</button>
-      <button onClick={onDismiss} style={{
-        background: 'none', border: 'none', color: T.textDim, cursor: 'pointer',
-        fontSize: '14px', fontFamily: 'inherit', flexShrink: 0, padding: '0 2px',
-      }}>×</button>
-    </div>
-  );
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
 export default function FlightSelector({
-  // From inspire-input state
-  flightIntent,        // 'include' | 'own' | 'flexible'
-  originIata,          // e.g. 'LHR'
-  gatewayPreference,   // 'return' | 'open_jaw' | 'custom'
-  preferredArrivalGateway,   // e.g. 'JNB' or null
-  preferredDepartureGateway, // e.g. 'CPT' or null
-  travelDates,         // { start: '2026-07-01', end: '2026-07-14' }
+  flightIntent,                 // 'include' | 'own' | 'flexible'
+  originIata,                   // e.g. 'LHR'
+  gatewayPreference,            // 'return' | 'open_jaw' | 'custom'
+  preferredArrivalGateway,      // where itinerary STARTS (e.g. 'CPT')
+  preferredDepartureGateway,    // where itinerary ENDS (e.g. 'JNB') — quiet open-jaw
+  travelDates,                  // { start, end } — end derived from package nights
   passengers,
-  // Route reversal tip (calculated in page.tsx from INTERNAL_LEGS)
-  routeReversalResult, // { saving, reversed_city_order, is_cheaper }
-  // Callbacks
-  onFlightSelected,    // ({ offer, ancillaries, ancillary_total, open_jaw_used }) => void
-  onOwnFlightDetails,  // (details) => void
-  onDismissFlights,    // () => void — traveller skips flights
-  onAcceptRouteReversal, // (reversed_city_order) => void
-  // Display
-  currency,            // { code: 'USD', symbol: '$', rate: 18.62 }
-  fmt: fmtExternal,    // formatter from pricing.ts — use this if provided
+  routeReversalResult,
+  onFlightSelected,
+  onOwnFlightDetails,
+  onDismissFlights,
+  onAcceptRouteReversal,
+  currency,
+  fmt: fmtExternal,
 }) {
+  const T = {
+    gold:'#d4af37', goldLight:'#f0c040', goldDim:'rgba(212,175,55,0.1)', borderGold:'rgba(212,175,55,0.3)',
+    text:'#f5f0e8', textMid:'rgba(245,240,232,0.7)', textDim:'rgba(245,240,232,0.4)',
+    bg3:'rgba(255,255,255,0.05)', surface:'rgba(255,255,255,0.03)', border:'rgba(255,255,255,0.1)',
+    green:'#4ade80', blue:'#60a5fa',
+  };
 
-  const formatPrice = fmtExternal || ((zarAmount) => fmt(Math.round(zarAmount / (currency?.rate || 18.62)), currency?.code || 'USD'));
+  const passengerCount = Math.max(passengers || 1, 1);
+  const usdRate = currency?.rate || 18.62;
+  // Tiles show per-package price in the active display currency.
+  const fmtPrice = (usdPerPax) => {
+    const totalUsd = usdPerPax * passengerCount;
+    if (fmtExternal) return fmtExternal(totalUsd * usdRate); // page passes ZAR-formatter
+    return `${currency?.symbol || '$'}${Math.round(totalUsd).toLocaleString()}`;
+  };
 
-  const [step, setStep] = useState(() => {
-    if (flightIntent === 'flexible') return 'flexible';
-    if (flightIntent === 'own')      return 'own_details';
-    return 'search';
-  });
-
-  // Search state
-  const [arrivalGateway,   setArrivalGateway]   = useState(preferredArrivalGateway   || 'JNB');
-  const [departureGateway, setDepartureGateway] = useState(preferredDepartureGateway || 'JNB');
-  const [isOpenJaw,        setIsOpenJaw]        = useState(gatewayPreference === 'open_jaw');
-  const [depDate,          setDepDate]          = useState(travelDates?.start || '');
-  const [retDate,          setRetDate]          = useState(travelDates?.end   || '');
-  const [isReturn,         setIsReturn]         = useState(true);
-  const [cabinClass,       setCabinClass]       = useState('economy');
-
-  // Results state
-  const [offers,       setOffers]       = useState([]);
-  const [selectedOffer, setSelectedOffer] = useState(null);
-  const [loading,      setLoading]      = useState(false);
-  const [error,        setError]        = useState(null);
-  const [searchMeta,   setSearchMeta]   = useState(null);
-  const [clientKey,    setClientKey]    = useState(null);
-
-  // Open jaw tip state
-  const [openJawTip,       setOpenJawTip]       = useState(null);
+  // ── State ──
+  const [city,      setCity]      = useState(originIata || '');
+  const [depDate,   setDepDate]   = useState(travelDates?.start || '');
+  const [cabin,     setCabin]     = useState('economy');
+  const [offers,    setOffers]    = useState([]);
+  const [selected,  setSelected]  = useState(null);
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState(null);
+  const [clientKey, setClientKey] = useState(null);
   const [routeTipDismissed, setRouteTipDismissed] = useState(false);
-  const [openJawDismissed,  setOpenJawDismissed]  = useState(false);
 
-  // Own flight details state
-  const [ownDetails, setOwnDetails] = useState({
-    arrivalAirport:  'JNB',
-    arrivalDate:     travelDates?.start || '',
-    arrivalTime:     '',
-    departureAirport: 'JNB',
-    departureDate:   travelDates?.end   || '',
-    departureTime:   '',
-  });
+  // Own-flight details (when flightIntent === 'own')
+  const [own, setOwn] = useState({ arrivalAirport: preferredArrivalGateway || 'JNB', arrivalDate: travelDates?.start || '', arrivalTime: '', flightNo: '' });
 
-  // Ancillaries — populated by DuffelAncillaries component after flight selected
-  const [ancillaries,     setAncillaries]     = useState(null);
-  const [ancillaryTotal,  setAncillaryTotal]  = useState(0);
-  const [showAncillaries, setShowAncillaries] = useState(false);
+  // Return date derived from package nights = travelDates.end
+  const retDate = travelDates?.end || '';
+  // Arrival gateway = itinerary start; departure gateway = itinerary end (quiet open-jaw)
+  const arrivalGateway   = preferredArrivalGateway   || 'JNB';
+  const departureGateway = preferredDepartureGateway || arrivalGateway;
+  const isOpenJaw = departureGateway !== arrivalGateway;
 
-  const passengerCount = passengers || 2;
-
-  const handleSearch = async () => {
-    setLoading(true); setError(null); setOffers([]);
-
+  // ── Auto-search: fires on city, date, or cabin change ──
+  const runSearch = useCallback(async (cabinClass) => {
+    if (!city || !depDate) return;
+    setLoading(true); setError(null);
     try {
       const res = await fetch('/api/flights/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          origin:             originIata,
-          arrival_gateway:    arrivalGateway,
-          departure_gateway:  isOpenJaw ? departureGateway : arrivalGateway,
-          departure_date:     depDate,
-          return_date:        isReturn ? retDate : undefined,
-          passengers:         passengerCount,
-          cabin_class:        cabinClass,
-          is_open_jaw:        isOpenJaw,
+          origin: city,
+          arrival_gateway: arrivalGateway,
+          departure_gateway: departureGateway,
+          departure_date: depDate,
+          return_date: retDate || undefined,
+          passengers: passengerCount,
+          cabin_class: cabinClass || cabin,
+          is_open_jaw: isOpenJaw,
         }),
       });
-
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Failed to load flights'); return; }
-
-      setOffers(data.offers || []);
-      setSearchMeta(data);
+      if (!res.ok) { setError(data.error || 'Could not load flights'); setOffers([]); return; }
+      const tiles = data.offers || [];
+      setOffers(tiles);
       setClientKey(data.client_key);
-
-      // Check if open jaw is available and cheaper
-      // This fires only when we have real Duffel data
-      if (!isOpenJaw && data.offers?.length > 0 && arrivalGateway === 'JNB') {
-        // Silently check CPT departure option if arriving JNB
-        // (This would be a second Duffel call in production — stub for now)
-        // When implemented: compare total (flight + final transfer) for both options
-      }
-
-    } catch (err) {
-      setError('Something went wrong. Please try again.');
+      // Auto-select the recommended tile (first), else first tile
+      const rec = tiles.find(o => o.tile_label === 'recommended') || tiles[0] || null;
+      setSelected(rec);
+      if (rec) emitSelection(rec);
+    } catch {
+      setError('Something went wrong finding flights. Please try again.');
+      setOffers([]);
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city, depDate, retDate, passengerCount, cabin, arrivalGateway, departureGateway, isOpenJaw]);
+
+  // Fire search automatically when inputs are ready / change
+  useEffect(() => {
+    if (flightIntent === 'include' && city && depDate) runSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city, depDate, flightIntent]);
+
+  const emitSelection = (offer) => {
+    onFlightSelected && onFlightSelected({
+      offer,
+      ancillaries: null,
+      ancillary_total: 0,
+      open_jaw_used: isOpenJaw,
+      arrival_gateway: arrivalGateway,
+      departure_gateway: departureGateway,
+    });
   };
 
-  const handleConfirmFlight = () => {
-    if (!selectedOffer) return;
-    if (onFlightSelected) {
-      onFlightSelected({
-        offer:            selectedOffer,
-        ancillaries:      ancillaries,
-        ancillary_total:  ancillaryTotal,
-        open_jaw_used:    isOpenJaw,
-        arrival_gateway:  arrivalGateway,
-        departure_gateway: isOpenJaw ? departureGateway : arrivalGateway,
-      });
-    }
+  const handleSelect = (offer) => { setSelected(offer); emitSelection(offer); };
+
+  const handleUpgrade = () => {
+    const next = cabin === 'economy' ? 'business' : 'economy';
+    setCabin(next);
+    runSearch(next);
   };
 
-  const handleConfirmOwn = () => {
-    if (onOwnFlightDetails) onOwnFlightDetails(ownDetails);
-  };
+  // ─────────────────────────────────────────────────────────────────────────
+  // FLEXIBLE — no search; specialist sources fares later
+  // ─────────────────────────────────────────────────────────────────────────
+  if (flightIntent === 'flexible') {
+    return (
+      <div>
+        <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700, marginBottom:8 }}>✈ International flights</div>
+        <div style={{ background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'14px 16px', fontSize:13, color:T.textMid, lineHeight:1.6 }}>
+          Your Journey Specialist will source the best international fares once your travel dates are confirmed. Build the rest of your package now — flights slot in seamlessly.
+        </div>
+      </div>
+    );
+  }
 
-  const totalWithAncillaries = selectedOffer
-    ? (selectedOffer.display_price * passengerCount) + ancillaryTotal
-    : 0;
+  // ─────────────────────────────────────────────────────────────────────────
+  // OWN — traveller already booked; collect arrival details for onward logistics
+  // ─────────────────────────────────────────────────────────────────────────
+  if (flightIntent === 'own') {
+    return (
+      <div>
+        <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700, marginBottom:8 }}>✈ Your flights</div>
+        <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>Share your arrival details so we time your first transfer and lodge check-in perfectly.</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+          <Field label="Arriving into">
+            <select value={own.arrivalAirport} onChange={e => setOwn(o => ({ ...o, arrivalAirport: e.target.value }))} style={inputStyle(T)}>
+              <option value="JNB">Johannesburg (JNB)</option>
+              <option value="CPT">Cape Town (CPT)</option>
+              <option value="DUR">Durban (DUR)</option>
+            </select>
+          </Field>
+          <Field label="Arrival date">
+            <input type="date" value={own.arrivalDate} onChange={e => setOwn(o => ({ ...o, arrivalDate: e.target.value }))} style={inputStyle(T)} />
+          </Field>
+          <Field label="Arrival time">
+            <input type="time" value={own.arrivalTime} onChange={e => setOwn(o => ({ ...o, arrivalTime: e.target.value }))} style={inputStyle(T)} />
+          </Field>
+          <Field label="Flight number (optional)">
+            <input type="text" placeholder="e.g. BA 055" value={own.flightNo} onChange={e => setOwn(o => ({ ...o, flightNo: e.target.value }))} style={inputStyle(T)} />
+          </Field>
+        </div>
+        <button onClick={() => onOwnFlightDetails && onOwnFlightDetails(own)} style={btnGold(T)}>Save flight details →</button>
+      </div>
+    );
+  }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // INCLUDE — the main simplified flow
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily: "'DM Sans', Arial, sans-serif" }}>
+    <div>
+      <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700, marginBottom:10 }}>✈ International flights</div>
 
-      {/* Route reversal tip — fires immediately, uses real transfer cost data */}
-      {routeReversalResult?.is_cheaper && !routeTipDismissed && (
-        <OptimisationTip
-          icon="🔄"
-          text={`Reverse your route — start in ${routeReversalResult.reversed_city_order[0]} instead`}
-          saving={Math.round(routeReversalResult.saving / (currency?.rate || 18.62))}
-          currency={currency?.code || 'USD'}
-          onAccept={() => {
-            setRouteTipDismissed(true);
-            if (onAcceptRouteReversal) onAcceptRouteReversal(routeReversalResult.reversed_city_order);
-          }}
-          onDismiss={() => setRouteTipDismissed(true)}
-        />
-      )}
+      {/* Inputs: departure city + date. Return derives from nights. */}
+      <div style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:10, marginBottom:6 }}>
+        <Field label="Departure city">
+          <select value={city} onChange={e => setCity(e.target.value)} style={inputStyle(T)}>
+            <option value="">Select your city…</option>
+            {ORIGIN_CITIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Departure date">
+          <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} style={inputStyle(T)} />
+        </Field>
+      </div>
+      <div style={{ fontSize:10, color:T.textDim, marginBottom:14 }}>
+        Return {retDate ? `on ${new Date(retDate).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}` : ''} — set automatically from your {/* nights */}package length{isOpenJaw ? ` · flying home from ${departureGateway}` : ''}.
+      </div>
 
-      {/* Open jaw tip — fires only when real Duffel data confirms saving */}
-      {openJawTip && !openJawDismissed && (
-        <OptimisationTip
-          icon="✈"
-          text={`Fly home from ${openJawTip.departure_city} — open jaw saves you ${fmt(openJawTip.net_saving, currency?.code)}`}
-          saving={openJawTip.net_saving}
-          currency={currency?.code || 'USD'}
-          onAccept={() => {
-            setOpenJawDismissed(true);
-            setIsOpenJaw(true);
-            setDepartureGateway(openJawTip.departure_gateway);
-          }}
-          onDismiss={() => setOpenJawDismissed(true)}
-        />
-      )}
-
-      {/* ── FLEXIBLE DATES STATE ── */}
-      {step === 'flexible' && (
-        <div style={{
-          background: 'rgba(212,175,55,0.06)', border: `0.5px solid ${T.borderGold}`,
-          borderRadius: '12px', padding: '18px 20px',
-        }}>
-          <div style={{ fontSize: '11px', color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: '6px' }}>✦ International flights</div>
-          <div style={{ fontSize: '14px', color: T.text, fontWeight: 600, marginBottom: '8px' }}>Your Journey Specialist will find the best fares</div>
-          <div style={{ fontSize: '12px', color: T.textDim, lineHeight: 1.65 }}>
-            Once you confirm your travel window, your specialist will search for the best international fares and present options before your deposit is collected. International flights are not included in your package total until confirmed.
-          </div>
+      {/* Loading shimmer */}
+      {loading && (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {[0,1,2].map(i => (
+            <div key={i} style={{ height:84, borderRadius:12, background:'linear-gradient(90deg,rgba(255,255,255,0.03) 25%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.4s infinite' }} />
+          ))}
+          <div style={{ fontSize:12, color:T.gold, textAlign:'center', marginTop:4 }}>Finding your flights from {city}…</div>
+          <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
         </div>
       )}
 
-      {/* ── OWN FLIGHT DETAILS ── */}
-      {step === 'own_details' && (
-        <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: '12px', padding: '18px 20px' }}>
-          <div style={{ fontSize: '11px', color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: '14px' }}>Your arrival & departure details</div>
-          <div style={{ fontSize: '12px', color: T.textDim, marginBottom: '16px', lineHeight: 1.6 }}>
-            Share your flight details so we can plan your lodges, transfers and game drive timings around your schedule.
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div>
-              <label style={label}>Arriving into</label>
-              <select value={ownDetails.arrivalAirport} onChange={e => setOwnDetails(p => ({ ...p, arrivalAirport: e.target.value }))} style={select}>
-                {SA_GATEWAYS.map(g => <option key={g.iata} value={g.iata}>{g.iata} — {g.city}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={label}>Arrival date</label>
-              <input type="date" value={ownDetails.arrivalDate} onChange={e => setOwnDetails(p => ({ ...p, arrivalDate: e.target.value }))} style={input} />
-            </div>
-            <div>
-              <label style={label}>Arrival time</label>
-              <input type="time" value={ownDetails.arrivalTime} onChange={e => setOwnDetails(p => ({ ...p, arrivalTime: e.target.value }))} style={input} />
-            </div>
-            <div>
-              <label style={label}>Departing from</label>
-              <select value={ownDetails.departureAirport} onChange={e => setOwnDetails(p => ({ ...p, departureAirport: e.target.value }))} style={select}>
-                {SA_GATEWAYS.map(g => <option key={g.iata} value={g.iata}>{g.iata} — {g.city}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={label}>Departure date</label>
-              <input type="date" value={ownDetails.departureDate} onChange={e => setOwnDetails(p => ({ ...p, departureDate: e.target.value }))} style={input} />
-            </div>
-            <div>
-              <label style={label}>Departure time</label>
-              <input type="time" value={ownDetails.departureTime} onChange={e => setOwnDetails(p => ({ ...p, departureTime: e.target.value }))} style={input} />
-            </div>
-          </div>
-          <button
-            onClick={handleConfirmOwn}
-            disabled={!ownDetails.arrivalDate || !ownDetails.departureDate}
-            style={{
-              marginTop: '16px', background: T.gold, color: '#0a0a0a', border: 'none',
-              borderRadius: '8px', padding: '11px 24px', fontFamily: 'inherit',
-              fontSize: '12px', letterSpacing: '0.1em', textTransform: 'uppercase',
-              cursor: 'pointer', fontWeight: 700,
-              opacity: (!ownDetails.arrivalDate || !ownDetails.departureDate) ? 0.4 : 1,
-            }}
-          >
-            Save flight details →
-          </button>
+      {/* Error */}
+      {!loading && error && (
+        <div style={{ background:'rgba(248,113,113,0.07)', border:'0.5px solid rgba(248,113,113,0.25)', borderRadius:10, padding:'12px 14px', fontSize:12, color:'rgba(248,113,113,0.9)' }}>
+          {error} {city && depDate && <button onClick={() => runSearch()} style={{ marginLeft:8, color:T.gold, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', textDecoration:'underline' }}>Retry</button>}
         </div>
       )}
 
-      {/* ── SEARCH FORM ── */}
-      {step === 'search' && (
-        <div>
-          <div style={{ fontSize: '11px', color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: '14px' }}>✈ International flights from {originIata}</div>
-
-          {/* Trip type */}
-          <div style={{ display: 'flex', gap: '0', marginBottom: '16px', border: `0.5px solid ${T.border}`, borderRadius: '8px', overflow: 'hidden', width: 'fit-content' }}>
-            {[{ val: true, label: 'Return' }, { val: false, label: 'One way' }].map(opt => (
-              <button key={String(opt.val)} onClick={() => setIsReturn(opt.val)} style={{
-                padding: '7px 18px', background: isReturn === opt.val ? T.goldDim : 'transparent',
-                border: 'none', color: isReturn === opt.val ? T.gold : T.textDim,
-                fontFamily: 'inherit', fontSize: '11px', letterSpacing: '0.08em',
-                cursor: 'pointer', textTransform: 'uppercase',
-              }}>{opt.label}</button>
-            ))}
-          </div>
-
-          {/* Gateway routing */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={label}>Gateway routing</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-              {[
-                { val: false, label: 'Return — same airport in and out', sub: 'e.g. LHR → JNB → LHR' },
-                { val: true,  label: 'Open jaw — system finds cheapest combination', sub: 'e.g. LHR → JNB … CPT → LHR  (saves on final transfer)' },
-              ].map(opt => (
-                <button key={String(opt.val)} onClick={() => setIsOpenJaw(opt.val)} style={{
-                  padding: '10px 14px', borderRadius: '8px', textAlign: 'left',
-                  border: `1px solid ${isOpenJaw === opt.val ? T.gold : T.border}`,
-                  background: isOpenJaw === opt.val ? T.goldDim : 'transparent',
-                  cursor: 'pointer', fontFamily: 'inherit',
-                }}>
-                  <div style={{ fontSize: '13px', color: isOpenJaw === opt.val ? T.gold : T.text }}>{opt.label}</div>
-                  <div style={{ fontSize: '10px', color: T.textDim, marginTop: '2px' }}>{opt.sub}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-            <div>
-              <label style={label}>Arriving into</label>
-              <select value={arrivalGateway} onChange={e => setArrivalGateway(e.target.value)} style={select}>
-                {SA_GATEWAYS.map(g => <option key={g.iata} value={g.iata}>{g.iata} — {g.city}</option>)}
-              </select>
-            </div>
-            {isOpenJaw && (
-              <div>
-                <label style={label}>Flying home from</label>
-                <select value={departureGateway} onChange={e => setDepartureGateway(e.target.value)} style={select}>
-                  {SA_GATEWAYS.map(g => <option key={g.iata} value={g.iata}>{g.iata} — {g.city}</option>)}
-                </select>
-              </div>
-            )}
-            <div>
-              <label style={label}>Departure date</label>
-              <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} style={input} />
-            </div>
-            {isReturn && (
-              <div>
-                <label style={label}>Return date</label>
-                <input type="date" value={retDate} onChange={e => setRetDate(e.target.value)} style={input} />
-              </div>
-            )}
-            <div>
-              <label style={label}>Cabin class</label>
-              <select value={cabinClass} onChange={e => setCabinClass(e.target.value)} style={select}>
-                {CABIN_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Cabin upgrade image */}
-          {CABIN_IMAGES[cabinClass] && (
-            <div style={{ marginBottom: '14px', borderRadius: '8px', overflow: 'hidden', height: '120px', position: 'relative' }}>
-              <img src={CABIN_IMAGES[cabinClass]} alt={cabinClass} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.5) 0%, transparent 60%)' }} />
-              <div style={{ position: 'absolute', bottom: '10px', left: '14px' }}>
-                <div style={{ fontSize: '11px', color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
-                  {CABIN_OPTIONS.find(c => c.value === cabinClass)?.label}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={handleSearch}
-            disabled={!depDate || (isReturn && !retDate)}
-            style={{
-              background: T.gold, color: '#0a0a0a', border: 'none', borderRadius: '8px',
-              padding: '12px 28px', fontFamily: 'inherit', fontSize: '12px',
-              letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer',
-              fontWeight: 700, opacity: (!depDate || (isReturn && !retDate)) ? 0.4 : 1,
-            }}
-          >
-            Search flights →
-          </button>
+      {/* Empty prompt before a city is chosen */}
+      {!loading && !error && offers.length === 0 && (
+        <div style={{ fontSize:12, color:T.textDim, padding:'8px 2px' }}>
+          {city ? 'No flights found for these dates — try adjusting your departure date.' : 'Select your departure city and we’ll find your flights automatically.'}
         </div>
       )}
 
-      {/* ── RESULTS ── */}
-      {step === 'search' && (loading || offers.length > 0 || error) && (
-        <div style={{ marginTop: '20px' }}>
-          {loading && (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={{
-                width: '28px', height: '28px', border: `1px solid rgba(212,175,55,0.3)`,
-                borderTop: `1px solid ${T.gold}`, borderRadius: '50%',
-                animation: 'spin 1s linear infinite', margin: '0 auto 12px',
-              }} />
-              <div style={{ fontSize: '12px', color: T.textDim }}>Searching all carriers…</div>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            </div>
-          )}
+      {/* Three tiles — recommended first */}
+      {!loading && offers.length > 0 && (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {offers.map(offer => (
+            <FlightTile key={offer.id} offer={offer} selected={selected?.id === offer.id} onSelect={() => handleSelect(offer)} fmtPrice={fmtPrice} cabin={cabin} T={T} />
+          ))}
 
-          {error && (
-            <div style={{ padding: '14px', background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', borderRadius: '8px', fontSize: '12px', color: 'rgba(248,113,113,0.85)' }}>
-              {error}
-            </div>
-          )}
-
-          {!loading && offers.length > 0 && (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ fontSize: '11px', color: T.textDim }}>
-                  {offers.length} option{offers.length !== 1 ? 's' : ''} · sorted by price
-                </span>
-                {searchMeta?.total_offers_available > offers.length && (
-                  <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.2)' }}>
-                    Best {offers.length} of {searchMeta.total_offers_available}
-                  </span>
-                )}
-              </div>
-
-              {offers.map(offer => (
-                <FlightCard
-                  key={offer.id}
-                  offer={offer}
-                  isSelected={selectedOffer?.id === offer.id}
-                  onSelect={setSelectedOffer}
-                  passengers={passengerCount}
-                />
-              ))}
-            </>
-          )}
-
-          {/* Confirmation bar */}
-          {selectedOffer && !loading && (
-            <div style={{
-              marginTop: '16px', padding: '16px 18px',
-              background: 'rgba(212,175,55,0.06)', border: `0.5px solid ${T.borderGold}`,
-              borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
-            }}>
-              <div>
-                <div style={{ fontSize: '11px', color: T.textDim, marginBottom: '3px' }}>
-                  {passengerCount} passenger{passengerCount !== 1 ? 's' : ''} · paid in full at booking
-                </div>
-                <div style={{ fontSize: '20px', fontFamily: "'Playfair Display',serif", color: T.gold, lineHeight: 1 }}>
-                  {fmt(totalWithAncillaries, selectedOffer.currency)} total
-                </div>
-                {ancillaryTotal > 0 && (
-                  <div style={{ fontSize: '10px', color: T.textDim, marginTop: '2px' }}>
-                    Flights {fmt(selectedOffer.display_price * passengerCount, selectedOffer.currency)} + extras {fmt(ancillaryTotal, selectedOffer.currency)}
-                  </div>
-                )}
-                <div style={{ fontSize: '10px', color: 'rgba(248,113,113,0.6)', marginTop: '2px' }}>
-                  Non-refundable · full payment at booking
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
-                <button
-                  onClick={handleConfirmFlight}
-                  style={{
-                    background: T.gold, color: '#0a0a0a', border: 'none', borderRadius: '8px',
-                    padding: '11px 20px', fontFamily: 'inherit', fontSize: '12px',
-                    letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', fontWeight: 700,
-                  }}
-                >
-                  Add to package →
-                </button>
-                <button
-                  onClick={() => setShowAncillaries(v => !v)}
-                  style={{
-                    background: 'none', border: `0.5px solid ${T.border}`, color: T.textDim,
-                    borderRadius: '8px', padding: '7px 12px', fontFamily: 'inherit',
-                    fontSize: '11px', cursor: 'pointer', textAlign: 'center',
-                  }}
-                >
-                  {showAncillaries ? '↑ Hide seats & bags' : '+ Select seats & bags'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* DuffelAncillaries component mount point */}
-          {showAncillaries && selectedOffer && clientKey && (
-            <div style={{ marginTop: '12px', padding: '16px', background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: '10px' }}>
-              <div style={{ fontSize: '11px', color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: '12px' }}>
-                Seats & baggage
-              </div>
-              {/* DuffelAncillaries renders here — requires @duffel/components installed */}
-              {/* 
-                <DuffelAncillaries
-                  offer={selectedOffer}
-                  seat_maps={seatMaps}
-                  services={["bags", "seats"]}
-                  passengers={selectedOffer.passengers}
-                  styles={{ accentColor: "212,175,55", buttonCornerRadius: "8px" }}
-                  onPayloadReady={(payload, metadata) => {
-                    setAncillaries(payload);
-                    const total = metadata.reduce((s, m) => s + (m.total?.amount || 0), 0);
-                    setAncillaryTotal(total);
-                  }}
-                />
-              */}
-              <div style={{ fontSize: '12px', color: T.textDim, lineHeight: 1.6 }}>
-                Seat selection and additional baggage options load here once <code style={{ color: T.gold }}>@duffel/components</code> is installed and the package.json commit deploys.
-              </div>
-            </div>
-          )}
+          {/* Two buttons under the tiles */}
+          <div style={{ display:'flex', gap:10, marginTop:6 }}>
+            <button onClick={handleUpgrade} style={{ flex:1, padding:'12px 0', borderRadius:10, border:`1.5px solid ${T.borderGold}`, background:cabin==='business' ? T.goldDim : 'transparent', color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600 }}>
+              {cabin === 'business' ? '✓ Business class' : '✦ Upgrade to Business'}
+            </button>
+            <button onClick={() => onDismissFlights && onDismissFlights()} style={{ flex:1, padding:'12px 0', borderRadius:10, border:`1px solid ${T.border}`, background:'transparent', color:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:13 }}>
+              I’ll book my own flights
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
+}
+
+// ── Single flight tile ──
+function FlightTile({ offer, selected, onSelect, fmtPrice, cabin, T }) {
+  const meta = TILE_META[offer.tile_label] || TILE_META.option;
+  const out = offer.slices?.[0];
+  const carrier = out?.segments?.[0]?.carrier_name || out?.segments?.[0]?.operating_carrier_name || 'Airline';
+  const logo = out?.segments?.[0]?.carrier_logo;
+  const stops = (offer.slices || []).reduce((s, sl) => s + (sl.stops || 0), 0);
+  return (
+    <div onClick={onSelect} style={{ borderRadius:12, border:`1.5px solid ${selected ? meta.color : T.border}`, background:selected ? `${meta.color}10` : T.surface, cursor:'pointer', padding:'12px 14px', transition:'border-color 0.2s, background 0.2s' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em', color:meta.color, background:`${meta.color}1a`, border:`0.5px solid ${meta.color}55`, borderRadius:20, padding:'2px 9px' }}>{meta.label}</span>
+          {selected && <span style={{ fontSize:9, fontWeight:800, color:'#0a0a0a', background:meta.color, borderRadius:20, padding:'2px 8px' }}>✓ Selected</span>}
+        </div>
+        <div style={{ textAlign:'right' }}>
+          <div style={{ fontSize:17, fontWeight:700, color:selected ? meta.color : T.text, fontFamily:"'Playfair Display',serif" }}>{fmtPrice(offer.display_price)}</div>
+          <div style={{ fontSize:9, color:T.textDim }}>total · {cabin === 'business' ? 'business' : 'economy'}</div>
+        </div>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        {logo && <img src={logo} alt={carrier} style={{ width:20, height:20, objectFit:'contain', borderRadius:4, background:'#fff', padding:1 }} />}
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:12, color:T.textMid }}>{carrier}</div>
+          <div style={{ fontSize:11, color:T.textDim }}>
+            {formatTime(out?.departure_datetime)} → {formatTime(out?.arrival_datetime)} · {formatDuration(offer.total_duration_minutes)} · {stops === 0 ? 'Direct' : `${stops} stop${stops>1?'s':''}`}
+          </div>
+        </div>
+        <div style={{ fontSize:10, color:T.textDim }}>{meta.sub}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Small helpers ──
+function Field({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize:10, color:'rgba(245,240,232,0.4)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600, marginBottom:5 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+function inputStyle(T) {
+  return { width:'100%', background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'10px 12px', fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box' };
+}
+function btnGold(T) {
+  return { width:'100%', marginTop:14, padding:'13px 0', background:`linear-gradient(135deg,${T.gold},${T.goldLight})`, border:'none', borderRadius:10, color:'#0a0a0a', fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'inherit' };
 }
