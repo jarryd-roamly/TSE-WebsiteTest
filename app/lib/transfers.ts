@@ -12,14 +12,21 @@ export type Currency2 = 'ZAR'|'USD';
 export type LastMile = {
   mode: 'fedair'|'mackair'|'wilderness'|'road'|'charter'|'none';
   label: string;
-  fromAirport: AirportCode;
-  fare: number;            // per-person unless perCharter=true
+  fromAirport: AirportCode;   // the airport the COMMERCIAL leg must target for this option
+  fare: number;               // per-person unless perCharter=true
   currency: Currency2;
   durationMin: number;
-  perCharter?: boolean;    // flat fare for the whole party (charters)
+  perCharter?: boolean;       // flat fare for the whole party (charters)
   recommended?: boolean;
   note?: string;
 };
+
+// INVARIANT enforced across this module:
+//   For ANY chosen last-mile option, the commercial flight leg MUST target
+//   option.fromAirport. The two are a bound pair — never price a commercial leg
+//   to a different airport than the selected last-mile starts from, or you
+//   double-count (e.g. commercial→SZK + a JNB-direct hop) or leave a gap.
+//   Use commercialTargetForOption(option) to get the correct commercial target.
 
 // ── PER-PROPERTY LAST-MILE (Kruger only — different airports per lodge) ──────
 // Keyed by exact supplier name. Each lodge lists its airport options.
@@ -139,10 +146,31 @@ export function lastMileZar(lm: LastMile, usdToZar: number, pax: number): number
   return lm.perCharter ? Math.round(base) : Math.round(base * pax);
 }
 
-// Which commercial airport should the Duffel leg target for this lodge?
-// Picks the recommended last-mile's fromAirport (so flight + last-mile align).
-export function commercialTargetAirport(propertyName: string, regionSlug: string): AirportCode | null {
+// The commercial leg target is ALWAYS the chosen last-mile's fromAirport.
+// This is the single source of truth that prevents flight/last-mile mismatch.
+export function commercialTargetForOption(option: LastMile): AirportCode {
+  return option.fromAirport;
+}
+
+// Default commercial target for a lodge = its RECOMMENDED last-mile's airport.
+// Used to pre-search the Duffel leg before the traveller changes the last-mile.
+export function defaultCommercialTarget(propertyName: string, regionSlug: string): AirportCode | null {
   const lm = lastMileFor(propertyName, regionSlug);
   const rec = lm.find(l => l.recommended) ?? lm[0];
   return rec ? rec.fromAirport : (REGION_COMMERCIAL_AIRPORTS[regionSlug]?.[0] ?? null);
+}
+
+// A complete priced transfer = commercial leg (to option.fromAirport) + this last-mile.
+// The caller supplies the commercial fare (from Duffel/estimate) to that airport;
+// this helper just enforces the pairing and sums correctly.
+export function priceTransfer(option: LastMile, commercialFareZar: number, usdToZar: number, pax: number): {
+  commercialZar: number; lastMileZar: number; totalZar: number; targetAirport: AirportCode;
+} {
+  const lm = lastMileZar(option, usdToZar, pax);
+  return {
+    commercialZar: Math.round(commercialFareZar),
+    lastMileZar: lm,
+    totalZar: Math.round(commercialFareZar) + lm,
+    targetAirport: option.fromAirport,
+  };
 }
