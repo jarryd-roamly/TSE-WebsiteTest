@@ -2188,6 +2188,16 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                     setArrivalAirport(details.arrivalAirport);
                     setArrivalTime(details.arrivalTime);
                   }}
+                  onDismissFlights={() => {
+                    // Traveller chose "I'll book my own flights" — clear the selected
+                    // Duffel offer (drops it from the package total) and switch the
+                    // panel to the arrival-details form.
+                    setSelectedFlightOffer(null);
+                    setFlightAncillaryTotal(0);
+                    setFlightIntent('own');
+                    setIncludeIntlFlight(false);
+                    setNeedsIntlFlight(false);
+                  }}
                   onAcceptRouteReversal={(reversedOrder:string[]) => {
                     if (!itinerary) return;
                     const reversedCities = reversedOrder.map(cityName => itinerary.cities.find(c => c.city === cityName)).filter(Boolean) as ItineraryCity[];
