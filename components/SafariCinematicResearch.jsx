@@ -68,8 +68,8 @@ const REGION_CLIPS = {
     { video_id: 'Bz5TuUsXPpw', start: 28,  end: 38,  accent: '#8FC4D4', name: 'Victoria Falls',  country: 'Zimbabwe',     tagline: 'The smoke that thunders',              stat: '108m',      statLabel: 'of pure vertical power' },
   ],
   'cape-town':     [
-    { video_id: 'T0PvQ4ilQW8', start: 8,   end: 18,  accent: '#B8C4A0', name: 'Cape Town',       country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
-    { video_id: 'T0PvQ4ilQW8', start: 25,  end: 35,  accent: '#B8C4A0', name: 'Cape Town',       country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
+    { video_id: 'kN6f4qSMy8A', start: 10,  end: 25,  accent: '#B8C4A0', name: 'Cape Town',       country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
+    { video_id: 'kN6f4qSMy8A', start: 45,  end: 60,  accent: '#B8C4A0', name: 'Cape Town',       country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
   ],
   'madikwe':       [
     { video_id: 'PwidugulKtU', start: 5,   end: 15,  accent: '#C8A96E', name: 'Madikwe',         country: 'South Africa', tagline: 'Big Five. Malaria-free. Unforgettable', stat: '75,000',   statLabel: 'hectares of wilderness' },
@@ -179,15 +179,32 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
 
   // ── Cleanup on unmount
   useEffect(() => {
-    return () => timers.current.forEach(clearTimeout);
+    return () => {
+      timers.current.forEach(clearTimeout);
+      if (reloadTimerRef.current) clearInterval(reloadTimerRef.current);
+    };
   }, []);
 
   // ── Load clip into frame
+  // Reload timer ref — clears previous timer when switching clips
+  const reloadTimerRef = useRef(null);
+
   const loadClip = useCallback((clipIndex, frame) => {
     const clip = clips[clipIndex];
     if (!clip) return;
     const ifr = frame === 'A' ? ifrARef.current : ifrBRef.current;
     if (ifr) ifr.src = ytSrc(clip);
+
+    // Reload the src just before end= is reached to prevent YouTube pause state
+    // YouTube shows controls when paused — this keeps it perpetually playing
+    if (reloadTimerRef.current) clearInterval(reloadTimerRef.current);
+    const clipDurationMs = ((clip.end || (clip.start + 15)) - (clip.start || 0)) * 1000;
+    const reloadInterval = Math.max(clipDurationMs - 800, 1000);
+    reloadTimerRef.current = setInterval(() => {
+      if (ifr && document.contains(ifr)) {
+        ifr.src = ytSrc(clip);
+      }
+    }, reloadInterval);
   }, [clips]);
 
   // ── Cross-fade to next clip
