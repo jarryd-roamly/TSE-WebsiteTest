@@ -686,7 +686,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
                 allowFullScreen={false}
                 title="region-A"
               />
-              <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent', pointerEvents:'all' }} />
+              <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
             </div>
             <div className={`scr-vid-frame ${activeFrame === 'B' ? 'show' : ''}`}>
               <iframe
@@ -695,7 +695,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
                 allowFullScreen={false}
                 title="region-B"
               />
-              <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent', pointerEvents:'all' }} />
+              <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
             </div>
           </div>
 
