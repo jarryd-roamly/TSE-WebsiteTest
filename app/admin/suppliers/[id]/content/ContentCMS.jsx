@@ -1,48 +1,40 @@
 'use client';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// THE TRAVEL CATALOGUE — ContentCMS.jsx
-// Supplier Media Manager · v1.0
+// THE TRAVEL CATALOGUE — ContentCMS.jsx  v2.0
+// Supplier Media Manager — Tabbed Architecture
 //
-// PURPOSE:
-//   Allows TSE admins (and, when unlocked, suppliers) to:
-//   1. Drag-reorder images/reels in the media library
-//   2. Set which asset is the HERO (first tile shown in the carousel)
-//   3. Toggle hero type: Image | Video | Reel
-//   4. See a pixel-accurate LIVE PREVIEW of:
-//      a) Small tile  — how the card looks in the nested peeking carousel
-//      b) Big tile    — how the UpgradeSheet header renders for the traveller
-//   5. Link a KB specialist note to a specific image
-//   6. Save changes back to Supabase
-//   7. Admin-only: lock the media order so suppliers can't change it
+// TABS:
+//   Overview   — hero type selector · content score · slide order
+//   Gallery    — drag-drop image upload · reorder · inline edit
+//   Reels      — YouTube clip editor (dual-handle, speed, preview)
+//   Rooms      — per room_type: image gallery + reel + YouTube clip
+//   Activities — per activity: image slider + reel + drag-drop
 //
-// USAGE:
-//   <ContentCMS supplierId="uuid-here" isAdmin={true} />
-//
-// SUPABASE COLUMNS REQUIRED (run migration in CMS_MEDIA_SPEC.md first):
-//   suppliers.hero_type          TEXT  DEFAULT 'image'
-//   suppliers.media_order_locked BOOLEAN DEFAULT false
-//   images JSONB objects need: display_order, is_video_hero, kb_note_id
+// ROUTES:
+//   <ContentCMS supplierId="uuid" isAdmin={true} />
+//   Placed at: app/admin/suppliers/[id]/content/ContentCMS.jsx
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
-// ─── Theme — mirrors page.tsx T object ───────────────────────────────────────
+// ─── Theme ───────────────────────────────────────────────────────────────────
 const T = {
-  bg:        '#0a0a0a',
-  surface:   '#141414',
-  bg3:       '#1e1e1e',
-  border:    'rgba(255,255,255,0.1)',
-  borderGold:'rgba(212,175,55,0.35)',
-  text:      '#f5f0e8',
-  textMid:   'rgba(245,240,232,0.65)',
-  textDim:   'rgba(245,240,232,0.35)',
-  gold:      '#d4af37',
-  goldLight: '#f0c040',
-  goldDim:   'rgba(212,175,55,0.12)',
-  green:     '#4ade80',
-  amber:     '#fbbf24',
-  red:       '#f87171',
+  bg:         '#0a0a0a',
+  surface:    '#141414',
+  bg3:        '#1e1e1e',
+  border:     'rgba(255,255,255,0.1)',
+  borderGold: 'rgba(212,175,55,0.35)',
+  text:       '#f5f0e8',
+  textMid:    'rgba(245,240,232,0.65)',
+  textDim:    'rgba(245,240,232,0.35)',
+  gold:       '#d4af37',
+  goldLight:  '#f0c040',
+  goldDim:    'rgba(212,175,55,0.12)',
+  green:      '#4ade80',
+  amber:      '#fbbf24',
+  red:        '#f87171',
+  blue:       '#60a5fa',
 };
 
 const GLOBAL_CSS = `
@@ -60,259 +52,51 @@ const GLOBAL_CSS = `
   .fade-in { animation: fadeIn 0.25s ease; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
   .saving { animation: pulse 1s ease infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
 `;
 
-// ─── Supabase client helper ───────────────────────────────────────────────────
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
 function createSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
+  const h = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+
   return {
-    async fetchSupplier(id) {
-      const res = await fetch(
-        `${url}/rest/v1/suppliers?id=eq.${id}&select=*&limit=1`,
-        { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-      );
-      if (!res.ok) throw new Error(`Supabase ${res.status}`);
+    async fetch1(table, filter) {
+      const res = await fetch(`${url}/rest/v1/${table}?${filter}&limit=1`, { headers: h });
+      if (!res.ok) throw new Error(`${table} fetch ${res.status}`);
       const rows = await res.json();
       return rows[0] ?? null;
     },
-    async updateSupplier(id, patch) {
-      const res = await fetch(
-        `${url}/rest/v1/suppliers?id=eq.${id}`,
-        {
-          method: 'PATCH',
-          headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify(patch),
-        }
-      );
-      if (!res.ok) throw new Error(`Supabase PATCH ${res.status}`);
+    async fetchMany(table, filter) {
+      const res = await fetch(`${url}/rest/v1/${table}?${filter}`, { headers: h });
+      if (!res.ok) throw new Error(`${table} fetchMany ${res.status}`);
+      return res.json();
+    },
+    async patch(table, filter, patch) {
+      const res = await fetch(`${url}/rest/v1/${table}?${filter}`, {
+        method: 'PATCH',
+        headers: { ...h, Prefer: 'return=minimal' },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error(`${table} PATCH ${res.status}`);
+    },
+    async uploadFile(supplierId, file, isAdmin) {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('supplier_id', supplierId);
+      fd.append('media_type', 'images');
+      fd.append('caption', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80));
+      fd.append('uploaded_by', isAdmin ? 'admin' : 'supplier');
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error(await res.text().catch(() => `Status ${res.status}`));
+      return res.json();
     },
   };
 }
 
-// ─── buildSlides — mirrors page.tsx logic exactly ─────────────────────────────
-function buildSlides(supplier, localImages, heroType, localReels) {
-  const ht = heroType ?? supplier?.hero_type ?? 'image';
-  // Use first saved reel if available, otherwise fall back to reel_url column
-  const firstReel = (localReels ?? []).find(r => r.source === 'youtube' && r.video_id);
-  const reelUrl = firstReel
-    ? `https://www.youtube.com/embed/${firstReel.video_id}?start=${Math.round(firstReel.start)}&end=${Math.round(firstReel.end)}&autoplay=1&mute=1&loop=1&playlist=${firstReel.video_id}`
-    : supplier?.reel_url ?? supplier?.video_url ?? null;
-  const heroImageUrl = supplier?._primaryUrl ?? supplier?.image ?? null;
-
-  const slides = [];
-
-  if ((ht === 'video' || ht === 'reel') && reelUrl) {
-    slides.push({ type: ht, url: reelUrl, poster: heroImageUrl, label: ht === 'reel' ? 'Hero Reel' : 'Hero Video', display_order: 0 });
-    if (heroImageUrl) slides.push({ type: 'image', url: heroImageUrl, label: 'Hero Image', display_order: 1 });
-  } else {
-    if (heroImageUrl) slides.push({ type: 'image', url: heroImageUrl, label: 'Hero Image', display_order: 0 });
-    if (reelUrl) slides.push({ type: ht === 'reel' ? 'reel' : 'video', url: reelUrl, poster: heroImageUrl, label: 'Reel', display_order: 1 });
-  }
-
-  // Additional images sorted by display_order
-  const extras = (localImages ?? [])
-    .filter(img => img.status === 'approved' && img.url && img.url !== heroImageUrl)
-    .sort((a, b) => (a.display_order ?? 99) - (b.display_order ?? 99));
-
-  extras.forEach(img => {
-    if (!slides.find(s => s.url === img.url)) {
-      slides.push({ ...img, type: 'image' });
-    }
-  });
-
-  const seen = new Set();
-  return slides.filter(s => { if (seen.has(s.url)) return false; seen.add(s.url); return true; });
-}
-
-// ─── SMALL TILE PREVIEW ───────────────────────────────────────────────────────
-// Pixel-accurate simulation of the NestedPropertyCarousel card
-function SmallTilePreview({ supplier, slides, activeSlideIdx, onSlideChange }) {
-  const slide = slides[activeSlideIdx] ?? slides[0];
-  const name = supplier?.name ?? 'Property Name';
-  const destination = supplier?.destination ?? supplier?.region_slug ?? '';
-  const trustScore = supplier?.trust_score ?? 85;
-  const nights = 4; // display only
-
-  return (
-    <div style={{ width: '100%', maxWidth: 360, borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${T.gold}`, background: T.surface, position: 'relative' }}>
-      {/* Selected badge */}
-      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 5, background: T.gold, color: '#0a0a0a', fontSize: 9, fontWeight: 800, padding: '3px 10px', borderRadius: 20, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Selected</div>
-
-      {/* Image area */}
-      <div style={{ position: 'relative', height: 200, overflow: 'hidden', background: '#111' }}>
-        {slide ? (
-          slide.type === 'reel' || slide.type === 'video'
-            ? <video src={slide.url} poster={slide.poster} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <img src={slide.url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <div style={{ width: '100%', height: '100%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, fontSize: 12 }}>No image</div>
-        )}
-        {/* Gradient */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(0,0,0,0.78) 0%,transparent 50%)' }} />
-
-        {/* Inner image arrows */}
-        {activeSlideIdx > 0 && (
-          <button onClick={() => onSlideChange(activeSlideIdx - 1)} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.55)', border: '0.5px solid rgba(255,255,255,0.2)', color: '#fff', width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, fontFamily: 'inherit' }}>‹</button>
-        )}
-        {activeSlideIdx < slides.length - 1 && (
-          <button onClick={() => onSlideChange(activeSlideIdx + 1)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.55)', border: '0.5px solid rgba(255,255,255,0.2)', color: '#fff', width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, fontFamily: 'inherit' }}>›</button>
-        )}
-
-        {/* Dots */}
-        {slides.length > 1 && (
-          <div style={{ position: 'absolute', bottom: 42, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 3 }}>
-            {slides.map((_, i) => (
-              <div key={i} onClick={() => onSlideChange(i)} style={{ width: i === activeSlideIdx ? 14 : 4, height: 4, borderRadius: 2, background: i === activeSlideIdx ? T.gold : 'rgba(255,255,255,0.35)', cursor: 'pointer', transition: 'all 0.2s' }} />
-            ))}
-          </div>
-        )}
-
-        {/* Reel badge */}
-        {(slide?.type === 'reel' || slide?.type === 'video') && (
-          <div style={{ position: 'absolute', bottom: 44, left: 10, fontSize: 9, color: 'rgba(255,255,255,0.65)', background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 6px' }}>▶ {slide.type === 'reel' ? 'Reel' : 'Video'}</div>
-        )}
-
-        {/* TSE Diamond */}
-        <div title="KB note indicator" style={{ position: 'absolute', top: 10, right: 44, zIndex: 8 }}>
-          <div style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#c8a020,#f0c840)', transform: 'rotate(45deg)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ transform: 'rotate(-45deg)', fontSize: 10, color: '#0a0a0a', fontWeight: 900 }}>✦</span>
-          </div>
-        </div>
-
-        {/* ? button */}
-        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, width: 26, height: 26, borderRadius: '50%', background: 'rgba(96,165,250,0.22)', border: '1.5px solid rgba(96,165,250,0.6)', color: '#93c5fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>?</div>
-
-        {/* Name + price overlay */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px 12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: '#fff', lineHeight: 1.2 }}>{name}</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>{destination} · ★ {trustScore}/100</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', background: 'rgba(0,0,0,0.35)', borderRadius: 6, padding: '2px 7px' }}>{nights}n selected</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tile body */}
-      <div style={{ padding: '10px 12px 12px' }}>
-        {supplier?.short_tagline && (
-          <div style={{ fontSize: 11, color: T.textDim, background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 8, padding: '5px 10px', marginBottom: 8, lineHeight: 1.5 }}>✦ {supplier.short_tagline.slice(0, 80)}</div>
-        )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div style={{ padding: '9px 0', borderRadius: 9, border: `1.5px solid ${T.gold}`, background: T.goldDim, color: T.gold, fontSize: 11, fontWeight: 700, textAlign: 'center' }}>✓ Selected</div>
-          <div style={{ padding: '9px 0', borderRadius: 9, border: `1px solid ${T.borderGold}`, background: T.goldDim, color: T.gold, fontSize: 11, fontWeight: 600, textAlign: 'center' }}>Upgrade / Personalise</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── BIG TILE PREVIEW ─────────────────────────────────────────────────────────
-// Simulates the UpgradeSheet header — hero carousel + name + price + room images
-function BigTilePreview({ supplier, slides, activeSlideIdx, onSlideChange }) {
-  const slide = slides[activeSlideIdx] ?? slides[0];
-  const name = supplier?.name ?? 'Property Name';
-  const destination = supplier?.destination ?? supplier?.region_slug ?? '';
-  const country = supplier?.country ?? '';
-  const netRate = supplier?.net_rate_per_night ?? 25000;
-  const trustScore = supplier?.trust_score ?? 85;
-  const otaRate = supplier?.ota_rate_per_night;
-  const displayRate = Math.round(netRate * 1.15);
-  const saving = otaRate ? Math.round(otaRate - displayRate) : 0;
-
-  return (
-    <div style={{ width: '100%', maxWidth: 480, borderRadius: '16px 16px 0 0', background: '#0f0f0f', border: `0.5px solid ${T.border}`, overflow: 'hidden' }}>
-      {/* Sticky header simulation */}
-      <div style={{ padding: '16px 18px 12px', borderBottom: `0.5px solid rgba(255,255,255,0.08)` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: 3 }}>✦ Upgrade &amp; Personalise</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'Playfair Display', serif" }}>{name}</div>
-            <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>{destination}{country ? ` · ${country}` : ''}</div>
-          </div>
-          <div style={{ background: 'rgba(255,255,255,0.07)', border: 'none', color: T.textMid, width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>×</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: T.gold, fontFamily: "'Playfair Display', serif" }}>
-            R {displayRate.toLocaleString()}<span style={{ fontSize: 10, color: T.textDim, fontWeight: 400 }}>/night base</span>
-          </div>
-          {saving > 0 && (
-            <div style={{ fontSize: 11, color: T.textDim, background: 'rgba(74,222,128,0.08)', border: '0.5px solid rgba(74,222,128,0.2)', borderRadius: 20, padding: '2px 10px' }}>
-              Save R {saving.toLocaleString()}/night vs direct
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Hero image carousel */}
-      <div style={{ position: 'relative', height: 200, overflow: 'hidden', background: '#111' }}>
-        {slide ? (
-          slide.type === 'reel' || slide.type === 'video'
-            ? <video src={slide.url} poster={slide.poster} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <img src={slide.url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <div style={{ width: '100%', height: '100%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, fontSize: 12 }}>No media</div>
-        )}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(0,0,0,0.5) 0%,transparent 60%)' }} />
-
-        {activeSlideIdx > 0 && (
-          <button onClick={() => onSlideChange(activeSlideIdx - 1)} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.55)', border: '0.5px solid rgba(255,255,255,0.2)', color: '#fff', width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>‹</button>
-        )}
-        {activeSlideIdx < slides.length - 1 && (
-          <button onClick={() => onSlideChange(activeSlideIdx + 1)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.55)', border: '0.5px solid rgba(255,255,255,0.2)', color: '#fff', width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>›</button>
-        )}
-
-        <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', padding: '0 12px', alignItems: 'flex-end' }}>
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', background: 'rgba(0,0,0,0.4)', borderRadius: 4, padding: '2px 6px' }}>{slide?.label ?? ''}</div>
-          {slides.length > 1 && (
-            <div style={{ display: 'flex', gap: 3 }}>
-              {slides.map((_, i) => <div key={i} onClick={() => onSlideChange(i)} style={{ width: i === activeSlideIdx ? 12 : 4, height: 4, borderRadius: 2, background: i === activeSlideIdx ? T.gold : 'rgba(255,255,255,0.35)', cursor: 'pointer', transition: 'all 0.2s' }} />)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Description snippet */}
-      <div style={{ padding: '12px 18px 0' }}>
-        {supplier?.short_tagline && (
-          <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.7, marginBottom: 10 }}>{supplier.short_tagline}</div>
-        )}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(74,222,128,0.08)', border: '0.5px solid rgba(74,222,128,0.2)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#4ade80' }}>★ {trustScore}/100 trust score</div>
-          {supplier?.malaria_status === 'malaria-free' && <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(74,222,128,0.08)', border: '0.5px solid rgba(74,222,128,0.2)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#4ade80' }}>✓ Malaria-free</div>}
-        </div>
-        <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 600, marginBottom: 8 }}>ROOM TYPES &amp; UPGRADES</div>
-        {['Standard Suite', 'Premium Suite'].map((room, i) => (
-          <div key={room} style={{ borderRadius: 10, border: `1.5px solid ${i === 0 ? T.gold : T.border}`, overflow: 'hidden', marginBottom: 8 }}>
-            <div style={{ position: 'relative', height: 70, background: '#1a1a1a', overflow: 'hidden' }}>
-              {slides[0] && <img src={slides[0].url} alt={room} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} />}
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(0,0,0,0.7) 0%,transparent 50%)' }} />
-              <div style={{ position: 'absolute', bottom: 6, left: 10, right: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', fontFamily: "'Playfair Display', serif" }}>{room}</div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? T.gold : T.textDim }}>{i === 0 ? 'Included' : `+R ${Math.round(netRate * 0.4).toLocaleString()}/night`}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-        <div style={{ padding: '10px 0 16px', fontSize: 10, color: T.textDim, textAlign: 'center' }}>↓ Scroll for activities, specialist notes, social</div>
-      </div>
-    </div>
-  );
-}
-
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
-// YOUTUBE EMBED POPUP
-// Paste URL → player loads → set start point → end follows automatically
-// at start + 15s. Drag end handle back to shorten clip.
-// Speed selector. Preview. Save to Supabase reels column.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── YouTube helpers ─────────────────────────────────────────────────────────
 function parseYouTubeId(url) {
   if (!url) return null;
   const patterns = [
@@ -321,226 +105,242 @@ function parseYouTubeId(url) {
     /youtube\.com\/embed\/([\w-]{11})/,
     /youtube\.com\/shorts\/([\w-]{11})/,
   ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) return m[1];
-  }
+  for (const p of patterns) { const m = url.match(p); if (m) return m[1]; }
   return null;
 }
 
-const CLIP_DURATION = 15;   // seconds — end always starts at start + this
-const MAX_VID_SECONDS = 600; // 10min ceiling — no YouTube duration API needed
-const MIN_CLIP = 5;
+const CLIP_MAX = 15;
+const CLIP_MIN = 5;
+const VID_MAX  = 600;
 
+// ─── Shared sub-components ────────────────────────────────────────────────────
+
+function Btn({ children, onClick, variant = 'ghost', disabled, style: s = {} }) {
+  const base = { padding: '7px 14px', borderRadius: 8, fontSize: 12, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontWeight: 600, transition: 'all 0.15s', opacity: disabled ? 0.5 : 1, border: 'none' };
+  const variants = {
+    gold:    { background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, color: '#0a0a0a' },
+    ghost:   { background: 'rgba(255,255,255,0.05)', border: `0.5px solid ${T.border}`, color: T.textMid },
+    danger:  { background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', color: T.red },
+    blue:    { background: 'rgba(96,165,250,0.1)', border: '0.5px solid rgba(96,165,250,0.3)', color: T.blue },
+  };
+  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...s }}>{children}</button>;
+}
+
+function Label({ children }) {
+  return <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 6 }}>{children}</div>;
+}
+
+function Card({ children, style: s = {} }) {
+  return <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20, ...s }}>{children}</div>;
+}
+
+function EmptyState({ icon, title, sub }) {
+  return (
+    <div style={{ padding: '36px 0', textAlign: 'center' }}>
+      <div style={{ fontSize: 28, marginBottom: 10 }}>{icon}</div>
+      <div style={{ fontSize: 13, color: T.textMid, fontWeight: 600, marginBottom: 4 }}>{title}</div>
+      <div style={{ fontSize: 12, color: T.textDim }}>{sub}</div>
+    </div>
+  );
+}
+
+// ─── Image thumbnail grid (shared between rooms + activities) ─────────────────
+function MediaThumb({ url, onRemove, onSetPrimary, isPrimary }) {
+  return (
+    <div style={{ position: 'relative', width: 80, height: 60, borderRadius: 8, overflow: 'hidden', border: `1.5px solid ${isPrimary ? T.gold : T.border}`, flexShrink: 0 }}>
+      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0)', transition: 'background 0.15s' }}
+           onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.5)'}
+           onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0)'}>
+        <div style={{ position: 'absolute', top: 3, right: 3, display: 'flex', gap: 3 }}>
+          {onSetPrimary && (
+            <div onClick={onSetPrimary} title="Set primary"
+              style={{ width: 18, height: 18, borderRadius: '50%', background: isPrimary ? T.gold : 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 10, color: isPrimary ? '#0a0a0a' : T.textDim }}>★</div>
+          )}
+          {onRemove && (
+            <div onClick={onRemove} title="Remove"
+              style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(248,113,113,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 10, color: '#fff' }}>×</div>
+          )}
+        </div>
+      </div>
+      {isPrimary && <div style={{ position: 'absolute', bottom: 2, left: 3, fontSize: 8, color: T.gold, fontWeight: 700 }}>PRIMARY</div>}
+    </div>
+  );
+}
+
+// ─── Drop zone (reusable) ─────────────────────────────────────────────────────
+function DropZone({ onFiles, compact }) {
+  const [drag, setDrag] = useState(false);
+  const ref = useRef(null);
+  return (
+    <div
+      onClick={() => ref.current?.click()}
+      onDragEnter={e => { e.preventDefault(); setDrag(true); }}
+      onDragOver={e => { e.preventDefault(); setDrag(true); }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={e => { e.preventDefault(); setDrag(false); const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/')); if (files.length) onFiles(files); }}
+      style={{
+        border: `1.5px dashed ${drag ? T.gold : T.border}`,
+        borderRadius: 10,
+        padding: compact ? '14px 12px' : '24px 16px',
+        textAlign: 'center',
+        cursor: 'pointer',
+        background: drag ? T.goldDim : 'rgba(255,255,255,0.02)',
+        transition: 'all 0.15s',
+      }}
+    >
+      <div style={{ fontSize: compact ? 18 : 24, marginBottom: 6 }}>📷</div>
+      <div style={{ fontSize: 12, color: T.textMid }}>{compact ? 'Drop or click to add photos' : 'Drag photos here or click to choose'}</div>
+      {!compact && <div style={{ fontSize: 11, color: T.textDim, marginTop: 3 }}>JPG · PNG · WEBP · Multiple supported</div>}
+      <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={e => { const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/')); if (files.length) onFiles(files); e.target.value = ''; }} style={{ display: 'none' }} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// YOUTUBE POPUP  (unchanged logic from v1, pulled into named export)
+// ═══════════════════════════════════════════════════════════════════════════════
 function YouTubePopup({ onSave, onClose, existing }) {
-  const [url,      setUrl]      = useState(existing?.video_id ? `https://youtu.be/${existing.video_id}` : '');
-  const [videoId,  setVideoId]  = useState(existing?.video_id ?? null);
-  const [start,    setStart]    = useState(existing?.start ?? 0);
-  const [end,      setEnd]      = useState(existing?.end   ?? CLIP_DURATION);
-  const [speed,    setSpeed]    = useState(existing?.speed ?? 1);
-  const [caption,  setCaption]  = useState(existing?.caption ?? '');
-  const [previewing, setPreviewing] = useState(false);
-  const playerRef = useRef(null);
+  const [url,       setUrl]       = useState(existing?.video_id ? `https://youtu.be/${existing.video_id}` : '');
+  const [videoId,   setVideoId]   = useState(existing?.video_id ?? null);
+  const [start,     setStart]     = useState(existing?.start ?? 0);
+  const [end,       setEnd]       = useState(existing?.end ?? CLIP_MAX);
+  const [speed,     setSpeed]     = useState(existing?.speed ?? 1);
+  const [caption,   setCaption]   = useState(existing?.caption ?? '');
+  const [previewing,setPreviewing]= useState(false);
 
-  // Parse URL as user types
-  const handleUrlChange = (v) => {
+  const handleUrl = (v) => {
     setUrl(v);
     const id = parseYouTubeId(v);
-    if (id) {
-      setVideoId(id);
-      setStart(0);
-      setEnd(CLIP_DURATION);
-      setPreviewing(false);
-    } else {
-      setVideoId(null);
-    }
+    if (id) { setVideoId(id); setStart(0); setEnd(CLIP_MAX); setPreviewing(false); }
+    else setVideoId(null);
   };
 
-  // Moving START: end follows automatically (start + CLIP_DURATION)
-  // unless the user has already manually shortened the end
-  const handleStartChange = (val) => {
-    const s = Math.max(0, Math.min(val, MAX_VID_SECONDS - MIN_CLIP));
-    const newEnd = Math.min(s + CLIP_DURATION, MAX_VID_SECONDS);
+  const handleStart = (val) => {
+    const s = Math.max(0, Math.min(Number(val), VID_MAX - CLIP_MIN));
     setStart(s);
-    setEnd(newEnd);
+    setEnd(Math.min(s + CLIP_MAX, VID_MAX));
   };
 
-  // Moving END independently (only shorten — can't exceed start + CLIP_DURATION)
-  const handleEndChange = (val) => {
-    const e = Math.max(start + MIN_CLIP, Math.min(val, Math.min(start + CLIP_DURATION, MAX_VID_SECONDS)));
+  const handleEnd = (val) => {
+    const e = Math.max(start + CLIP_MIN, Math.min(Number(val), Math.min(start + CLIP_MAX, VID_MAX)));
     setEnd(e);
   };
 
+  const pct = (v) => `${Math.round((v / VID_MAX) * 100)}%`;
   const clipLen = Math.round(end - start);
-  const pct = (v) => `${Math.round((v / MAX_VID_SECONDS) * 100)}%`;
-
+  const thumbSrc = videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null;
   const previewSrc = videoId
-    ? `https://www.youtube.com/embed/${videoId}?start=${Math.round(start)}&end=${Math.round(end)}&autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&rel=0&playbackRate=${speed}`
-    : null;
-
-  const thumbnailSrc = videoId
-    ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`
+    ? `https://www.youtube.com/embed/${videoId}?start=${Math.round(start)}&end=${Math.round(end)}&autoplay=1&mute=1&loop=1&playlist=${videoId}&controls=0&rel=0`
     : null;
 
   const SPEEDS = [
-    { v: 0.5,  label: '0.5×', desc: 'Slow motion — wildlife at its most dramatic' },
-    { v: 0.75, label: '0.75×', desc: 'Gentle — landscapes, arrivals, sundowners' },
-    { v: 1,    label: '1×',   desc: 'Normal speed' },
-    { v: 1.25, label: '1.25×', desc: 'Slightly faster — activity montages' },
-    { v: 1.5,  label: '1.5×', desc: 'Fast cut — aerial footage, overviews' },
+    { v: 0.5, label: '0.5×', desc: 'Slow motion' },
+    { v: 0.75, label: '0.75×', desc: 'Gentle' },
+    { v: 1, label: '1×', desc: 'Normal' },
+    { v: 1.25, label: '1.25×', desc: 'Faster' },
+    { v: 1.5, label: '1.5×', desc: 'Fast cut' },
   ];
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ background: '#0f0f0f', border: `0.5px solid ${T.borderGold}`, borderRadius: 16, padding: '24px 24px 20px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
-
-        {/* Header */}
+      <div style={{ background: '#0f0f0f', border: `0.5px solid ${T.borderGold}`, borderRadius: 16, padding: '24px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: T.gold }}>🎬 YouTube reel editor</div>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.07)', border: 'none', color: T.textMid, width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', fontSize: 16, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <Btn onClick={onClose} style={{ padding: '4px 10px' }}>×</Btn>
         </div>
 
-        {/* URL input */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 5 }}>YouTube URL</div>
-          <input
-            value={url}
-            onChange={e => handleUrlChange(e.target.value)}
-            placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
-            style={{ width: '100%', padding: '9px 12px', background: T.bg3, border: `1.5px solid ${videoId ? T.borderGold : T.border}`, borderRadius: 9, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
-          />
-          {url && !videoId && <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>⚠ Couldn't extract video ID — try the full YouTube URL</div>}
+        {/* URL */}
+        <div style={{ marginBottom: 14 }}>
+          <Label>YouTube URL</Label>
+          <input value={url} onChange={e => handleUrl(e.target.value)} placeholder="https://youtu.be/... or youtube.com/watch?v=..."
+            style={{ width: '100%', padding: '9px 12px', background: T.bg3, border: `1.5px solid ${videoId ? T.borderGold : T.border}`, borderRadius: 9, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+          {url && !videoId && <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>⚠ Couldn't extract video ID</div>}
           {videoId && <div style={{ fontSize: 11, color: T.green, marginTop: 4 }}>✓ Video ID: {videoId}</div>}
         </div>
 
-        {/* Thumbnail preview */}
+        {/* Thumbnail / preview */}
         {videoId && !previewing && (
-          <div style={{ position: 'relative', height: 180, borderRadius: 10, overflow: 'hidden', background: '#111', marginBottom: 16, cursor: 'pointer' }} onClick={() => setPreviewing(true)}>
-            <img src={thumbnailSrc} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <div style={{ position: 'relative', height: 170, borderRadius: 10, overflow: 'hidden', background: '#111', marginBottom: 14, cursor: 'pointer' }} onClick={() => setPreviewing(true)}>
+            <img src={thumbSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(212,175,55,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>▶</div>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(212,175,55,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>▶</div>
             </div>
-            <div style={{ position: 'absolute', bottom: 8, right: 10, fontSize: 10, color: 'rgba(255,255,255,0.7)', background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 7px' }}>Click to preview clip</div>
+            <div style={{ position: 'absolute', bottom: 8, right: 10, fontSize: 10, color: 'rgba(255,255,255,0.7)', background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 7px' }}>Click to preview</div>
           </div>
         )}
-
-        {/* Live preview iframe */}
         {videoId && previewing && (
-          <div style={{ position: 'relative', paddingBottom: '42%', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 16 }}>
-            <iframe
-              key={`${videoId}-${start}-${end}-${speed}`}
-              src={previewSrc}
+          <div style={{ position: 'relative', paddingBottom: '42%', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 14 }}>
+            <iframe key={`${videoId}-${start}-${end}`} src={previewSrc}
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none' }}
-              allow="autoplay; encrypted-media"
-              allowFullScreen
-            />
-            <button onClick={() => setPreviewing(false)} style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.7)', border: 'none', color: '#fff', borderRadius: '50%', width: 26, height: 26, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>×</button>
+              allow="autoplay; encrypted-media" />
+            <Btn onClick={() => setPreviewing(false)} style={{ position: 'absolute', top: 8, right: 8, padding: '3px 8px' }}>✕</Btn>
           </div>
         )}
 
         {videoId && (
           <>
             {/* Clip window */}
-            <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700 }}>Clip window</div>
+            <Card style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                <Label>Clip window</Label>
                 <div style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>
-            {clipLen}s clip &nbsp;·&nbsp;
-            {Math.floor(start/60)}:{String(Math.round(start%60)).padStart(2,'0')} → {Math.floor(end/60)}:{String(Math.round(end%60)).padStart(2,'0')}
-          </div>
-              </div>
-
-              {/* Visual timeline bar */}
-              <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 12, overflow: 'visible' }}>
-                {/* Selected region highlight */}
-                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / MAX_VID_SECONDS) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.25)', borderRadius: 4 }} />
-
-                {/* START handle */}
-                <input
-                  type="range"
-                  min={0}
-                  max={MAX_VID_SECONDS}
-                  step={0.5}
-                  value={start}
-                  onChange={e => handleStartChange(Number(e.target.value))}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
-                />
-                {/* Visual start handle */}
-                <div style={{ position: 'absolute', left: `calc(${pct(start)} - 14px)`, top: '50%', transform: 'translateY(-50%)', width: 28, height: 40, background: T.gold, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#0a0a0a', fontWeight: 900, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
-                  ◂
+                  {clipLen}s · {Math.floor(start/60)}:{String(Math.round(start%60)).padStart(2,'0')} → {Math.floor(end/60)}:{String(Math.round(end%60)).padStart(2,'0')}
                 </div>
               </div>
-
-              {/* END handle — separate row */}
-              <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 10, overflow: 'visible' }}>
-                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end - start) / MAX_VID_SECONDS) * 100)}%`, height: '100%', background: 'rgba(212,175,55,0.15)', borderRadius: 4 }} />
-                <input
-                  type="range"
-                  min={start + MIN_CLIP}
-                  max={Math.min(start + CLIP_DURATION, MAX_VID_SECONDS)}
-                  step={0.5}
-                  value={end}
-                  onChange={e => handleEndChange(Number(e.target.value))}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }}
-                />
-                <div style={{ position: 'absolute', left: `calc(${pct(end)} - 14px)`, top: '50%', transform: 'translateY(-50%)', width: 28, height: 40, background: '#fff', border: `2.5px solid ${T.gold}`, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.gold, fontWeight: 900, cursor: 'ew-resize', zIndex: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
-                  ▸
-                </div>
+              {/* Start track */}
+              <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 10 }}>
+                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end-start)/VID_MAX)*100)}%`, height: '100%', background: 'rgba(212,175,55,0.25)', borderRadius: 4 }} />
+                <input type="range" min={0} max={VID_MAX} step={0.5} value={start} onChange={e => handleStart(e.target.value)}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }} />
+                <div style={{ position: 'absolute', left: `calc(${pct(start)} - 14px)`, top: '50%', transform: 'translateY(-50%)', width: 28, height: 40, background: T.gold, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#0a0a0a', fontWeight: 900, zIndex: 2 }}>◂</div>
               </div>
-
-              <div style={{ fontSize: 10, color: T.textDim, lineHeight: 1.5 }}>
-                <strong style={{ color: T.gold }}>Gold handle (◂)</strong> — move start. End adjusts automatically to start +{CLIP_DURATION}s.<br/>
-                <strong style={{ color: T.text }}>White handle (▸)</strong> — drag back to shorten clip. Cannot exceed {CLIP_DURATION}s.
+              {/* End track */}
+              <div style={{ position: 'relative', height: 36, background: 'rgba(255,255,255,0.05)', borderRadius: 8, marginBottom: 10 }}>
+                <div style={{ position: 'absolute', left: pct(start), width: `${Math.round(((end-start)/VID_MAX)*100)}%`, height: '100%', background: 'rgba(212,175,55,0.12)', borderRadius: 4 }} />
+                <input type="range" min={start+CLIP_MIN} max={Math.min(start+CLIP_MAX,VID_MAX)} step={0.5} value={end} onChange={e => handleEnd(e.target.value)}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'ew-resize', zIndex: 3 }} />
+                <div style={{ position: 'absolute', left: `calc(${pct(end)} - 14px)`, top: '50%', transform: 'translateY(-50%)', width: 28, height: 40, background: '#fff', border: `2.5px solid ${T.gold}`, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.gold, fontWeight: 900, zIndex: 2 }}>▸</div>
               </div>
-
-              {/* Fine-tune number inputs */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-                <div>
-                  <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>Start (seconds)</div>
-                  <input type="number" value={Math.round(start * 10) / 10} min={0} max={MAX_VID_SECONDS - MIN_CLIP} step={0.5}
-                    onChange={e => handleStartChange(Number(e.target.value))}
-                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>End (seconds)</div>
-                  <input type="number" value={Math.round(end * 10) / 10} min={start + MIN_CLIP} max={Math.min(start + CLIP_DURATION, MAX_VID_SECONDS)} step={0.5}
-                    onChange={e => handleEndChange(Number(e.target.value))}
-                    style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
-                </div>
+              <div style={{ fontSize: 10, color: T.textDim, lineHeight: 1.5, marginBottom: 10 }}>
+                <strong style={{ color: T.gold }}>Gold ◂</strong> moves start — end follows at +{CLIP_MAX}s. &nbsp;<strong style={{ color: T.text }}>White ▸</strong> shortens clip (max {CLIP_MAX}s).
               </div>
-            </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {[['Start (s)', start, handleStart, 0, VID_MAX-CLIP_MIN], ['End (s)', end, handleEnd, start+CLIP_MIN, Math.min(start+CLIP_MAX,VID_MAX)]].map(([lbl, val, fn, min, max]) => (
+                  <div key={lbl}>
+                    <div style={{ fontSize: 10, color: T.textDim, marginBottom: 3 }}>{lbl}</div>
+                    <input type="number" value={Math.round(val*10)/10} min={min} max={max} step={0.5}
+                      onChange={e => fn(e.target.value)}
+                      style={{ width: '100%', padding: '6px 10px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
+                  </div>
+                ))}
+              </div>
+            </Card>
 
-            {/* Speed selector */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 8 }}>Playback speed</div>
+            {/* Speed */}
+            <div style={{ marginBottom: 14 }}>
+              <Label>Playback speed</Label>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {SPEEDS.map(s => (
                   <button key={s.v} onClick={() => setSpeed(s.v)}
-                    style={{ padding: '7px 12px', borderRadius: 8, border: `1.5px solid ${speed === s.v ? T.gold : T.border}`, background: speed === s.v ? T.goldDim : 'transparent', color: speed === s.v ? T.gold : T.textMid, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: speed === s.v ? 700 : 400 }}>
+                    style={{ padding: '7px 12px', borderRadius: 8, border: `1.5px solid ${speed===s.v ? T.gold : T.border}`, background: speed===s.v ? T.goldDim : 'transparent', color: speed===s.v ? T.gold : T.textMid, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: speed===s.v ? 700 : 400 }}>
                     {s.label}
                   </button>
                 ))}
               </div>
-              <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>{SPEEDS.find(s => s.v === speed)?.desc}</div>
+              <div style={{ fontSize: 11, color: T.textDim, marginTop: 5 }}>{SPEEDS.find(s => s.v===speed)?.desc}</div>
             </div>
 
             {/* Caption */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 700, marginBottom: 5 }}>Caption (optional)</div>
-              <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="e.g. Arrival experience · Singita Boulders"
-                style={{ width: '100%', padding: '8px 12px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+            <div style={{ marginBottom: 14 }}>
+              <Label>Caption (optional)</Label>
+              <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="e.g. Arrival experience · Dawn game drive"
+                style={{ width: '100%', padding: '8px 12px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' }} />
             </div>
 
-            {/* Preview + Save */}
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setPreviewing(v => !v)}
-                style={{ flex: 1, padding: '10px 0', background: 'rgba(96,165,250,0.1)', border: '0.5px solid rgba(96,165,250,0.3)', borderRadius: 9, color: '#60a5fa', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                {previewing ? '■ Stop preview' : '▶ Preview clip'}
-              </button>
-              <button onClick={() => onSave({ source: 'youtube', video_id: videoId, start: Math.round(start * 10) / 10, end: Math.round(end * 10) / 10, speed, caption, thumbnail: thumbnailSrc })}
-                style={{ flex: 2, padding: '10px 0', background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, border: 'none', borderRadius: 9, color: '#0a0a0a', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                Save reel →
-              </button>
+              <Btn variant="blue" onClick={() => setPreviewing(v => !v)} style={{ flex: 1 }}>{previewing ? '■ Stop' : '▶ Preview'}</Btn>
+              <Btn variant="gold" onClick={() => onSave({ source: 'youtube', video_id: videoId, start: Math.round(start*10)/10, end: Math.round(end*10)/10, speed, caption, thumbnail: thumbSrc })} style={{ flex: 2 }}>Save reel →</Btn>
             </div>
           </>
         )}
@@ -550,812 +350,952 @@ function YouTubePopup({ onSave, onClose, existing }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CONTENT SCORE ENGINE — 65 points total (room descriptions + social = future)
-// Computed live from the in-memory supplier + images + reels state.
+// CONTENT SCORE (unchanged from v1)
 // ═══════════════════════════════════════════════════════════════════════════════
-function computeContentScore(supplier, images, reels, kbEntryCount = 0) {
+function computeContentScore(supplier, images, reels) {
   const approved = (images ?? []).filter(i => i.status === 'approved');
-
-  // 1. Property description (15 pts)
   const desc = (supplier?.description ?? '').trim();
   const descWords = desc.split(/\s+/).filter(Boolean).length;
-  let descPts = 0;
-  if (descWords >= 150) descPts = 15;
-  else if (descWords >= 100) descPts = 11;
-  else if (descWords >= 50) descPts = 7;
-  else if (descWords >= 20) descPts = 4;
-  else if (descWords > 0) descPts = 1;
-
-  // 2. Photography (20 pts) — 12+ approved images full marks, scaled below
   const imgCount = approved.length;
-  let imgPts = 0;
-  if (imgCount >= 12) imgPts = 20;
-  else if (imgCount >= 8) imgPts = 16;
-  else if (imgCount >= 5) imgPts = 11;
-  else if (imgCount >= 2) imgPts = 6;
-  else if (imgCount >= 1) imgPts = 2;
-
-  // 3. Reels (20 pts) — 2 approved reels full marks. 3rd = bonus capped at 20.
   const reelCount = (reels ?? []).length;
-  let reelPts = 0;
-  if (reelCount >= 2) reelPts = 20;
-  else if (reelCount === 1) reelPts = 12;
+  const totalTags = (supplier?.tags?.length ?? 0) + (supplier?.keywords?.length ?? 0);
 
-  // 4. Knowledge Base entries (10 pts) — 3+ specialist notes full marks
-  let kbPts = 0;
-  if (kbEntryCount >= 3) kbPts = 10;
-  else if (kbEntryCount === 2) kbPts = 7;
-  else if (kbEntryCount === 1) kbPts = 4;
+  const descPts  = descWords >= 150 ? 15 : descWords >= 100 ? 11 : descWords >= 50 ? 7 : descWords >= 20 ? 4 : descWords > 0 ? 1 : 0;
+  const imgPts   = imgCount >= 12 ? 20 : imgCount >= 8 ? 16 : imgCount >= 5 ? 11 : imgCount >= 2 ? 6 : imgCount >= 1 ? 2 : 0;
+  const reelPts  = reelCount >= 2 ? 20 : reelCount === 1 ? 12 : 0;
+  const tagPts   = totalTags >= 5 ? 5 : totalTags >= 3 ? 3 : totalTags >= 1 ? 1 : 0;
+  const freshPts = supplier?.updated_at ? (() => { const d = (Date.now() - new Date(supplier.updated_at).getTime())/(86400000); return d<=90?5:d<=180?3:d<=365?1:0; })() : 0;
 
-  // 5. Keywords & tags (5 pts) — 5+ tags full marks
-  const tagCount = Array.isArray(supplier?.tags) ? supplier.tags.length : 0;
-  const kwCount  = Array.isArray(supplier?.keywords) ? supplier.keywords.length : 0;
-  const totalTags = tagCount + kwCount;
-  let tagPts = 0;
-  if (totalTags >= 5) tagPts = 5;
-  else if (totalTags >= 3) tagPts = 3;
-  else if (totalTags >= 1) tagPts = 1;
-
-  // 6. Content freshness (5 pts) — updated in last 12 months
-  let freshPts = 0;
-  if (supplier?.updated_at) {
-    const ageDays = (Date.now() - new Date(supplier.updated_at).getTime()) / (1000 * 60 * 60 * 24);
-    if (ageDays <= 90) freshPts = 5;
-    else if (ageDays <= 180) freshPts = 3;
-    else if (ageDays <= 365) freshPts = 1;
-  }
-
-  const total = descPts + imgPts + reelPts + kbPts + tagPts + freshPts;
-
+  const total = descPts + imgPts + reelPts + tagPts + freshPts;
   return {
-    total,
-    max: 65,
-    pct: Math.round((total / 65) * 100),
+    total, max: 65, pct: Math.round((total/65)*100),
     dimensions: [
-      { id: 'desc',  label: 'Property description',  pts: descPts,  max: 15,
-        suggestion: descWords === 0 ? 'Add a property description — 150+ words for full marks.'
-          : descWords < 150 ? `Add ${150 - descWords} more words to your description for full marks.`
-          : 'Full marks. ✓' },
-      { id: 'img',   label: 'Photography',           pts: imgPts,   max: 20,
-        suggestion: imgCount === 0 ? 'Upload at least 12 approved images for full marks.'
-          : imgCount < 12 ? `Upload ${12 - imgCount} more approved image${12 - imgCount === 1 ? '' : 's'} for full marks.`
-          : 'Full marks. ✓' },
-      { id: 'reel',  label: 'Reels (short video)',   pts: reelPts,  max: 20,
-        suggestion: reelCount === 0 ? 'Add 2 reels — e.g. arrival experience + room walkthrough.'
-          : reelCount < 2 ? 'Add 1 more reel for full marks.'
-          : 'Full marks. ✓' },
-      { id: 'kb',    label: 'Knowledge Base entries', pts: kbPts,   max: 10,
-        suggestion: kbEntryCount === 0 ? 'Add 3+ specialist notes (booking tips, room recommendations, seasonal advice).'
-          : kbEntryCount < 3 ? `Add ${3 - kbEntryCount} more KB note${3 - kbEntryCount === 1 ? '' : 's'} for full marks.`
-          : 'Full marks. ✓' },
-      { id: 'tags',  label: 'Keywords & tags',       pts: tagPts,   max: 5,
-        suggestion: totalTags < 5 ? `Add ${5 - totalTags} more tag${5 - totalTags === 1 ? '' : 's'} to improve discoverability.`
-          : 'Full marks. ✓' },
-      { id: 'fresh', label: 'Content freshness',     pts: freshPts, max: 5,
-        suggestion: freshPts === 5 ? 'Updated recently. ✓'
-          : freshPts >= 1 ? 'Refresh any content this month to bump to full marks.'
-          : 'No recent updates detected. Any content change will reset this.' },
+      { id:'desc',  label:'Description',  pts:descPts,  max:15, hint: descWords < 150 ? `${150-descWords} words to go` : '✓' },
+      { id:'img',   label:'Photography',  pts:imgPts,   max:20, hint: imgCount < 12 ? `${12-imgCount} more images` : '✓' },
+      { id:'reel',  label:'Reels',        pts:reelPts,  max:20, hint: reelCount < 2 ? `${2-reelCount} more reel${reelCount===1?'':'s'}` : '✓' },
+      { id:'tags',  label:'Tags',         pts:tagPts,   max:5,  hint: totalTags < 5 ? `${5-totalTags} more tags` : '✓' },
+      { id:'fresh', label:'Freshness',    pts:freshPts, max:5,  hint: freshPts < 5 ? 'Update content to refresh' : '✓' },
     ],
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB: OVERVIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+function TabOverview({ supplier, images, reels, heroType, setHeroType, locked, setLocked, isAdmin, slides, previewSlide, setPreviewSlide }) {
+  const score = useMemo(() => computeContentScore(supplier, images, reels), [supplier, images, reels]);
+  const [scoreOpen, setScoreOpen] = useState(true);
+
+  return (
+    <div className="fade-in">
+      {/* Hero type */}
+      <Card>
+        <Label>Hero tile type</Label>
+        <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14 }}>Which asset appears first when travellers view this property.</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {[
+            { id:'image', label:'📷 Image first', desc:'Primary photo as hero' },
+            { id:'reel',  label:'▶ Reel first',   desc:'YouTube clip as hero' },
+          ].map(opt => (
+            <button key={opt.id} onClick={() => setHeroType(opt.id)}
+              style={{ flex: 1, padding: '12px 10px', borderRadius: 10, border: `1.5px solid ${heroType===opt.id ? T.gold : T.border}`, background: heroType===opt.id ? T.goldDim : T.bg3, color: heroType===opt.id ? T.gold : T.textMid, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+              <div style={{ fontSize: 13, fontWeight: heroType===opt.id ? 700 : 400, marginBottom: 3 }}>{opt.label}</div>
+              <div style={{ fontSize: 10, color: T.textDim }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* Score */}
+      <Card style={{ border: `0.5px solid ${score.pct >= 80 ? T.borderGold : T.border}` }}>
+        <div onClick={() => setScoreOpen(o => !o)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: 10 }}>
+          <div>
+            <Label>Content score</Label>
+            <div style={{ fontSize: 11, color: T.textDim }}>{score.pct >= 80 ? 'Featured eligible ✓' : score.pct >= 60 ? 'Good — keep going' : 'Needs work'}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: score.pct>=80?T.gold:score.pct>=60?T.text:T.amber, fontFamily:"'Playfair Display',serif" }}>{score.total}<span style={{ fontSize: 12, color: T.textDim, fontWeight: 400 }}>/65</span></div>
+            <div style={{ fontSize: 11, color: T.textDim }}>{scoreOpen?'▲':'▼'}</div>
+          </div>
+        </div>
+        <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ width:`${score.pct}%`, height:'100%', background:`linear-gradient(90deg,${T.gold},${T.goldLight})`, transition:'width 0.4s' }} />
+        </div>
+        {scoreOpen && (
+          <div style={{ marginTop: 14, borderTop: `0.5px solid ${T.border}`, paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {score.dimensions.map(d => (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 11, color: d.pts===d.max ? T.green : T.textDim, width: 12 }}>{d.pts===d.max?'✓':'·'}</div>
+                <div style={{ fontSize: 12, color: T.text, flex: 1 }}>{d.label}</div>
+                <div style={{ width: 80, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ width:`${(d.pts/d.max)*100}%`, height:'100%', background: d.pts===d.max?T.green:T.gold }} />
+                </div>
+                <div style={{ fontSize: 11, color: T.textDim, width: 44, textAlign: 'right' }}>{d.pts}/{d.max}</div>
+                <div style={{ fontSize: 10, color: T.textDim, width: 110, textAlign: 'right' }}>{d.hint}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Slide order */}
+      <Card>
+        <Label>Slide order</Label>
+        {slides.length === 0
+          ? <EmptyState icon="🎞" title="No slides yet" sub="Add images in the Gallery tab" />
+          : slides.map((s, i) => (
+            <div key={i} onClick={() => setPreviewSlide(i)}
+              style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:8, background:previewSlide===i?T.goldDim:'rgba(255,255,255,0.02)', border:`0.5px solid ${previewSlide===i?T.borderGold:T.border}`, cursor:'pointer', marginBottom:5, transition:'all 0.15s' }}>
+              <div style={{ width:20, height:20, borderRadius:5, background:T.bg3, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:previewSlide===i?T.gold:T.textDim, fontWeight:700 }}>{i+1}</div>
+              <div style={{ flex:1, fontSize:12, color:previewSlide===i?T.gold:T.text }}>{s.label ?? `Slide ${i+1}`}</div>
+              <div style={{ fontSize:9, color:T.textDim, textTransform:'uppercase', letterSpacing:'0.06em' }}>{s.type}</div>
+              {i===0 && <div style={{ fontSize:9, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, color:T.gold, borderRadius:20, padding:'1px 7px', fontWeight:700 }}>Hero</div>}
+            </div>
+          ))
+        }
+      </Card>
+
+      {/* Lock toggle (admin) */}
+      {isAdmin && (
+        <Card>
+          <Label>Media order lock</Label>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ fontSize:12, color:T.textDim }}>When locked, suppliers cannot reorder images or reels.</div>
+            <Btn variant={locked?'ghost':'ghost'} onClick={() => setLocked(l => !l)}>
+              {locked ? '🔒 Locked' : '🔓 Unlocked'}
+            </Btn>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB: GALLERY  (images for the property as a whole)
+// ═══════════════════════════════════════════════════════════════════════════════
+function TabGallery({ supplierId, isAdmin, images, setImages, locked }) {
+  const db = useMemo(() => createSupabase(), []);
+  const [uploads, setUploads] = useState([]);
+  const [editIdx, setEditIdx] = useState(null);
+  const [editDraft, setEditDraft] = useState(null);
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  const uploadOne = async (file) => {
+    const id = `up-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+    let lowRes = false;
+    try {
+      const dims = await new Promise((res,rej) => { const img = new Image(); img.onload = () => { res({w:img.width,h:img.height}); URL.revokeObjectURL(img.src); }; img.onerror = () => rej(); img.src = URL.createObjectURL(file); });
+      if (dims.w < 1200) lowRes = true;
+    } catch {}
+    setUploads(u => [...u, { id, name:file.name, status:'uploading', lowRes }]);
+    try {
+      await db.uploadFile(supplierId, file, isAdmin);
+      const fresh = await db.fetch1('suppliers', `id=eq.${supplierId}&select=images`);
+      if (fresh) {
+        let imgs = [];
+        try { imgs = Array.isArray(fresh.images) ? fresh.images : (fresh.images ? JSON.parse(fresh.images) : []); } catch {}
+        setImages(imgs.map((img,i) => ({ ...img, display_order: img.display_order ?? i+1 })));
+      }
+      setUploads(u => u.map(x => x.id===id ? { ...x, status:'done' } : x));
+      setTimeout(() => setUploads(u => u.filter(x => x.id!==id)), 4000);
+    } catch(e) {
+      setUploads(u => u.map(x => x.id===id ? { ...x, status:'error', error:e.message } : x));
+    }
+  };
+
+  const handleFiles = async (files) => {
+    for (let i=0; i<files.length; i+=4) await Promise.all(files.slice(i,i+4).map(uploadOne));
+  };
+
+  const onDragStart = (e,idx) => { if (locked && !isAdmin) return; setDragIdx(idx); e.dataTransfer.effectAllowed='move'; };
+  const onDragOver  = (e,idx) => { e.preventDefault(); setDragOverIdx(idx); };
+  const onDrop      = (e,dropIdx) => {
+    e.preventDefault();
+    if (dragIdx===null||dragIdx===dropIdx) { setDragIdx(null); setDragOverIdx(null); return; }
+    const next = [...images];
+    const [m] = next.splice(dragIdx,1);
+    next.splice(dropIdx,0,m);
+    setImages(next.map((img,i) => ({ ...img, display_order:i+1 })));
+    setDragIdx(null); setDragOverIdx(null);
+  };
+
+  const setPrimary = (idx) => {
+    setImages(images.map((img,i) => ({ ...img, is_primary:i===idx })).sort((a,b) => (b.is_primary?1:0)-(a.is_primary?1:0)).map((img,i) => ({ ...img, display_order:i+1 })));
+  };
+
+  const deleteImage = (idx) => {
+    if (!window.confirm('Remove this image?')) return;
+    setImages(images.filter((_,i) => i!==idx).map((img,i) => ({ ...img, display_order:i+1 })));
+    setEditIdx(null); setEditDraft(null);
+  };
+
+  const openEdit = (idx) => {
+    if (editIdx===idx) { setEditIdx(null); setEditDraft(null); return; }
+    setEditIdx(idx);
+    const img = images[idx];
+    setEditDraft({ caption:img.caption??'', room_type:img.room_type??'', tags:Array.isArray(img.tags)?img.tags.join(', '):(img.tags??''), status:img.status??'approved' });
+  };
+
+  const saveEdit = () => {
+    const tagList = String(editDraft.tags||'').split(',').map(t=>t.trim()).filter(Boolean);
+    setImages(images.map((img,i) => i===editIdx ? { ...img, caption:editDraft.caption, room_type:editDraft.room_type, tags:tagList, status:editDraft.status } : img));
+    setEditIdx(null); setEditDraft(null);
+  };
+
+  return (
+    <div className="fade-in">
+      <Card>
+        <Label>Upload images</Label>
+        <div style={{ fontSize:11, color:T.textDim, marginBottom:12 }}>{isAdmin ? 'Goes live immediately' : 'Submitted for admin review'} · JPG/PNG/WEBP · 1600px+ recommended</div>
+        <DropZone onFiles={handleFiles} />
+        {uploads.length > 0 && (
+          <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:6 }}>
+            {uploads.map(u => (
+              <div key={u.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 10px', background:T.bg3, border:`0.5px solid ${u.status==='error'?'rgba(248,113,113,0.3)':u.status==='done'?'rgba(74,222,128,0.3)':T.border}`, borderRadius:8 }}>
+                <div style={{ fontSize:13 }}>{u.status==='uploading'?'↑':u.status==='done'?'✓':'⚠'}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.name}</div>
+                  <div style={{ fontSize:10, color:u.status==='error'?T.red:u.lowRes?T.amber:T.textDim, marginTop:2 }}>
+                    {u.status==='uploading'&&'Uploading…'}{u.status==='done'&&(u.lowRes?'✓ Uploaded — consider 1600px+ next time':'✓ Uploaded')}{u.status==='error'&&(u.error||'Failed')}
+                  </div>
+                </div>
+                {u.status==='error' && <Btn onClick={() => setUploads(p=>p.filter(x=>x.id!==u.id))} style={{ padding:'3px 8px' }}>×</Btn>}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+          <Label>Image order</Label>
+          {locked && !isAdmin && <div style={{ fontSize:10, color:T.amber, background:'rgba(251,191,36,0.1)', border:'0.5px solid rgba(251,191,36,0.3)', borderRadius:20, padding:'2px 10px' }}>🔒 Locked</div>}
+        </div>
+        <div style={{ fontSize:12, color:T.textDim, marginBottom:14 }}>Drag to reorder · ★ sets primary hero · ✎ edits caption and tags</div>
+        {images.length === 0
+          ? <EmptyState icon="📷" title="No images yet" sub="Upload images using the drop zone above" />
+          : images.map((img,idx) => (
+            <div key={img.url??idx} style={{ marginBottom:6 }}>
+              <div draggable={!locked||isAdmin} onDragStart={e=>onDragStart(e,idx)} onDragOver={e=>onDragOver(e,idx)} onDrop={e=>onDrop(e,idx)} onDragEnd={()=>{setDragIdx(null);setDragOverIdx(null);}}
+                className={`${dragIdx===idx?'dragging':''} ${dragOverIdx===idx?'drag-over':''}`}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 12px', background:T.bg3, border:`0.5px solid ${dragOverIdx===idx?T.gold:T.border}`, borderRadius:10, cursor:locked&&!isAdmin?'default':'grab', transition:'all 0.15s' }}>
+                <div className="drag-handle" style={{ color:T.textDim, fontSize:16, paddingRight:4 }}>⋮</div>
+                <div style={{ width:64, height:44, borderRadius:6, overflow:'hidden', flexShrink:0, background:'#111' }}>
+                  <img src={img.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>{e.currentTarget.style.display='none';}} />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{img.caption||img.room_type||`Image ${idx+1}`}</div>
+                  <div style={{ display:'flex', gap:5, marginTop:3, flexWrap:'wrap' }}>
+                    {img.is_primary && <span style={{ fontSize:9, color:T.gold, background:T.goldDim, border:'0.5px solid '+T.borderGold, borderRadius:20, padding:'1px 7px', fontWeight:700 }}>Primary</span>}
+                    {img.room_type && <span style={{ fontSize:9, color:T.textDim, background:'rgba(255,255,255,0.05)', border:'0.5px solid '+T.border, borderRadius:20, padding:'1px 7px' }}>{img.room_type}</span>}
+                    {img.status && img.status!=='approved' && <span style={{ fontSize:9, color:T.amber, background:'rgba(251,191,36,0.08)', border:'0.5px solid rgba(251,191,36,0.2)', borderRadius:20, padding:'1px 7px' }}>{img.status}</span>}
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                  <button onClick={()=>setPrimary(idx)} style={{ background:img.is_primary?T.goldDim:'rgba(255,255,255,0.04)', border:'0.5px solid '+(img.is_primary?T.borderGold:T.border), borderRadius:7, width:28, height:28, cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', color:img.is_primary?T.gold:T.textDim }}>★</button>
+                  <button onClick={()=>openEdit(idx)} style={{ background:editIdx===idx?T.goldDim:'rgba(255,255,255,0.04)', border:'0.5px solid '+(editIdx===idx?T.borderGold:T.border), borderRadius:7, width:28, height:28, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', color:editIdx===idx?T.gold:T.textDim }}>✎</button>
+                </div>
+              </div>
+              {editIdx===idx && editDraft && (
+                <div style={{ background:T.bg3, border:'0.5px solid '+T.borderGold, borderRadius:10, padding:'14px', marginTop:4 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:10 }}>
+                    {[['Caption','caption','Image caption…',120],['Room type','room_type','e.g. Boulders Suite',50]].map(([lbl,key,ph,max]) => (
+                      <div key={key}>
+                        <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:700, marginBottom:5 }}>{lbl}</div>
+                        <input value={editDraft[key]} onChange={e=>setEditDraft({...editDraft,[key]:e.target.value.slice(0,max)})} placeholder={ph}
+                          style={{ width:'100%', background:T.surface, border:'0.5px solid '+T.border, color:T.text, borderRadius:7, padding:'8px 10px', fontSize:12, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginBottom:10 }}>
+                    <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:700, marginBottom:5 }}>Tags (comma-separated)</div>
+                    <input value={editDraft.tags} onChange={e=>setEditDraft({...editDraft,tags:e.target.value.slice(0,200)})} placeholder="e.g. sunrise, suite, romantic, plunge-pool"
+                      style={{ width:'100%', background:T.surface, border:'0.5px solid '+T.border, color:T.text, borderRadius:7, padding:'8px 10px', fontSize:12, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} />
+                  </div>
+                  <div style={{ marginBottom:12 }}>
+                    <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:700, marginBottom:5 }}>Status</div>
+                    <div style={{ display:'flex', gap:6 }}>
+                      {['approved','pending','rejected'].map(s => (
+                        <button key={s} onClick={()=>setEditDraft({...editDraft,status:s})}
+                          style={{ flex:1, padding:'7px 0', borderRadius:7, border:`1.5px solid ${editDraft.status===s?(s==='approved'?T.green:s==='pending'?T.amber:T.red):T.border}`, background:editDraft.status===s?(s==='approved'?'rgba(74,222,128,0.1)':s==='pending'?'rgba(251,191,36,0.1)':'rgba(248,113,113,0.1)'):'transparent', color:editDraft.status===s?(s==='approved'?T.green:s==='pending'?T.amber:T.red):T.textMid, fontSize:11, cursor:'pointer', fontFamily:'inherit', textTransform:'capitalize', fontWeight:editDraft.status===s?700:400 }}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <Btn variant="danger" onClick={()=>deleteImage(idx)}>Delete</Btn>
+                    <div style={{ display:'flex', gap:8 }}>
+                      <Btn onClick={()=>{setEditIdx(null);setEditDraft(null);}}>Cancel</Btn>
+                      <Btn variant="gold" onClick={saveEdit}>Save →</Btn>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))
+        }
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB: REELS  (property-level YouTube clips)
+// ═══════════════════════════════════════════════════════════════════════════════
+function TabReels({ reels, setReels }) {
+  const [showPopup, setShowPopup] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  return (
+    <div className="fade-in">
+      <Card>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+          <Label>Property reels</Label>
+          <Btn variant="gold" onClick={()=>{setEditing(null);setShowPopup(true);}}>+ Add reel</Btn>
+        </div>
+        <div style={{ fontSize:12, color:T.textDim, marginBottom:14, lineHeight:1.55 }}>
+          Paste a YouTube URL, trim to 5–15 seconds, set playback speed. These reels appear in the property carousel and can be set as the hero tile from the Overview tab.
+        </div>
+        {reels.length === 0
+          ? <EmptyState icon="🎬" title="No reels yet" sub="Add a YouTube clip to bring this property to life" />
+          : reels.map((reel,i) => (
+            <div key={i} style={{ display:'flex', gap:12, alignItems:'center', padding:'10px 12px', background:T.bg3, border:`0.5px solid ${T.border}`, borderRadius:10, marginBottom:8 }}>
+              <div style={{ width:80, height:50, borderRadius:6, overflow:'hidden', flexShrink:0, background:'#111' }}>
+                {reel.thumbnail ? <img src={reel.thumbnail} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>▶</div>}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:12, fontWeight:600, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{reel.caption||reel.video_id}</div>
+                <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{Math.round(reel.start)}s → {Math.round(reel.end)}s · {reel.speed}× · {Math.round(reel.end-reel.start)}s clip</div>
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                <Btn onClick={()=>{setEditing(reel);setShowPopup(true);}}>Edit</Btn>
+                <Btn variant="danger" onClick={()=>setReels(p=>p.filter((_,idx)=>idx!==i))}>Remove</Btn>
+              </div>
+            </div>
+          ))
+        }
+      </Card>
+
+      {showPopup && (
+        <YouTubePopup
+          existing={editing}
+          onClose={()=>{setShowPopup(false);setEditing(null);}}
+          onSave={reel => {
+            if (editing) setReels(p => p.map(r => r===editing ? reel : r));
+            else setReels(p => [...p, reel]);
+            setShowPopup(false); setEditing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB: ROOMS  — per room_type: image gallery + reel + YouTube clip
+// Reads from room_types table (supplier_id FK)
+// ═══════════════════════════════════════════════════════════════════════════════
+function TabRooms({ supplierId, isAdmin }) {
+  const db = useMemo(() => createSupabase(), []);
+  const [rooms, setRooms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(null); // room id
+  const [expandedRoom, setExpandedRoom] = useState(null);
+  const [ytRoom, setYtRoom] = useState(null); // room whose YouTube popup is open
+
+  useEffect(() => {
+    if (!db || !supplierId) { setLoading(false); return; }
+    db.fetchMany('room_types', `supplier_id=eq.${supplierId}&order=name&select=*`)
+      .then(rows => setRooms(rows.map(r => ({
+        ...r,
+        images: Array.isArray(r.images) ? r.images : (r.images ? JSON.parse(r.images) : []),
+        reels:  Array.isArray(r.reels)  ? r.reels  : (r.reels  ? JSON.parse(r.reels)  : []),
+      }))))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [supplierId]);
+
+  const updateRoom = (id, patch) => setRooms(p => p.map(r => r.id===id ? { ...r, ...patch } : r));
+
+  const saveRoom = async (room) => {
+    if (!db) return;
+    setSaving(room.id);
+    try {
+      await db.patch('room_types', `id=eq.${room.id}`, { images: room.images, reels: room.reels });
+    } catch(e) { alert('Save failed: ' + e.message); }
+    finally { setSaving(null); }
+  };
+
+  const handleRoomFiles = async (room, files) => {
+    // Upload files and append URLs to room.images
+    for (const file of files) {
+      const id = `up-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+      try {
+        await db.uploadFile(supplierId, file, isAdmin);
+        // After upload, the image URL is added to suppliers.images by the API.
+        // We also append a local reference to this room's image array.
+        const url = URL.createObjectURL(file);
+        updateRoom(room.id, {
+          images: [...(room.images||[]), { url, caption: file.name.replace(/\.[^.]+$/,'').slice(0,60), is_primary: (room.images||[]).length===0 }]
+        });
+      } catch(e) { /* silently skip failed uploads */ }
+    }
+  };
+
+  const CATEGORY_COLOURS = {
+    Standard:      { bg:'rgba(100,200,100,0.1)',  border:'rgba(100,200,100,0.3)',  text:'#6dc76d' },
+    Premium:       { bg:'rgba(212,175,55,0.12)', border:'rgba(212,175,55,0.35)', text:T.gold },
+    Family:        { bg:'rgba(96,165,250,0.1)',  border:'rgba(96,165,250,0.3)',  text:T.blue },
+    Villa:         { bg:'rgba(248,113,113,0.1)', border:'rgba(248,113,113,0.3)', text:T.red },
+    'Exclusive-Use':{ bg:'rgba(180,100,250,0.1)', border:'rgba(180,100,250,0.3)', text:'#b46afa' },
+  };
+
+  if (loading) return <div style={{ padding:'40px 0', textAlign:'center', color:T.textDim }}>Loading rooms…</div>;
+
+  return (
+    <div className="fade-in">
+      {rooms.length === 0 ? (
+        <Card>
+          <EmptyState icon="🛏" title="No room types loaded" sub="Room types are added from the rate card. Once added, you can assign images and reels to each room here." />
+        </Card>
+      ) : (
+        <>
+          <div style={{ fontSize:12, color:T.textDim, marginBottom:16, lineHeight:1.6, padding:'12px 16px', background:T.surface, borderRadius:10, border:`0.5px solid ${T.border}` }}>
+            ℹ Each room type can have its own image gallery, reel, and YouTube clip. These appear in the room swipe stack when travellers personalise their booking. Assign specific images to rooms using the Gallery tab and setting the room type field on each image.
+          </div>
+          {rooms.map(room => {
+            const isExpanded = expandedRoom === room.id;
+            const cat = CATEGORY_COLOURS[room.category] ?? CATEGORY_COLOURS.Standard;
+            return (
+              <Card key={room.id} style={{ border:`0.5px solid ${isExpanded ? T.borderGold : T.border}` }}>
+                {/* Room header */}
+                <div onClick={()=>setExpandedRoom(isExpanded ? null : room.id)} style={{ display:'flex', alignItems:'center', gap:14, cursor:'pointer' }}>
+                  {/* Primary image thumb */}
+                  <div style={{ width:72, height:52, borderRadius:8, overflow:'hidden', background:'#1a1a1a', flexShrink:0 }}>
+                    {(room.images||[]).find(i=>i.is_primary)?.url
+                      ? <img src={(room.images||[]).find(i=>i.is_primary)?.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                      : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>🛏</div>}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                      <div style={{ fontSize:14, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{room.name}</div>
+                      {room.category && (
+                        <span style={{ fontSize:9, background:cat.bg, border:`0.5px solid ${cat.border}`, color:cat.text, borderRadius:20, padding:'2px 8px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>{room.category}</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize:11, color:T.textDim }}>
+                      Max {room.max_occupancy} adults · {room.max_children > 0 ? `${room.max_children} child${room.max_children>1?'ren':''}` : 'No children'} · {room.bed_type||'—'} · {room.view||'—'}
+                    </div>
+                    <div style={{ display:'flex', gap:10, marginTop:4 }}>
+                      <span style={{ fontSize:10, color:(room.images||[]).length>0?T.green:T.textDim }}>{(room.images||[]).length} image{(room.images||[]).length!==1?'s':''}</span>
+                      <span style={{ fontSize:10, color:(room.reels||[]).length>0?T.gold:T.textDim }}>{(room.reels||[]).length} reel{(room.reels||[]).length!==1?'s':''}</span>
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    {saving===room.id && <div className="saving" style={{ fontSize:11, color:T.gold }}>Saving…</div>}
+                    <div style={{ fontSize:13, color:T.textDim }}>{isExpanded?'▲':'▼'}</div>
+                  </div>
+                </div>
+
+                {/* Expanded editor */}
+                {isExpanded && (
+                  <div style={{ marginTop:18, borderTop:`0.5px solid ${T.border}`, paddingTop:18 }}>
+                    {/* Description (read-only — edited in rate card) */}
+                    {room.description && (
+                      <div style={{ fontSize:12, color:T.textDim, lineHeight:1.7, marginBottom:16, padding:'10px 14px', background:T.bg3, borderRadius:8, border:`0.5px solid ${T.border}` }}>
+                        {room.description}
+                      </div>
+                    )}
+
+                    {/* Images for this room */}
+                    <div style={{ marginBottom:16 }}>
+                      <Label>Room images</Label>
+                      <div style={{ fontSize:11, color:T.textDim, marginBottom:10 }}>Images assigned to this room appear in the room swipe stack. You can also tag images from the Gallery tab with this room name.</div>
+                      {(room.images||[]).length > 0 && (
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:10 }}>
+                          {(room.images||[]).map((img,i) => (
+                            <MediaThumb
+                              key={i}
+                              url={img.url}
+                              isPrimary={img.is_primary}
+                              onSetPrimary={()=>updateRoom(room.id,{ images:(room.images||[]).map((m,j)=>({...m,is_primary:j===i})) })}
+                              onRemove={()=>updateRoom(room.id,{ images:(room.images||[]).filter((_,j)=>j!==i) })}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <DropZone compact onFiles={files=>handleRoomFiles(room, files)} />
+                    </div>
+
+                    {/* YouTube reel for this room */}
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                        <Label>Room reel</Label>
+                        <Btn variant="gold" onClick={()=>setYtRoom(room)} style={{ padding:'5px 12px', fontSize:11 }}>🎬 Add / edit YouTube clip</Btn>
+                      </div>
+                      {(room.reels||[]).length > 0 ? (
+                        (room.reels||[]).map((reel,ri) => (
+                          <div key={ri} style={{ display:'flex', gap:10, alignItems:'center', padding:'8px 10px', background:T.bg3, border:`0.5px solid ${T.border}`, borderRadius:8, marginBottom:6 }}>
+                            {reel.thumbnail && <img src={reel.thumbnail} alt="" style={{ width:60, height:40, borderRadius:5, objectFit:'cover', flexShrink:0 }} />}
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:12, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{reel.caption||reel.video_id}</div>
+                              <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>{Math.round(reel.start)}s → {Math.round(reel.end)}s · {reel.speed}× · {Math.round(reel.end-reel.start)}s</div>
+                            </div>
+                            <Btn variant="danger" style={{ padding:'4px 10px', fontSize:10 }} onClick={()=>updateRoom(room.id,{ reels:(room.reels||[]).filter((_,j)=>j!==ri) })}>Remove</Btn>
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ fontSize:11, color:T.textDim, padding:'10px 0' }}>No reel yet — click above to add a YouTube clip for this room.</div>
+                      )}
+                    </div>
+
+                    <Btn variant="gold" onClick={()=>saveRoom(room)} disabled={saving===room.id} style={{ width:'100%', padding:'10px 0', textAlign:'center', justifyContent:'center' }}>
+                      {saving===room.id ? 'Saving…' : 'Save room media →'}
+                    </Btn>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </>
+      )}
+
+      {/* YouTube popup for a specific room */}
+      {ytRoom && (
+        <YouTubePopup
+          existing={(ytRoom.reels||[])[0] ?? null}
+          onClose={()=>setYtRoom(null)}
+          onSave={reel => {
+            const existing = (ytRoom.reels||[])[0];
+            if (existing) updateRoom(ytRoom.id, { reels: ytRoom.reels.map((r,i)=>i===0?reel:r) });
+            else updateRoom(ytRoom.id, { reels: [...(ytRoom.reels||[]), reel] });
+            setYtRoom(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB: ACTIVITIES  — per activity: image slider + reel + drag-drop upload
+// Reads from activities table (edition_id + region_slug OR supplier-linked)
+// ═══════════════════════════════════════════════════════════════════════════════
+function TabActivities({ supplierId, supplier, isAdmin }) {
+  const db = useMemo(() => createSupabase(), []);
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const [ytActivity, setYtActivity] = useState(null);
+  const [slideIdxMap, setSlideIdxMap] = useState({});
+
+  // Load activities for this supplier's region
+  useEffect(() => {
+    if (!db || !supplier) { setLoading(false); return; }
+    const slug = supplier.region_slug ?? supplier.destination?.toLowerCase().replace(/\s+/g,'-');
+    if (!slug) { setLoading(false); return; }
+    db.fetchMany('activities', `region_slug=eq.${slug}&order=sort_order&select=*`)
+      .then(rows => setActivities(rows.map(r => ({
+        ...r,
+        image_urls: Array.isArray(r.image_urls) ? r.image_urls : (r.image_urls ? JSON.parse(r.image_urls) : []),
+        reels:      Array.isArray(r.reels)      ? r.reels      : (r.reels      ? JSON.parse(r.reels)      : []),
+      }))))
+      .catch(()=>{})
+      .finally(()=>setLoading(false));
+  }, [supplier]);
+
+  const updateActivity = (id, patch) => setActivities(p => p.map(a => a.id===id ? { ...a, ...patch } : a));
+
+  const saveActivity = async (act) => {
+    if (!db) return;
+    setSaving(act.id);
+    try {
+      await db.patch('activities', `id=eq.${act.id}`, { image_urls: act.image_urls, reels: act.reels });
+    } catch(e) { alert('Save failed: ' + e.message); }
+    finally { setSaving(null); }
+  };
+
+  const addImageUrl = (act, url) => {
+    updateActivity(act.id, { image_urls: [...(act.image_urls||[]), { url, caption:'' }] });
+  };
+
+  const removeImageUrl = (act, idx) => {
+    updateActivity(act.id, { image_urls: (act.image_urls||[]).filter((_,i)=>i!==idx) });
+  };
+
+  const setSlideIdx = (id, idx) => setSlideIdxMap(p => ({ ...p, [id]: idx }));
+
+  const handleActivityFiles = async (act, files) => {
+    for (const file of files) {
+      try {
+        await db.uploadFile(supplierId, file, isAdmin);
+        const url = URL.createObjectURL(file);
+        addImageUrl(act, url);
+      } catch {}
+    }
+  };
+
+  const CATEGORY_ICON = { wildlife:'🦁', transfer:'✈', dining:'🍽', wellness:'🌿', adventure:'🏔', culture:'🏛', water:'🌊' };
+
+  if (loading) return <div style={{ padding:'40px 0', textAlign:'center', color:T.textDim }}>Loading activities…</div>;
+
+  return (
+    <div className="fade-in">
+      {activities.length === 0 ? (
+        <Card>
+          <EmptyState icon="🎯" title="No activities in this region" sub={`Activities are linked by region slug (${supplier?.region_slug ?? supplier?.destination ?? 'unknown'}). Add activities in the Activities table with the matching region_slug.`} />
+        </Card>
+      ) : (
+        <>
+          <div style={{ fontSize:12, color:T.textDim, marginBottom:16, padding:'12px 16px', background:T.surface, borderRadius:10, border:`0.5px solid ${T.border}`, lineHeight:1.6 }}>
+            {activities.length} activities in this region. Assign images and reels to each activity — these appear as swipeable add-ons in the booking flow.
+          </div>
+          {activities.map(act => {
+            const isExp = expanded === act.id;
+            const slideIdx = slideIdxMap[act.id] ?? 0;
+            const images = act.image_urls || [];
+            const currentImg = images[slideIdx];
+            const icon = CATEGORY_ICON[act.category] ?? '🎯';
+            return (
+              <Card key={act.id} style={{ border:`0.5px solid ${isExp ? T.borderGold : T.border}` }}>
+                <div onClick={()=>setExpanded(isExp ? null : act.id)} style={{ display:'flex', alignItems:'center', gap:14, cursor:'pointer' }}>
+                  {/* Image slider thumbnail */}
+                  <div style={{ width:80, height:56, borderRadius:8, overflow:'hidden', background:'#1a1a1a', flexShrink:0, position:'relative' }}>
+                    {currentImg?.url
+                      ? <img src={currentImg.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                      : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }}>{icon}</div>}
+                    {/* Mini slider arrows */}
+                    {images.length > 1 && (
+                      <>
+                        {slideIdx > 0 && <div onClick={e=>{e.stopPropagation();setSlideIdx(act.id,slideIdx-1);}} style={{ position:'absolute', left:2, top:'50%', transform:'translateY(-50%)', width:16, height:16, borderRadius:'50%', background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#fff', cursor:'pointer' }}>‹</div>}
+                        {slideIdx < images.length-1 && <div onClick={e=>{e.stopPropagation();setSlideIdx(act.id,slideIdx+1);}} style={{ position:'absolute', right:2, top:'50%', transform:'translateY(-50%)', width:16, height:16, borderRadius:'50%', background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#fff', cursor:'pointer' }}>›</div>}
+                        <div style={{ position:'absolute', bottom:3, left:0, right:0, display:'flex', justifyContent:'center', gap:2 }}>
+                          {images.map((_,i) => <div key={i} style={{ width:i===slideIdx?8:3, height:3, borderRadius:2, background:i===slideIdx?T.gold:'rgba(255,255,255,0.4)', transition:'all 0.15s' }} />)}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+                      <div style={{ fontSize:14, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{act.name}</div>
+                      {act.category && <span style={{ fontSize:9, color:T.textDim, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'1px 7px' }}>{act.category}</span>}
+                    </div>
+                    {act.description && <div style={{ fontSize:11, color:T.textDim, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{act.description}</div>}
+                    <div style={{ display:'flex', gap:10, marginTop:4 }}>
+                      <span style={{ fontSize:10, color:images.length>0?T.green:T.textDim }}>{images.length} image{images.length!==1?'s':''}</span>
+                      <span style={{ fontSize:10, color:(act.reels||[]).length>0?T.gold:T.textDim }}>{(act.reels||[]).length} reel{(act.reels||[]).length!==1?'s':''}</span>
+                      {act.duration && <span style={{ fontSize:10, color:T.textDim }}>⏱ {act.duration}</span>}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:13, color:T.textDim }}>{isExp?'▲':'▼'}</div>
+                </div>
+
+                {/* Expanded editor */}
+                {isExp && (
+                  <div style={{ marginTop:18, borderTop:`0.5px solid ${T.border}`, paddingTop:18 }}>
+
+                    {/* Image slider (full-size in edit mode) */}
+                    <div style={{ marginBottom:16 }}>
+                      <Label>Activity images ({images.length})</Label>
+                      <div style={{ fontSize:11, color:T.textDim, marginBottom:10 }}>Add multiple images — travellers swipe through them in the activity card.</div>
+
+                      {/* Full image slider */}
+                      {images.length > 0 && (
+                        <div style={{ position:'relative', height:180, borderRadius:10, overflow:'hidden', background:'#111', marginBottom:10 }}>
+                          <img src={images[slideIdx]?.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.6) 0%,transparent 50%)' }} />
+                          {/* Arrows */}
+                          {slideIdx > 0 && <div onClick={()=>setSlideIdx(act.id,slideIdx-1)} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', width:32, height:32, borderRadius:'50%', background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, color:'#fff', cursor:'pointer' }}>‹</div>}
+                          {slideIdx < images.length-1 && <div onClick={()=>setSlideIdx(act.id,slideIdx+1)} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', width:32, height:32, borderRadius:'50%', background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, color:'#fff', cursor:'pointer' }}>›</div>}
+                          {/* Dots */}
+                          <div style={{ position:'absolute', bottom:10, left:0, right:0, display:'flex', justifyContent:'center', gap:5 }}>
+                            {images.map((_,i) => <div key={i} onClick={()=>setSlideIdx(act.id,i)} style={{ width:i===slideIdx?16:5, height:5, borderRadius:3, background:i===slideIdx?T.gold:'rgba(255,255,255,0.4)', cursor:'pointer', transition:'all 0.2s' }} />)}
+                          </div>
+                          {/* Caption */}
+                          {images[slideIdx]?.caption && <div style={{ position:'absolute', bottom:28, left:12, fontSize:11, color:'rgba(255,255,255,0.7)', background:'rgba(0,0,0,0.4)', borderRadius:4, padding:'2px 8px' }}>{images[slideIdx].caption}</div>}
+                          {/* Remove current */}
+                          <div onClick={()=>removeImageUrl(act,slideIdx)} style={{ position:'absolute', top:8, right:8, width:24, height:24, borderRadius:'50%', background:'rgba(248,113,113,0.8)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, color:'#fff', cursor:'pointer' }}>×</div>
+                        </div>
+                      )}
+
+                      {/* Thumbnail strip */}
+                      {images.length > 1 && (
+                        <div style={{ display:'flex', gap:6, overflowX:'auto', marginBottom:10, paddingBottom:4 }}>
+                          {images.map((img,i) => (
+                            <div key={i} onClick={()=>setSlideIdx(act.id,i)} style={{ width:60, height:42, borderRadius:6, overflow:'hidden', flexShrink:0, border:`1.5px solid ${i===slideIdx?T.gold:T.border}`, cursor:'pointer' }}>
+                              <img src={img.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <DropZone compact onFiles={files=>handleActivityFiles(act,files)} />
+                    </div>
+
+                    {/* YouTube reel */}
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                        <Label>Activity reel</Label>
+                        <Btn variant="gold" onClick={()=>setYtActivity(act)} style={{ padding:'5px 12px', fontSize:11 }}>🎬 Add / edit YouTube clip</Btn>
+                      </div>
+                      {(act.reels||[]).length > 0 ? (
+                        (act.reels||[]).map((reel,ri) => (
+                          <div key={ri} style={{ display:'flex', gap:10, alignItems:'center', padding:'8px 10px', background:T.bg3, border:`0.5px solid ${T.border}`, borderRadius:8, marginBottom:6 }}>
+                            {reel.thumbnail && <img src={reel.thumbnail} alt="" style={{ width:60, height:40, borderRadius:5, objectFit:'cover', flexShrink:0 }} />}
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:12, color:T.text }}>{reel.caption||reel.video_id}</div>
+                              <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>{Math.round(reel.start)}s → {Math.round(reel.end)}s · {reel.speed}×</div>
+                            </div>
+                            <Btn variant="danger" style={{ padding:'4px 10px', fontSize:10 }} onClick={()=>updateActivity(act.id,{ reels:(act.reels||[]).filter((_,j)=>j!==ri) })}>Remove</Btn>
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ fontSize:11, color:T.textDim, padding:'8px 0' }}>No reel — add a YouTube clip above.</div>
+                      )}
+                    </div>
+
+                    <Btn variant="gold" onClick={()=>saveActivity(act)} disabled={saving===act.id} style={{ width:'100%', padding:'10px 0', textAlign:'center', justifyContent:'center' }}>
+                      {saving===act.id ? 'Saving…' : 'Save activity media →'}
+                    </Btn>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </>
+      )}
+
+      {/* YouTube popup for activity */}
+      {ytActivity && (
+        <YouTubePopup
+          existing={(ytActivity.reels||[])[0] ?? null}
+          onClose={()=>setYtActivity(null)}
+          onSave={reel => {
+            const existing = (ytActivity.reels||[])[0];
+            if (existing) updateActivity(ytActivity.id, { reels: ytActivity.reels.map((r,i)=>i===0?reel:r) });
+            else updateActivity(ytActivity.id, { reels: [...(ytActivity.reels||[]), reel] });
+            setYtActivity(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIVE PREVIEW PANEL (right panel — unchanged from v1)
+// ═══════════════════════════════════════════════════════════════════════════════
+function buildSlides(supplier, images, heroType, reels) {
+  const ht = heroType ?? supplier?.hero_type ?? 'image';
+  const firstReel = (reels ?? []).find(r => r.source==='youtube' && r.video_id);
+  const reelSrc = firstReel
+    ? `https://www.youtube.com/embed/${firstReel.video_id}?start=${Math.round(firstReel.start)}&end=${Math.round(firstReel.end)}&autoplay=1&mute=1&loop=1&playlist=${firstReel.video_id}&controls=0`
+    : supplier?.reel_url ?? null;
+  const heroUrl = supplier?._primaryUrl ?? supplier?.image ?? null;
+  const slides = [];
+  if ((ht==='reel') && reelSrc) { slides.push({ type:'reel', url:reelSrc, poster:heroUrl, label:'Hero Reel', display_order:0 }); if (heroUrl) slides.push({ type:'image', url:heroUrl, label:'Hero Image', display_order:1 }); }
+  else { if (heroUrl) slides.push({ type:'image', url:heroUrl, label:'Hero Image', display_order:0 }); if (reelSrc) slides.push({ type:'reel', url:reelSrc, poster:heroUrl, label:'Reel', display_order:1 }); }
+  const extras = (images ?? []).filter(img => img.status==='approved' && img.url && img.url!==heroUrl).sort((a,b)=>(a.display_order??99)-(b.display_order??99));
+  extras.forEach(img => { if (!slides.find(s=>s.url===img.url)) slides.push({ ...img, type:'image' }); });
+  const seen = new Set();
+  return slides.filter(s => { if (seen.has(s.url)) return false; seen.add(s.url); return true; });
+}
+
+function PreviewPanel({ supplier, slides, activeSlideIdx, onSlideChange }) {
+  const [tab, setTab] = useState('small');
+  const slide = slides[activeSlideIdx] ?? slides[0];
+  const name = supplier?.name ?? 'Property Name';
+  const destination = supplier?.destination ?? '';
+  const trust = supplier?.trust_score ?? 85;
+  const rate = Math.round((supplier?.net_rate_per_night ?? 25000) * 1.15);
+
+  return (
+    <div style={{ position:'sticky', top:74 }}>
+      <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase', letterSpacing:'0.1em', fontWeight:700, marginBottom:12 }}>Live preview</div>
+      <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+        {[{id:'small',label:'◻ Small'},{id:'big',label:'◼ Big'}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            style={{ flex:1, padding:'8px 0', borderRadius:9, border:`1.5px solid ${tab===t.id?T.gold:T.border}`, background:tab===t.id?T.goldDim:'transparent', color:tab===t.id?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:tab===t.id?600:400 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Small tile */}
+      {tab==='small' && (
+        <div style={{ width:'100%', maxWidth:340, borderRadius:14, overflow:'hidden', border:`1.5px solid ${T.gold}`, background:T.surface }}>
+          <div style={{ position:'relative', height:190, overflow:'hidden', background:'#111' }}>
+            {slide ? (slide.type==='reel'||slide.type==='video' ? <video src={slide.url} poster={slide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <img src={slide.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />) : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:T.textDim, fontSize:12 }}>No image</div>}
+            <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.78) 0%,transparent 50%)' }} />
+            {activeSlideIdx>0&&<button onClick={()=>onSlideChange(activeSlideIdx-1)} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:26, height:26, borderRadius:'50%', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>‹</button>}
+            {activeSlideIdx<slides.length-1&&<button onClick={()=>onSlideChange(activeSlideIdx+1)} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:26, height:26, borderRadius:'50%', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>›</button>}
+            <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 12px 10px' }}>
+              <div style={{ fontSize:14, fontWeight:700, color:'#fff', fontFamily:"'Playfair Display',serif", lineHeight:1.2 }}>{name}</div>
+              <div style={{ fontSize:10, color:'rgba(255,255,255,0.55)', marginTop:2 }}>{destination} · ★ {trust}/100</div>
+            </div>
+          </div>
+          <div style={{ padding:'10px 12px' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              <div style={{ padding:'8px 0', borderRadius:8, border:`1.5px solid ${T.gold}`, background:T.goldDim, color:T.gold, fontSize:11, fontWeight:700, textAlign:'center' }}>✓ Selected</div>
+              <div style={{ padding:'8px 0', borderRadius:8, border:`1px solid ${T.borderGold}`, color:T.gold, fontSize:11, textAlign:'center' }}>Personalise</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Big tile */}
+      {tab==='big' && (
+        <div style={{ width:'100%', maxWidth:420, borderRadius:'14px 14px 0 0', background:'#0f0f0f', border:`0.5px solid ${T.border}`, overflow:'hidden' }}>
+          <div style={{ padding:'14px 16px 10px', borderBottom:`0.5px solid rgba(255,255,255,0.08)` }}>
+            <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700, marginBottom:3 }}>✦ Upgrade & Personalise</div>
+            <div style={{ fontSize:15, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{name}</div>
+            <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{destination}</div>
+            <div style={{ fontSize:17, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif", marginTop:8 }}>R {rate.toLocaleString()}<span style={{ fontSize:10, color:T.textDim, fontWeight:400 }}>/night</span></div>
+          </div>
+          <div style={{ position:'relative', height:180, overflow:'hidden', background:'#111' }}>
+            {slide ? <img src={slide.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:T.textDim }}>No image</div>}
+            {slides.length>1&&<div style={{ position:'absolute', bottom:8, left:0, right:0, display:'flex', justifyContent:'center', gap:4 }}>{slides.map((_,i)=><div key={i} onClick={()=>onSlideChange(i)} style={{ width:i===activeSlideIdx?12:4, height:4, borderRadius:2, background:i===activeSlideIdx?T.gold:'rgba(255,255,255,0.35)', cursor:'pointer', transition:'all 0.2s' }} />)}</div>}
+          </div>
+          <div style={{ padding:'12px 16px', fontSize:11, color:T.textDim, textAlign:'center' }}>ROOM TYPES ↓</div>
+        </div>
+      )}
+
+      {slides.length>0 && <div style={{ marginTop:8, textAlign:'center', fontSize:11, color:T.textDim }}>Slide {activeSlideIdx+1} of {slides.length} · {slides[activeSlideIdx]?.type??''}</div>}
+
+      <div style={{ marginTop:14, padding:'10px 14px', background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:10 }}>
+        <div style={{ fontSize:11, color:T.gold, fontWeight:600, marginBottom:4 }}>✦ What travellers see</div>
+        <div style={{ fontSize:11, color:T.textDim, lineHeight:1.6 }}>Changes only go live after you tap <strong style={{ color:T.text }}>Save changes</strong> in the nav bar.</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+const TABS = [
+  { id:'overview',    label:'Overview',    icon:'◈' },
+  { id:'gallery',     label:'Gallery',     icon:'📷' },
+  { id:'reels',       label:'Reels',       icon:'▶' },
+  { id:'rooms',       label:'Rooms',       icon:'🛏' },
+  { id:'activities',  label:'Activities',  icon:'🎯' },
+];
+
 export default function ContentCMS({ supplierId, isAdmin = false }) {
-  const [supplier,      setSupplier]      = useState(null);
-  const [images,        setImages]        = useState([]);   // local working copy
-  const [heroType,      setHeroType]      = useState('image'); // 'image'|'video'|'reel'
-  const [locked,        setLocked]        = useState(false);
-  const [reels,         setReels]         = useState([]);      // saved YouTube reels
-  const [showYTPopup,   setShowYTPopup]   = useState(false);
-  const [editingReel,   setEditingReel]   = useState(null);    // null = new, obj = editing
+  const [supplier,     setSupplier]     = useState(null);
+  const [images,       setImages]       = useState([]);
+  const [reels,        setReels]        = useState([]);
+  const [heroType,     setHeroType]     = useState('image');
+  const [locked,       setLocked]       = useState(false);
+  const [tab,          setTab]          = useState('overview');
+  const [previewSlide, setPreviewSlide] = useState(0);
+  const [loading,      setLoading]      = useState(true);
+  const [saving,       setSaving]       = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [error,        setError]        = useState('');
 
-  // ── Upload zone state ──────────────────────────────────────────────────────
-  const [uploads,       setUploads]       = useState([]);  // [{id, name, status, pct, error, lowRes?}]
-  const [uploadDrag,    setUploadDrag]    = useState(false);
-  const fileInputRef = useRef(null);
+  const db = useMemo(() => createSupabase(), []);
 
-  // ── Inline edit state ──────────────────────────────────────────────────────
-  // Only one image row may be open at a time. Stores the local working copy.
-  const [editIdx,       setEditIdx]       = useState(null);
-  const [editDraft,     setEditDraft]     = useState(null);
-
-  // ── Score panel ─────────────────────────────────────────────────────────────
-  const [scoreOpen,     setScoreOpen]     = useState(true);
-  const [expandedDim,   setExpandedDim]   = useState(null);
-  const [loading,       setLoading]       = useState(true);
-  const [saving,        setSaving]        = useState(false);
-  const [saved,         setSaved]         = useState(false);
-  const [error,         setError]         = useState('');
-  const [previewSlide,  setPreviewSlide]  = useState(0);
-  const [dragIdx,       setDragIdx]       = useState(null);
-  const [dragOverIdx,   setDragOverIdx]   = useState(null);
-  const [activeTab,     setActiveTab]     = useState('small'); // 'small'|'big'
-
-  const db = createSupabase();
-
-  // ── Load supplier ──────────────────────────────────────────────────────────
+  // Load supplier
   useEffect(() => {
     if (!supplierId || !db) { setLoading(false); return; }
     setLoading(true);
-    db.fetchSupplier(supplierId)
+    db.fetch1('suppliers', `id=eq.${supplierId}&select=*`)
       .then(row => {
-        if (!row) { setError('Supplier not found'); setLoading(false); return; }
+        if (!row) { setError('Supplier not found'); return; }
         setSupplier(row);
         setHeroType(row.hero_type ?? 'image');
         setLocked(row.media_order_locked ?? false);
-
-        // Parse images JSONB
         let imgs = [];
-        try {
-          imgs = Array.isArray(row.images)
-            ? row.images
-            : (row.images ? JSON.parse(row.images) : []);
-        } catch { imgs = []; }
-
-        // Find primary image URL for the supplier object
-        const primary = imgs.find(img => img.is_primary && img.status === 'approved') ?? imgs.find(img => img.status === 'approved') ?? imgs[0];
+        try { imgs = Array.isArray(row.images) ? row.images : (row.images ? JSON.parse(row.images) : []); } catch {}
+        const primary = imgs.find(i=>i.is_primary&&i.status==='approved') ?? imgs.find(i=>i.status==='approved') ?? imgs[0];
         row._primaryUrl = primary?.url ?? null;
-
-        // Parse reels from Supabase
-        let reelRows = [];
-        try {
-          reelRows = Array.isArray(row.reels)
-            ? row.reels
-            : (row.reels ? JSON.parse(row.reels) : []);
-        } catch { reelRows = []; }
-        setReels(reelRows);
-
-        // Normalise display_order
-        const normalised = imgs.map((img, i) => ({ ...img, display_order: img.display_order ?? i + 1 }))
-          .sort((a, b) => a.display_order - b.display_order);
-        setImages(normalised);
+        setImages(imgs.map((img,i) => ({ ...img, display_order: img.display_order ?? i+1 })).sort((a,b)=>a.display_order-b.display_order));
+        let rls = [];
+        try { rls = Array.isArray(row.reels) ? row.reels : (row.reels ? JSON.parse(row.reels) : []); } catch {}
+        setReels(rls);
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [supplierId]);
 
-  // ── Build slides from current state ───────────────────────────────────────
   const slides = buildSlides(supplier, images, heroType, reels);
 
-  // ── Drag handlers ─────────────────────────────────────────────────────────
-  const onDragStart = (e, idx) => {
-    if (locked && !isAdmin) return;
-    setDragIdx(idx);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-  const onDragOver = (e, idx) => {
-    e.preventDefault();
-    setDragOverIdx(idx);
-  };
-  const onDrop = (e, dropIdx) => {
-    e.preventDefault();
-    if (dragIdx === null || dragIdx === dropIdx) { setDragIdx(null); setDragOverIdx(null); return; }
-    const next = [...images];
-    const [moved] = next.splice(dragIdx, 1);
-    next.splice(dropIdx, 0, moved);
-    // Reassign display_order sequentially
-    const reordered = next.map((img, i) => ({ ...img, display_order: i + 1 }));
-    setImages(reordered);
-    setDragIdx(null);
-    setDragOverIdx(null);
-  };
-  const onDragEnd = () => { setDragIdx(null); setDragOverIdx(null); };
-
-  // ── Move image up/down ─────────────────────────────────────────────────────
-  const moveImage = (idx, dir) => {
-    if (locked && !isAdmin) return;
-    const next = [...images];
-    const target = idx + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[idx], next[target]] = [next[target], next[idx]];
-    setImages(next.map((img, i) => ({ ...img, display_order: i + 1 })));
-  };
-
-  // ── Upload handlers ────────────────────────────────────────────────────────
-  // Posts to /api/upload — server uses SERVICE_ROLE_KEY, writes to suppliers.images.
-  // Refreshes the local images state on success so the row appears immediately.
-  const uploadOne = async (file) => {
-    const id = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    // Pre-check: dimensions warning (warn only — never block)
-    let lowRes = false;
-    try {
-      const dims = await new Promise((res, rej) => {
-        const img = new Image();
-        img.onload = () => { res({ w: img.width, h: img.height }); URL.revokeObjectURL(img.src); };
-        img.onerror = () => { rej(new Error('not-an-image')); URL.revokeObjectURL(img.src); };
-        img.src = URL.createObjectURL(file);
-      });
-      if (dims.w < 1200) lowRes = true;
-    } catch { /* not an image we can preview — proceed anyway */ }
-
-    setUploads(u => [...u, { id, name: file.name, status: 'uploading', pct: 0, lowRes }]);
-
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('supplier_id', supplierId);
-      fd.append('media_type', 'images');
-      fd.append('caption', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80));
-      fd.append('uploaded_by', isAdmin ? 'admin' : 'supplier');
-
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
-      if (!res.ok) {
-        const err = await res.text().catch(() => 'Upload failed');
-        throw new Error(err || `Status ${res.status}`);
-      }
-      const data = await res.json();
-
-      // The API route has already inserted the image record into suppliers.images.
-      // Refetch the supplier so our local state reflects the new ordering & URL.
-      const fresh = await db.fetchSupplier(supplierId);
-      if (fresh) {
-        let imgs = [];
-        try {
-          imgs = Array.isArray(fresh.images) ? fresh.images : (fresh.images ? JSON.parse(fresh.images) : []);
-        } catch { imgs = []; }
-        const normalised = imgs.map((img, i) => ({ ...img, display_order: img.display_order ?? i + 1 }));
-        setImages(normalised);
-      }
-
-      setUploads(u => u.map(x => x.id === id ? { ...x, status: 'done', pct: 100 } : x));
-      // Clear successful row after 4s
-      setTimeout(() => setUploads(u => u.filter(x => x.id !== id)), 4000);
-    } catch (e) {
-      setUploads(u => u.map(x => x.id === id ? { ...x, status: 'error', error: e.message } : x));
-    }
-  };
-
-  const handleFiles = async (fileList) => {
-    if (!fileList || !fileList.length) return;
-    const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
-    if (!files.length) return;
-    // Upload in parallel but cap at 4 concurrent to avoid hammering the route
-    const chunks = [];
-    for (let i = 0; i < files.length; i += 4) chunks.push(files.slice(i, i + 4));
-    for (const chunk of chunks) {
-      await Promise.all(chunk.map(uploadOne));
-    }
-  };
-
-  const onUploadDrop = (e) => {
-    e.preventDefault(); e.stopPropagation();
-    setUploadDrag(false);
-    handleFiles(e.dataTransfer?.files);
-  };
-
-  // ── Inline edit handlers ────────────────────────────────────────────────────
-  const openEdit = (idx) => {
-    if (editIdx === idx) { setEditIdx(null); setEditDraft(null); return; }
-    setEditIdx(idx);
-    const img = images[idx] ?? {};
-    setEditDraft({
-      caption:   img.caption   ?? '',
-      room_type: img.room_type ?? '',
-      tags:      Array.isArray(img.tags) ? img.tags.join(', ') : (img.tags ?? ''),
-      status:    img.status    ?? 'approved',
-    });
-  };
-
-  const saveEdit = () => {
-    if (editIdx === null || !editDraft) return;
-    const tagList = String(editDraft.tags || '').split(',').map(t => t.trim()).filter(Boolean);
-    setImages(prev => prev.map((img, i) => i === editIdx
-      ? { ...img, caption: editDraft.caption, room_type: editDraft.room_type, tags: tagList, status: editDraft.status }
-      : img));
-    setEditIdx(null); setEditDraft(null);
-    setSaved(false);
-  };
-
-  const deleteImage = (idx) => {
-    if (!window.confirm('Remove this image from the supplier? (You can re-upload it.)')) return;
-    setImages(prev => prev.filter((_, i) => i !== idx).map((img, i) => ({ ...img, display_order: i + 1 })));
-    setEditIdx(null); setEditDraft(null);
-    setSaved(false);
-  };
-
-  // ── Compute live content score ─────────────────────────────────────────────
-  const kbForThisSupplier = 0; // Could be wired to a KB count later; safe default for now
-  const score = useMemo(
-    () => computeContentScore(supplier, images, reels, kbForThisSupplier),
-    [supplier, images, reels]
-  );
-
-  // ── Set primary image ──────────────────────────────────────────────────────
-  const setPrimary = (idx) => {
-    if (locked && !isAdmin) return;
-    const next = images.map((img, i) => ({ ...img, is_primary: i === idx }));
-    // Bring primary to front of approved images
-    const primary = next[idx];
-    if (!primary) return;
-    const rest = next.filter((_, i) => i !== idx);
-    const reordered = [primary, ...rest].map((img, i) => ({ ...img, display_order: i + 1 }));
-    setImages(reordered);
-    if (supplier) supplier._primaryUrl = primary.url;
-  };
-
-  // ── Save to Supabase ───────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!db || !supplierId) return;
     setSaving(true); setSaved(false); setError('');
     try {
-      await db.updateSupplier(supplierId, {
-        images: images,
-        reels: reels,
-        hero_type: heroType,
+      await db.patch('suppliers', `id=eq.${supplierId}`, {
+        images, reels, hero_type: heroType,
         ...(isAdmin ? { media_order_locked: locked } : {}),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e) {
-      setError(`Save failed: ${e.message}`);
-    } finally {
-      setSaving(false);
-    }
+    } catch(e) { setError(`Save failed: ${e.message}`); }
+    finally { setSaving(false); }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{GLOBAL_CSS}</style>
-      <div style={{ minHeight: '100vh', background: T.bg, padding: '0 0 80px' }}>
+      <div style={{ minHeight:'100vh', background:T.bg, paddingBottom:80 }}>
 
-        {/* ── NAV BAR ── */}
-        <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(10,10,10,0.97)', backdropFilter: 'blur(16px)', borderBottom: `0.5px solid ${T.border}`, padding: '0 24px', height: 58, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.gold, letterSpacing: '0.05em' }}>✦ The Travel Catalogue</div>
-            <div style={{ color: T.textDim, fontSize: 13 }}>›</div>
-            <div style={{ fontSize: 13, color: T.textMid }}>Media Manager</div>
-            {supplier?.name && (
-              <>
-                <div style={{ color: T.textDim, fontSize: 13 }}>›</div>
-                <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{supplier.name}</div>
-              </>
-            )}
+        {/* NAV BAR */}
+        <div style={{ position:'sticky', top:0, zIndex:50, background:'rgba(10,10,10,0.97)', backdropFilter:'blur(16px)', borderBottom:`0.5px solid ${T.border}`, padding:'0 24px', height:58, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:T.gold, letterSpacing:'0.05em' }}>✦ The Travel Catalogue</div>
+            <div style={{ color:T.textDim, fontSize:13 }}>›</div>
+            <div style={{ fontSize:13, color:T.textMid }}>Media Manager</div>
+            {supplier?.name && <><div style={{ color:T.textDim, fontSize:13 }}>›</div><div style={{ fontSize:13, color:T.text, fontWeight:600 }}>{supplier.name}</div></>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {saved && <div style={{ fontSize: 12, color: T.green }}>✓ Saved</div>}
-            {saving && <div className="saving" style={{ fontSize: 12, color: T.gold }}>Saving…</div>}
-            {error && <div style={{ fontSize: 12, color: T.red }}>{error}</div>}
-            <button
-              onClick={handleSave}
-              disabled={saving || loading}
-              style={{ background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, border: 'none', color: '#0a0a0a', borderRadius: 9, padding: '8px 20px', fontSize: 13, fontWeight: 700, cursor: saving || loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving || loading ? 0.6 : 1 }}
-            >
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            {saved   && <div style={{ fontSize:12, color:T.green }}>✓ Saved</div>}
+            {saving  && <div className="saving" style={{ fontSize:12, color:T.gold }}>Saving…</div>}
+            {error   && <div style={{ fontSize:12, color:T.red, maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{error}</div>}
+            <button onClick={handleSave} disabled={saving||loading}
+              style={{ background:`linear-gradient(135deg,${T.gold},${T.goldLight})`, border:'none', color:'#0a0a0a', borderRadius:9, padding:'8px 20px', fontSize:13, fontWeight:700, cursor:saving||loading?'not-allowed':'pointer', fontFamily:'inherit', opacity:saving||loading?0.6:1 }}>
               {saving ? 'Saving…' : 'Save changes'}
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: 16 }}>
-            <div style={{ width: 36, height: 36, border: `2px solid ${T.border}`, borderTopColor: T.gold, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-            <div style={{ fontSize: 13, color: T.textDim }}>Loading supplier media…</div>
-            <style>{`@keyframes spin { to { transform:rotate(360deg); } }`}</style>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh', flexDirection:'column', gap:16 }}>
+            <div style={{ width:36, height:36, border:`2px solid ${T.border}`, borderTopColor:T.gold, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+            <div style={{ fontSize:13, color:T.textDim }}>Loading supplier media…</div>
           </div>
         ) : (
-          <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 24px 0', display: 'grid', gridTemplateColumns: '1fr 420px', gap: 32, alignItems: 'start' }}>
+          <div style={{ maxWidth:1280, margin:'0 auto', padding:'0 24px' }}>
 
-            {/* ══ LEFT PANEL: Controls ══ */}
-            <div className="fade-in">
-
-              {/* Hero type selector */}
-              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
-                <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 12 }}>Hero tile type</div>
-                <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.55 }}>
-                  Which asset appears first in the carousel? This is what travellers see before they swipe.
-                </div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {[
-                    { id: 'image', label: '📷 Hero Image', desc: 'Primary photograph first' },
-                    { id: 'video', label: '🎬 Video First', desc: 'Property video as hero' },
-                    { id: 'reel',  label: '▶ Reel First',  desc: 'Short reel as hero tile' },
-                  ].map(opt => {
-                    const canSelect = opt.id === 'image' || !!supplier?.reel_url || !!supplier?.video_url;
-                    const isSelected = heroType === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        onClick={() => canSelect && setHeroType(opt.id)}
-                        title={!canSelect ? 'No reel/video URL on file' : undefined}
-                        style={{ flex: 1, padding: '12px 10px', borderRadius: 10, border: `1.5px solid ${isSelected ? T.gold : T.border}`, background: isSelected ? T.goldDim : T.bg3, color: isSelected ? T.gold : (canSelect ? T.textMid : T.textDim), cursor: canSelect ? 'pointer' : 'not-allowed', fontFamily: 'inherit', textAlign: 'left', opacity: canSelect ? 1 : 0.4, transition: 'all 0.15s' }}
-                      >
-                        <div style={{ fontSize: 13, fontWeight: isSelected ? 700 : 400, marginBottom: 3 }}>{opt.label}</div>
-                        <div style={{ fontSize: 10, color: isSelected ? T.goldLight : T.textDim }}>{opt.desc}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {(heroType === 'video' || heroType === 'reel') && supplier?.reel_url && (
-                  <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 8, padding: '7px 12px' }}>
-                    <div style={{ fontSize: 11, color: T.gold }}>▶ Reel URL:</div>
-                    <div style={{ fontSize: 11, color: T.textDim, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{supplier.reel_url}</div>
-                  </div>
-                )}
-              </div>
-
-              {/* ══ CONTENT SCORE PANEL — live, computed from supplier + images + reels ══ */}
-              <div style={{ background: T.surface, border: `0.5px solid ${score.pct >= 80 ? T.borderGold : T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
-                <div onClick={() => setScoreOpen(o => !o)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Content score</div>
-                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>{score.pct >= 80 ? 'Strong — featured eligible' : score.pct >= 60 ? 'Good — keep going' : 'Needs work — see suggestions'}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: score.pct >= 80 ? T.gold : score.pct >= 60 ? T.text : T.amber, fontFamily: "'Playfair Display', serif", lineHeight: 1 }}>{score.total}<span style={{ fontSize: 13, color: T.textDim, fontWeight: 400 }}>/65</span></div>
-                      <div style={{ fontSize: 10, color: T.textDim, marginTop: 3 }}>{score.pct}%</div>
-                    </div>
-                    <div style={{ fontSize: 12, color: T.textDim }}>{scoreOpen ? '▲' : '▼'}</div>
-                  </div>
-                </div>
-                {/* Progress bar */}
-                <div style={{ marginTop: 12, height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ width: `${score.pct}%`, height: '100%', background: score.pct >= 80 ? `linear-gradient(90deg, ${T.gold}, ${T.goldLight})` : score.pct >= 60 ? T.gold : T.amber, transition: 'width 0.4s ease' }} />
-                </div>
-
-                {scoreOpen && (
-                  <div style={{ marginTop: 16, borderTop: `0.5px solid ${T.border}`, paddingTop: 14 }}>
-                    {score.dimensions.map(dim => {
-                      const isExpanded = expandedDim === dim.id;
-                      const full = dim.pts === dim.max;
-                      return (
-                        <div key={dim.id} style={{ marginBottom: 8 }}>
-                          <div onClick={() => setExpandedDim(isExpanded ? null : dim.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '6px 0' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-                              <div style={{ width: 16, fontSize: 11, color: full ? T.green : T.textDim, flexShrink: 0 }}>{full ? '✓' : '·'}</div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12, color: T.text, fontWeight: 500 }}>{dim.label}</div>
-                              </div>
-                              <div style={{ width: 80, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
-                                <div style={{ width: `${(dim.pts / dim.max) * 100}%`, height: '100%', background: full ? T.green : T.gold, transition: 'width 0.3s' }} />
-                              </div>
-                              <div style={{ fontSize: 11, color: T.textMid, minWidth: 36, textAlign: 'right' }}>{dim.pts}/{dim.max}</div>
-                              <div style={{ fontSize: 10, color: T.textDim, width: 12, textAlign: 'right' }}>{isExpanded ? '▲' : '▼'}</div>
-                            </div>
-                          </div>
-                          {isExpanded && (
-                            <div style={{ marginLeft: 26, marginTop: 4, marginBottom: 8, fontSize: 11, color: T.textDim, lineHeight: 1.55, background: T.bg3, borderLeft: `2px solid ${full ? T.green : T.gold}`, padding: '8px 12px', borderRadius: '0 6px 6px 0' }}>
-                              {dim.suggestion}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(96,165,250,0.05)', border: '0.5px solid rgba(96,165,250,0.2)', borderRadius: 8, fontSize: 11, color: '#93c5fd', lineHeight: 1.55 }}>
-                      ℹ Up to <strong>+25 more points</strong> available once room descriptions (15) and social media verification (10) are added in a future update.
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ══ UPLOAD ZONE — drag/drop or click. Posts to /api/upload. ══ */}
-              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Upload images</div>
-                    <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>Drop JPG / PNG / WEBP · {isAdmin ? 'Goes live immediately' : 'Pending admin review'}</div>
-                  </div>
-                  <div style={{ fontSize: 10, color: T.textDim }}>Max 10MB per file · 1600px+ recommended</div>
-                </div>
-
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragEnter={e => { e.preventDefault(); setUploadDrag(true); }}
-                  onDragOver={e => { e.preventDefault(); setUploadDrag(true); }}
-                  onDragLeave={e => { e.preventDefault(); setUploadDrag(false); }}
-                  onDrop={onUploadDrop}
-                  style={{
-                    border: `1.5px dashed ${uploadDrag ? T.gold : T.border}`,
-                    borderRadius: 12,
-                    padding: '28px 16px',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    background: uploadDrag ? T.goldDim : 'rgba(255,255,255,0.02)',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>📷</div>
-                  <div style={{ fontSize: 13, color: T.text, marginBottom: 4 }}>Drag photos here or click to choose</div>
-                  <div style={{ fontSize: 11, color: T.textDim }}>Multiple files supported · uploads in parallel</div>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
-                  style={{ display: 'none' }}
-                />
-
-                {/* Upload progress / status list */}
-                {uploads.length > 0 && (
-                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {uploads.map(u => (
-                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg3, border: `0.5px solid ${u.status === 'error' ? 'rgba(248,113,113,0.3)' : u.status === 'done' ? 'rgba(74,222,128,0.3)' : T.border}`, borderRadius: 8 }}>
-                        <div style={{ fontSize: 13, flexShrink: 0 }}>
-                          {u.status === 'uploading' ? '↑' : u.status === 'done' ? '✓' : '⚠'}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
-                          <div style={{ fontSize: 10, color: u.status === 'error' ? '#f87171' : u.lowRes ? T.amber : T.textDim, marginTop: 2 }}>
-                            {u.status === 'uploading' && 'Uploading…'}
-                            {u.status === 'done' && (u.lowRes ? '✓ Uploaded — low res, consider 1600px+ next time' : '✓ Uploaded')}
-                            {u.status === 'error' && (u.error || 'Failed')}
-                          </div>
-                        </div>
-                        {u.status === 'error' && (
-                          <button onClick={() => setUploads(prev => prev.filter(x => x.id !== u.id))} style={{ background: 'transparent', border: 'none', color: T.textDim, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>×</button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Image reorder list */}
-              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Image order</div>
-                  {locked && !isAdmin && (
-                    <div style={{ fontSize: 10, color: T.amber, background: 'rgba(251,191,36,0.1)', border: '0.5px solid rgba(251,191,36,0.3)', borderRadius: 20, padding: '2px 10px' }}>🔒 Locked by admin</div>
-                  )}
-                  {isAdmin && (
-                    <button
-                      onClick={() => setLocked(l => !l)}
-                      style={{ fontSize: 10, color: locked ? T.amber : T.textDim, background: locked ? 'rgba(251,191,36,0.08)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${locked ? 'rgba(251,191,36,0.3)' : T.border}`, borderRadius: 20, padding: '3px 12px', cursor: 'pointer', fontFamily: 'inherit' }}
-                    >
-                      {locked ? '🔒 Locked — click to unlock' : '🔓 Unlocked — click to lock'}
-                    </button>
-                  )}
-                </div>
-                <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.5 }}>
-                  Drag to reorder · Star = set as primary hero image · Arrows = fine-tune position
-                </div>
-
-                {images.length === 0 ? (
-                  <div style={{ padding: '32px 0', textAlign: 'center', color: T.textDim, fontSize: 13 }}>
-                    No approved images on file.<br />
-                    <span style={{ fontSize: 11, opacity: 0.7 }}>Upload images via the Content tab to get started.</span>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {images.map((img, idx) => {
-                      const isActive = dragOverIdx === idx;
-                      const isDragging = dragIdx === idx;
-                      return (
-                        <div key={img.url ?? idx} style={{ display: 'flex', flexDirection: 'column' }}>
-
-                          {/* Draggable row */}
-                          <div
-                            draggable={!locked || isAdmin}
-                            onDragStart={e => onDragStart(e, idx)}
-                            onDragOver={e => onDragOver(e, idx)}
-                            onDrop={e => onDrop(e, idx)}
-                            onDragEnd={onDragEnd}
-                            className={`${isDragging ? 'dragging' : ''} ${isActive ? 'drag-over' : ''}`}
-                            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.bg3, border: `0.5px solid ${isActive ? T.gold : T.border}`, borderRadius: 10, transition: 'all 0.15s', cursor: locked && !isAdmin ? 'default' : 'grab' }}
-                          >
-                            <div className="drag-handle" style={{ color: T.textDim, fontSize: 16, flexShrink: 0, paddingRight: 4 }}>&#8942;</div>
-
-                            <div style={{ width: 64, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#111' }}>
-                              <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
-                            </div>
-
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {img.caption || img.room_type || 'Image ' + (idx + 1)}
-                              </div>
-                              <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                                {img.is_primary && <span style={{ fontSize: 9, color: T.gold, background: T.goldDim, border: '0.5px solid ' + T.borderGold, borderRadius: 20, padding: '1px 7px', fontWeight: 700 }}>Primary</span>}
-                                {img.room_type && <span style={{ fontSize: 9, color: T.textDim, background: 'rgba(255,255,255,0.05)', border: '0.5px solid ' + T.border, borderRadius: 20, padding: '1px 7px' }}>{img.room_type}</span>}
-                                {img.status && img.status !== 'approved' && <span style={{ fontSize: 9, color: T.amber, background: 'rgba(251,191,36,0.08)', border: '0.5px solid rgba(251,191,36,0.2)', borderRadius: 20, padding: '1px 7px' }}>{img.status}</span>}
-                              </div>
-                            </div>
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                              <button onClick={() => setPrimary(idx)} title="Set as primary" style={{ background: img.is_primary ? T.goldDim : 'rgba(255,255,255,0.04)', border: '0.5px solid ' + (img.is_primary ? T.borderGold : T.border), borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: img.is_primary ? T.gold : T.textDim }}>
-                                {img.is_primary ? '★' : '☆'}
-                              </button>
-                              <button onClick={() => moveImage(idx, -1)} disabled={idx === 0 || (locked && !isAdmin)} style={{ background: 'rgba(255,255,255,0.04)', border: '0.5px solid ' + T.border, borderRadius: 7, width: 28, height: 28, cursor: idx === 0 || (locked && !isAdmin) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, opacity: idx === 0 ? 0.3 : 1 }}>↑</button>
-                              <button onClick={() => moveImage(idx, 1)} disabled={idx === images.length - 1 || (locked && !isAdmin)} style={{ background: 'rgba(255,255,255,0.04)', border: '0.5px solid ' + T.border, borderRadius: 7, width: 28, height: 28, cursor: idx === images.length - 1 || (locked && !isAdmin) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.textDim, opacity: idx === images.length - 1 ? 0.3 : 1 }}>↓</button>
-                              <button onClick={() => openEdit(idx)} title="Edit" style={{ background: editIdx === idx ? T.goldDim : 'rgba(255,255,255,0.04)', border: '0.5px solid ' + (editIdx === idx ? T.borderGold : T.border), borderRadius: 7, width: 28, height: 28, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: editIdx === idx ? T.gold : T.textDim, fontFamily: 'inherit' }}>&#9998;</button>
-                            </div>
-                          </div>
-
-                          {/* Inline edit form — expands below the row */}
-                          {editIdx === idx && editDraft && (
-                            <div style={{ background: T.bg3, border: '0.5px solid ' + T.borderGold, borderRadius: 10, padding: '14px', marginTop: 4, marginBottom: 4 }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
-                                <div>
-                                  <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Caption</div>
-                                  <input value={editDraft.caption} onChange={e => setEditDraft({ ...editDraft, caption: e.target.value.slice(0, 120) })} placeholder="e.g. Sundowner deck overlooking the river" style={{ width: '100%', background: T.surface, border: '0.5px solid ' + T.border, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                                </div>
-                                <div>
-                                  <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Room type (optional)</div>
-                                  <input value={editDraft.room_type} onChange={e => setEditDraft({ ...editDraft, room_type: e.target.value.slice(0, 50) })} placeholder="e.g. Boulders Suite, Pool" list={'room-types-' + supplierId} style={{ width: '100%', background: T.surface, border: '0.5px solid ' + T.border, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                                  <datalist id={'room-types-' + supplierId}>
-                                    {Array.from(new Set(images.map(i => i.room_type).filter(Boolean))).map(rt => (
-                                      <option key={rt} value={rt} />
-                                    ))}
-                                  </datalist>
-                                </div>
-                              </div>
-                              <div style={{ marginBottom: 10 }}>
-                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Tags (comma-separated)</div>
-                                <input value={editDraft.tags} onChange={e => setEditDraft({ ...editDraft, tags: e.target.value.slice(0, 200) })} placeholder="e.g. sundowner, riverside, suite, romantic" style={{ width: '100%', background: T.surface, border: '0.5px solid ' + T.border, color: T.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                              </div>
-                              <div style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: 5 }}>Status</div>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                  {['approved', 'pending', 'rejected'].map(s => (
-                                    <button key={s} onClick={() => setEditDraft({ ...editDraft, status: s })} style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1.5px solid ' + (editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.border), background: editDraft.status === s ? (s === 'approved' ? 'rgba(74,222,128,0.1)' : s === 'pending' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)') : 'transparent', color: editDraft.status === s ? (s === 'approved' ? '#4ade80' : s === 'pending' ? T.amber : '#f87171') : T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize', fontWeight: editDraft.status === s ? 700 : 400 }}>
-                                      {s}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
-                                <button onClick={() => deleteImage(idx)} style={{ padding: '7px 14px', background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', borderRadius: 7, color: '#f87171', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                  <button onClick={() => { setEditIdx(null); setEditDraft(null); }} style={{ padding: '7px 14px', background: T.surface, border: '0.5px solid ' + T.border, borderRadius: 7, color: T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-                                  <button onClick={saveEdit} style={{ padding: '7px 16px', background: 'linear-gradient(135deg,' + T.gold + ',' + T.goldLight + ')', border: 'none', borderRadius: 7, color: '#0a0a0a', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Save changes</button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* ── YouTube reel editor ── */}
-              {showYTPopup && (
-                <YouTubePopup
-                  existing={editingReel}
-                  onClose={() => { setShowYTPopup(false); setEditingReel(null); }}
-                  onSave={reel => {
-                    if (editingReel) {
-                      setReels(prev => prev.map(r => r === editingReel ? reel : r));
-                    } else {
-                      setReels(prev => [...prev, reel]);
-                    }
-                    setShowYTPopup(false);
-                    setEditingReel(null);
-                    setSaved(false); // prompt user to save
-                  }}
-                />
-              )}
-
-              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px', marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>YouTube reels</div>
-                  <button
-                    onClick={() => { setEditingReel(null); setShowYTPopup(true); }}
-                    style={{ padding: '6px 14px', background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, border: 'none', borderRadius: 8, color: '#0a0a0a', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-                  >
-                    + Add reel
-                  </button>
-                </div>
-                <div style={{ fontSize: 12, color: T.textDim, marginBottom: 14, lineHeight: 1.55 }}>
-                  Paste any YouTube URL, trim to a 5–15 second clip, set playback speed, and set it as the hero tile. Saved to your supplier record.
-                </div>
-
-                {reels.length === 0 ? (
-                  <div style={{ padding: '24px 0', textAlign: 'center', color: T.textDim, fontSize: 12 }}>
-                    No reels yet. Tap <strong style={{ color: T.text }}>+ Add reel</strong> to embed a YouTube clip.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {reels.map((reel, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 12px', background: T.bg3, border: `0.5px solid ${T.border}`, borderRadius: 10 }}>
-                        {/* Thumbnail */}
-                        <div style={{ width: 80, height: 50, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#111' }}>
-                          {reel.thumbnail
-                            ? <img src={reel.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>▶</div>
-                          }
-                        </div>
-                        {/* Info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {reel.caption || reel.video_id}
-                          </div>
-                          <div style={{ fontSize: 11, color: T.textDim, marginTop: 2 }}>
-                            {Math.round(reel.start)}s → {Math.round(reel.end)}s · {reel.speed}× speed · {Math.round(reel.end - reel.start)}s clip
-                          </div>
-                        </div>
-                        {/* Actions */}
-                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          <button onClick={() => { setEditingReel(reel); setShowYTPopup(true); }}
-                            style={{ padding: '4px 10px', background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 6, color: T.gold, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
-                          <button onClick={() => setReels(prev => prev.filter((_, idx) => idx !== i))}
-                            style={{ padding: '4px 10px', background: 'rgba(248,113,113,0.08)', border: '0.5px solid rgba(248,113,113,0.25)', borderRadius: 6, color: '#f87171', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>Remove</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Order summary */}
-              <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: '18px 20px' }}>
-                <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 12 }}>Slide order preview</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {slides.map((slide, i) => (
-                    <div key={i} onClick={() => setPreviewSlide(i)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 8, background: previewSlide === i ? T.goldDim : 'rgba(255,255,255,0.03)', border: `0.5px solid ${previewSlide === i ? T.borderGold : T.border}`, cursor: 'pointer', transition: 'all 0.15s' }}>
-                      <div style={{ width: 20, height: 20, borderRadius: 5, background: T.bg3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: previewSlide === i ? T.gold : T.textDim, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 11, color: previewSlide === i ? T.gold : T.text, fontWeight: previewSlide === i ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{slide.label || `Slide ${i + 1}`}</div>
-                        <div style={{ fontSize: 9, color: T.textDim, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 1 }}>{slide.type}</div>
-                      </div>
-                      {i === 0 && <div style={{ fontSize: 9, color: T.gold, background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 20, padding: '1px 7px', fontWeight: 700, flexShrink: 0 }}>Hero</div>}
-                    </div>
-                  ))}
-                  {slides.length === 0 && (
-                    <div style={{ fontSize: 12, color: T.textDim, textAlign: 'center', padding: '16px 0' }}>No slides yet — add images above</div>
-                  )}
-                </div>
-              </div>
+            {/* TAB BAR */}
+            <div style={{ display:'flex', gap:2, borderBottom:`0.5px solid ${T.border}`, marginBottom:24, paddingTop:20 }}>
+              {TABS.map(t => (
+                <button key={t.id} onClick={()=>setTab(t.id)}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 18px', background:'transparent', border:'none', borderBottom:`2px solid ${tab===t.id?T.gold:'transparent'}`, color:tab===t.id?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:tab===t.id?600:400, transition:'all 0.15s', marginBottom:-1 }}>
+                  <span style={{ fontSize:14 }}>{t.icon}</span> {t.label}
+                </button>
+              ))}
             </div>
 
-            {/* ══ RIGHT PANEL: Live Preview ══ */}
-            <div style={{ position: 'sticky', top: 74 }} className="fade-in">
-              <div style={{ fontSize: 11, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 12 }}>Live preview</div>
+            {/* CONTENT GRID */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 380px', gap:32, alignItems:'start' }}>
 
-              {/* Preview tab toggle */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                {[
-                  { id: 'small', label: '◻ Small tile',   desc: 'Carousel card' },
-                  { id: 'big',   label: '◼ Big tile',     desc: 'Upgrade sheet' },
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    style={{ flex: 1, padding: '9px 0', borderRadius: 9, border: `1.5px solid ${activeTab === tab.id ? T.gold : T.border}`, background: activeTab === tab.id ? T.goldDim : 'transparent', color: activeTab === tab.id ? T.gold : T.textMid, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: activeTab === tab.id ? 600 : 400 }}
-                  >
-                    <div>{tab.label}</div>
-                    <div style={{ fontSize: 10, opacity: 0.7, marginTop: 1 }}>{tab.desc}</div>
-                  </button>
-                ))}
+              {/* LEFT — active tab content */}
+              <div>
+                {tab==='overview' && <TabOverview supplier={supplier} images={images} reels={reels} heroType={heroType} setHeroType={setHeroType} locked={locked} setLocked={setLocked} isAdmin={isAdmin} slides={slides} previewSlide={previewSlide} setPreviewSlide={setPreviewSlide} />}
+                {tab==='gallery'  && <TabGallery  supplierId={supplierId} isAdmin={isAdmin} images={images} setImages={setImages} locked={locked} />}
+                {tab==='reels'    && <TabReels    reels={reels} setReels={setReels} />}
+                {tab==='rooms'    && <TabRooms    supplierId={supplierId} isAdmin={isAdmin} />}
+                {tab==='activities' && <TabActivities supplierId={supplierId} supplier={supplier} isAdmin={isAdmin} />}
               </div>
 
-              {/* Preview renders */}
-              <div style={{ display: activeTab === 'small' ? 'block' : 'none' }}>
-                <SmallTilePreview supplier={supplier} slides={slides} activeSlideIdx={previewSlide} onSlideChange={setPreviewSlide} />
-              </div>
-              <div style={{ display: activeTab === 'big' ? 'block' : 'none' }}>
-                <BigTilePreview supplier={supplier} slides={slides} activeSlideIdx={previewSlide} onSlideChange={setPreviewSlide} />
-              </div>
-
-              {/* Caption: which slide is shown */}
-              {slides.length > 0 && (
-                <div style={{ marginTop: 10, textAlign: 'center', fontSize: 11, color: T.textDim }}>
-                  Showing slide {previewSlide + 1} of {slides.length} · {slides[previewSlide]?.type ?? ''}
-                </div>
-              )}
-
-              {/* Unsaved warning */}
-              <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(212,175,55,0.05)', border: `0.5px solid ${T.borderGold}`, borderRadius: 10 }}>
-                <div style={{ fontSize: 11, color: T.gold, fontWeight: 600, marginBottom: 4 }}>✦ What travellers see</div>
-                <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.6 }}>
-                  The small tile preview matches the exact carousel card in the booking flow. The big tile matches the Upgrade &amp; Personalise sheet header. Changes only go live after you tap <strong style={{ color: T.text }}>Save changes</strong>.
-                </div>
-              </div>
-
-              {/* Save shortcut */}
-              <button
-                onClick={handleSave}
-                disabled={saving || loading}
-                style={{ width: '100%', marginTop: 12, padding: '13px 0', background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, border: 'none', borderRadius: 10, color: '#0a0a0a', fontSize: 14, fontWeight: 700, cursor: saving || loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving || loading ? 0.6 : 1 }}
-              >
-                {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save changes →'}
-              </button>
+              {/* RIGHT — live preview (always visible) */}
+              <PreviewPanel supplier={supplier} slides={slides} activeSlideIdx={previewSlide} onSlideChange={setPreviewSlide} />
             </div>
-
           </div>
         )}
       </div>
