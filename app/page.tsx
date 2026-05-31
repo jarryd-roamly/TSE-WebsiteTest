@@ -613,7 +613,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                     allSlides[heroSlide].type === 'youtube'
                       ? <div style={{ position:'absolute', inset:0, overflow:'hidden' }}>
                           <iframe src={allSlides[heroSlide].url} title={hotel.name} style={{ position:'absolute', top:'-10%', left:'-10%', width:'120%', height:'120%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
-                          <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent', pointerEvents:'all' }} />
+                          <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
                         </div>
                     : allSlides[heroSlide].type === 'reel' || allSlides[heroSlide].type === 'video'
                       ? <video src={allSlides[heroSlide].url} poster={allSlides[heroSlide].poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
@@ -685,7 +685,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                           {rSlide && (rSlide.type==='youtube'
                             ? <div style={{ position:'absolute', inset:0, overflow:'hidden' }}>
                                 <iframe src={rSlide.url} title={opt.label} style={{ position:'absolute', top:'-10%', left:'-10%', width:'120%', height:'120%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
-                                <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent', pointerEvents:'all' }} />
+                                <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
                               </div>
                             : rSlide.type==='reel'||rSlide.type==='video'
                             ? <video src={rSlide.url} poster={rSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
@@ -1038,7 +1038,7 @@ function NestedPropertyCarousel({
         allowFullScreen={false}
         loading="lazy"
       />
-      <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent', pointerEvents:'all' }} />
+      <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
     </div>
                     : currentSlide.type === 'reel' || currentSlide.type === 'video'
                       ? <video src={currentSlide.url} poster={currentSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
