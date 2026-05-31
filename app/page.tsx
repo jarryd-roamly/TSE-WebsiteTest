@@ -611,10 +611,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                 <div style={{ position:'relative', height:240, overflow:'hidden', background:'#111' }}>
                   {allSlides[heroSlide] && (
                     allSlides[heroSlide].type === 'youtube'
-                      ? <div style={{ position:'absolute', inset:0, overflow:'hidden' }}>
-                          <iframe src={allSlides[heroSlide].url} title={hotel.name} style={{ position:'absolute', top:'-10%', left:'-10%', width:'120%', height:'120%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
-                          <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
-                        </div>
+                      ? <><img src={allSlides[heroSlide].poster || `https://img.youtube.com/vi/${allSlides[heroSlide].url.match(/embed\/([^?]+)/)?.[1]}/maxresdefault.jpg`} alt={hotel.name} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} /><div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:44, height:44, borderRadius:'50%', background:'rgba(0,0,0,0.55)', border:'2px solid rgba(255,255,255,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}><span style={{ color:'#fff', fontSize:16, marginLeft:3 }}>▶</span></div></>
                     : allSlides[heroSlide].type === 'reel' || allSlides[heroSlide].type === 'video'
                       ? <video src={allSlides[heroSlide].url} poster={allSlides[heroSlide].poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                       : <img src={allSlides[heroSlide].url} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
@@ -683,10 +680,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                       <div key={opt.label} style={{ marginBottom:10, borderRadius:12, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?'rgba(212,175,55,0.04)':T.surface, overflow:'hidden', transition:'border-color 0.2s' }}>
                         <div style={{ position:'relative', height:160, overflow:'hidden', cursor:'pointer' }} onClick={() => { handleSelect('rooms', opt); }}>
                           {rSlide && (rSlide.type==='youtube'
-                            ? <div style={{ position:'absolute', inset:0, overflow:'hidden' }}>
-                                <iframe src={rSlide.url} title={opt.label} style={{ position:'absolute', top:'-10%', left:'-10%', width:'120%', height:'120%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
-                                <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
-                              </div>
+                            ? <><img src={rSlide.poster || `https://img.youtube.com/vi/${rSlide.url.match(/embed\/([^?]+)/)?.[1]}/maxresdefault.jpg`} alt={opt.label} style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} /><div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:36, height:36, borderRadius:'50%', background:'rgba(0,0,0,0.55)', border:'2px solid rgba(255,255,255,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}><span style={{ color:'#fff', fontSize:14, marginLeft:2 }}>▶</span></div></>
                             : rSlide.type==='reel'||rSlide.type==='video'
                             ? <video src={rSlide.url} poster={rSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                             : <img src={rSlide.url} alt={opt.label} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
@@ -1030,15 +1024,9 @@ function NestedPropertyCarousel({
                   {currentSlide && (
                     currentSlide.type === 'youtube'
   ? <div style={{ position:'absolute', inset:0, overflow:'hidden' }}>
-      <iframe
-        src={currentSlide.url}
-        title={hotel.name}
-        style={{ position:'absolute', top:'-10%', left:'-10%', width:'120%', height:'120%', border:'none', pointerEvents:'none' }}
-        allow="autoplay; encrypted-media"
-        allowFullScreen={false}
-        loading="lazy"
-      />
-      <div style={{ position:'absolute', inset:0, zIndex:2, background:'rgba(0,0,0,0.01)', pointerEvents:'all' }} />
+      <img src={currentSlide.poster || `https://img.youtube.com/vi/${currentSlide.url.match(/embed\/([^?]+)/)?.[1]}/maxresdefault.jpg`} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+      <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.18)' }} />
+      <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:44, height:44, borderRadius:'50%', background:'rgba(0,0,0,0.55)', border:'2px solid rgba(255,255,255,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}><span style={{ color:'#fff', fontSize:16, marginLeft:3 }}>▶</span></div>
     </div>
                     : currentSlide.type === 'reel' || currentSlide.type === 'video'
                       ? <video src={currentSlide.url} poster={currentSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
