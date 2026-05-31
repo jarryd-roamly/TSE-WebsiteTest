@@ -68,8 +68,8 @@ const REGION_CLIPS = {
     { video_id: 'Bz5TuUsXPpw', start: 28,  end: 38,  accent: '#8FC4D4', name: 'Victoria Falls',  country: 'Zimbabwe',     tagline: 'The smoke that thunders',              stat: '108m',      statLabel: 'of pure vertical power' },
   ],
   'cape-town':     [
-    { video_id: 'T0PvQ4ilQW8', start: 8,   end: 18,  accent: '#B8C4A0', name: 'Cape Peninsula',  country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
-    { video_id: 'f1aT7T5Ax7w', start: 40,  end: 50,  accent: '#B8C4A0', name: 'Cape Peninsula',  country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
+    { video_id: 'T0PvQ4ilQW8', start: 8,   end: 18,  accent: '#B8C4A0', name: 'Cape Town',       country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
+    { video_id: 'T0PvQ4ilQW8', start: 25,  end: 35,  accent: '#B8C4A0', name: 'Cape Town',       country: 'South Africa', tagline: 'Where two oceans meet the mountain',   stat: 'Top 3',     statLabel: 'most beautiful cities' },
   ],
   'madikwe':       [
     { video_id: 'PwidugulKtU', start: 5,   end: 15,  accent: '#C8A96E', name: 'Madikwe',         country: 'South Africa', tagline: 'Big Five. Malaria-free. Unforgettable', stat: '75,000',   statLabel: 'hectares of wilderness' },
@@ -686,6 +686,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
                 allowFullScreen={false}
                 title="region-A"
               />
+              <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent', pointerEvents:'all' }} />
             </div>
             <div className={`scr-vid-frame ${activeFrame === 'B' ? 'show' : ''}`}>
               <iframe
@@ -694,6 +695,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
                 allowFullScreen={false}
                 title="region-B"
               />
+              <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent', pointerEvents:'all' }} />
             </div>
           </div>
 
