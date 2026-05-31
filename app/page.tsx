@@ -26,6 +26,7 @@ import FlightSelector                        from '@/components/FlightSelector';
 import { lastMileFor, lastMileZar, defaultCommercialTarget,
          priceTransfer, CARRIER_ADJUST,
          exitLastMileFor, originHubAirport }  from './lib/transfers';
+import SafariCinematicResearch from '@/components/SafariCinematicResearch'
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
               InterTransferState, UpgradeState, Itinerary,
@@ -1950,7 +1951,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     setAdjustMsgs([{ role:'assistant', text:`Your ${finalItinerary.title} is ready. Tap any lodge to browse options, or ask me to adjust anything below.` }]);
     if (needsIntlFlight) { setIncludeIntlFlight(true); setBuilderIntlOrigin(intlOrigin); }
     window.scrollTo({ top:0, behavior:'instant' });
-    setScreen('builder');
   };
 
   const runSocraticPlanner = () => {
@@ -2298,14 +2298,19 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       )}
 
       {/* INSPIRE RESEARCH */}
-      {screen==='inspire-research' && (
-        <div style={{ minHeight:'100vh', background:T.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:40 }}>
-          <div style={{ marginBottom:32, display:'flex', gap:6 }}>{RESEARCH_STEPS.map((_,i)=><StepDot key={i} active={i<=researchStep} />)}</div>
-          <Spinner />
-          <div style={{ fontSize:14, color:T.textMid, textAlign:'center' as const, marginTop:20, maxWidth:360 }}>{RESEARCH_STEPS[researchStep]}</div>
-          <div style={{ fontSize:12, color:T.textDim, marginTop:8 }}>Checking lodge availability · Building your itinerary</div>
-        </div>
-      )}
+{screen === 'inspire-research' && (
+  <SafariCinematicResearch
+    answers={{
+      experience: adults === 1 ? 'first' : 'returning',
+      regions: selectedRegions,
+      nights,
+      travellers: adults === 1 ? 'solo' : adults === 2 ? 'couple' : `group of ${adults}`,
+      budget: fmt(budget),
+    }}
+    aiReady={itinerary !== null}
+    onComplete={() => setScreen('builder')}
+  />
+)}
 
       {/* BUILDER */}
       {screen==='builder' && itinerary && (
