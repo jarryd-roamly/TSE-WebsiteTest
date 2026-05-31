@@ -485,7 +485,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
         .scr-tleft { flex: 1; position: relative; overflow: hidden; }
         .scr-tleft-bg {
           position: absolute; inset: 0; width: 100%; height: 100%;
-          object-fit: cover; opacity: 0.09; filter: saturate(0.4);
+          object-fit: cover; opacity: 0.22; filter: saturate(0.55);
           animation: scrPan 22s ease-in-out infinite alternate;
         }
         @keyframes scrPan {
