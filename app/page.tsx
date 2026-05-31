@@ -2099,29 +2099,17 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
                 <button onClick={()=>setScreen('curated')} style={{ background:'none', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>View all →</button>
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:16 }}>
-                {CURATED_JOURNEYS.slice(0,4).map((j,idx) => (
-                  <div key={j.id} onClick={()=>setScreen('curated')}
-                    style={{ cursor:'pointer', position:'relative', borderRadius:16, overflow:'hidden', background:'#0f0f0f',
-                      boxShadow:'0 4px 24px rgba(0,0,0,0.45)', transition:'transform 0.22s ease, box-shadow 0.22s ease',
-                      border:'1px solid rgba(255,255,255,0.06)' }}
-                    onMouseEnter={e=>{(e.currentTarget as HTMLDivElement).style.transform='translateY(-3px)';(e.currentTarget as HTMLDivElement).style.boxShadow='0 10px 36px rgba(0,0,0,0.6)';}}
-                    onMouseLeave={e=>{(e.currentTarget as HTMLDivElement).style.transform='translateY(0)';(e.currentTarget as HTMLDivElement).style.boxShadow='0 4px 24px rgba(0,0,0,0.45)';}}
-                  >
-                    <div style={{ position:'relative', height:200, overflow:'hidden' }}>
-                      <img src={j.image} alt={j.name} style={{ width:'100%', height:'100%', objectFit:'cover', transition:'transform 0.5s ease' }}
-                        onMouseEnter={e=>{(e.currentTarget as HTMLImageElement).style.transform='scale(1.06)';}}
-                        onMouseLeave={e=>{(e.currentTarget as HTMLImageElement).style.transform='scale(1)';}}
-                      />
-                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.82) 0%,rgba(0,0,0,0.18) 55%,transparent 100%)' }} />
-                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,rgba(0,0,0,0.15) 0%,transparent 60%)' }} />
-                      <div style={{ position:'absolute', top:12, left:12, background:j.badgeColor, color:'#0a0a0a', fontSize:9, fontWeight:800, padding:'3px 10px', borderRadius:20, letterSpacing:'0.05em', textTransform:'uppercase' as const }}>{j.badge}</div>
-                      <div style={{ position:'absolute', top:12, right:12, fontSize:9, color:'rgba(255,255,255,0.55)', background:'rgba(0,0,0,0.45)', borderRadius:10, padding:'3px 8px', backdropFilter:'blur(4px)' }}>{j.nights}n · {j.pax} pax</div>
-                      <div style={{ position:'absolute', bottom:12, left:14, right:14 }}>
-                        <div style={{ fontSize:15, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#fff', lineHeight:1.25, marginBottom:3 }}>{j.name}</div>
-                        <div style={{ fontSize:11, color:'rgba(255,255,255,0.58)', lineHeight:1.4, marginBottom:8 }}>{j.tagline}</div>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                          <div style={{ fontSize:16, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(j.priceFrom)}</div>
-                          <div style={{ fontSize:10, color:'rgba(74,222,128,0.85)', background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.22)', borderRadius:10, padding:'2px 8px', fontWeight:600 }}>Save {fmt(j.otaEquivalent-j.priceFrom)}</div>
+                {CURATED_JOURNEYS.slice(0,4).map(j => (
+                  <div key={j.id} className="card" style={{ cursor:'pointer' }} onClick={()=>setScreen('curated')}>
+                    <div style={{ position:'relative', height:180, overflow:'hidden' }}>
+                      <img src={j.image} alt={j.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 52%)' }} />
+                      <div style={{ position:'absolute', top:10, left:10, background:j.badgeColor, color:'#0a0a0a', fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20 }}>{j.badge}</div>
+                      <div style={{ position:'absolute', bottom:10, left:12, right:12 }}>
+                        <div style={{ fontSize:14, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#fff' }}>{j.name}</div>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginTop:4 }}>
+                          <div style={{ fontSize:11, color:'rgba(255,255,255,0.6)' }}>{j.nights}n · {j.pax} pax</div>
+                          <div style={{ fontSize:15, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(j.priceFrom)}</div>
                         </div>
                       </div>
                     </div>
