@@ -1023,7 +1023,17 @@ function NestedPropertyCarousel({
                 <div style={{ position:'relative' as const, height:240, overflow:'hidden', cursor:'ew-resize', userSelect:'none' }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
                   {currentSlide && (
                     currentSlide.type === 'youtube'
-                      ? <iframe src={currentSlide.url} title={hotel.name} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
+  ? <div style={{ position:'absolute', inset:0, overflow:'hidden' }}>
+      <iframe
+        src={currentSlide.url}
+        title={hotel.name}
+        style={{ position:'absolute', top:'-10%', left:'-10%', width:'120%', height:'120%', border:'none', pointerEvents:'none' }}
+        allow="autoplay; encrypted-media"
+        allowFullScreen={false}
+        loading="lazy"
+      />
+      <div style={{ position:'absolute', inset:0, zIndex:2, background:'transparent' }} />
+    </div>
                     : currentSlide.type === 'reel' || currentSlide.type === 'video'
                       ? <video src={currentSlide.url} poster={currentSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                       : <img src={currentSlide.url} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover', transition:'opacity 0.18s' }} />
