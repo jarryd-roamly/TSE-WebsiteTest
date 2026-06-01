@@ -64,6 +64,17 @@ const REGION_CLIPS = {
 
 const FALLBACK = REGION_CLIPS['kruger-sabi-sand'];
 
+// Maps page.tsx region IDs → Supabase/admin slug keys
+// page.tsx passes selectedRegions as IDs (e.g. 'kruger')
+// Admin uploads and Supabase rows use slugs (e.g. 'kruger-sabi-sand')
+const ID_TO_SLUG = {
+  'kruger':    'kruger-sabi-sand',
+  'okavango':  'okavango-delta',
+  'cape-town': 'cape-town',
+  'madikwe':   'madikwe',
+  'chobe':     'chobe-vic-falls',
+};
+
 // Video served from Cloudflare R2 as direct MP4
 
 const THOUGHTS_RETURNING = [
@@ -115,10 +126,15 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
   const { experience='returning', regions=[], nights=7, travellers='couple', budget='' } = answers;
 
   const clips = (() => {
-    const valid = (regions||[]).filter(r => r !== 'inspire-me' && REGION_CLIPS[r]);
+    // Resolve region IDs to slugs (page.tsx passes IDs, Supabase uses slugs)
+    const toSlug = id => ID_TO_SLUG[id] || id;
+    const valid = (regions||[])
+      .filter(r => r !== 'inspire-me')
+      .map(toSlug)
+      .filter(slug => REGION_CLIPS[slug]);
     const chosen = valid.length > 0 ? valid.slice(0,2) : ['kruger-sabi-sand','okavango-delta'];
     return chosen.map(slug => {
-      const meta = REGION_CLIPS[slug] || REGION_CLIPS['kruger-sabi-sand'];
+      const meta = (REGION_CLIPS[slug] || REGION_CLIPS['kruger-sabi-sand'])[0];
       const mp4  = videoUrls[slug] || null;
       return { ...meta, mp4 };
     });
