@@ -110,10 +110,10 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
   const { experience='returning', regions=[], nights=7, travellers='couple', budget='' } = answers;
 
   const clips = (() => {
-    const valid = (regions||[]).filter(r => r !== 'inspire-me' && REGION_META[r]);
+    const valid = (regions||[]).filter(r => r !== 'inspire-me' && REGION_CLIPS[r]);
     const chosen = valid.length > 0 ? valid.slice(0,2) : ['kruger-sabi-sand','okavango-delta'];
     return chosen.map(slug => {
-      const meta = REGION_META[slug] || REGION_META['kruger-sabi-sand'];
+      const meta = REGION_CLIPS[slug] || REGION_CLIPS['kruger-sabi-sand'];
       const mp4  = videoUrls[slug] || null;
       return { ...meta, mp4 };
     });
