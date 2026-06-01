@@ -93,6 +93,7 @@ const THOUGHTS_FIRST = [
 export default function SafariCinematicResearch({ answers = {}, aiReady = false, onComplete }) {
   // Load R2 video URLs from Supabase cinematic_videos table
   const [videoUrls, setVideoUrls] = useState({});
+  const [videosReady, setVideosReady] = useState(false);
   useEffect(() => {
     const load = async () => {
       try {
@@ -102,8 +103,12 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
         );
         const { data } = await sb.from('cinematic_videos').select('region,url');
-        if (data) setVideoUrls(Object.fromEntries(data.map(r => [r.region, r.url])));
-      } catch(e) { /* fall through — cinematic plays without video */ }
+        if (data && data.length > 0) {
+          setVideoUrls(Object.fromEntries(data.map(r => [r.region, r.url])));
+        }
+      } catch(e) { /* ignore */ }
+      // Always mark ready — even if no videos, cinematic continues (dark background)
+      setVideosReady(true);
     };
     load();
   }, []);
@@ -195,6 +200,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
   }, [thoughts, addTimer]);
 
   useEffect(() => {
+    if (!videosReady) return;
     loadClip(0, 'A');
     addTimer(() => setTitleVisible(false), 3200);
     if (clips.length > 1) {
@@ -206,7 +212,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
     }
     addTimer(() => { setCinematicDone(true); startThinking(); }, MIN_TOTAL);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [videosReady]);
 
   useEffect(() => {
     if (phase !== 'reveal') return;
