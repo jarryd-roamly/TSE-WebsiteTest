@@ -119,6 +119,10 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
     });
   })();
 
+  // Keep a ref to clips so callbacks always see the latest mp4 URLs
+  const clipsRef = useRef(clips);
+  useEffect(() => { clipsRef.current = clips; }, [clips]);
+
   const CLIP_DURATION = 8000;
 
   const MIN_TOTAL = clips.length * CLIP_DURATION;
@@ -152,14 +156,14 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
   }, []);
 
   const loadClip = useCallback((index, frame) => {
-    const clip = clips[index];
+    const clip = clipsRef.current[index];
     if (!clip?.mp4) return;
     const el = frame === 'A' ? ifrARef.current : ifrBRef.current;
     if (el && 'play' in el) {
       el.src = clip.mp4;
       el.play().catch(() => {});
     }
-  }, [clips]);
+  }, []); // clipsRef is a ref — no dependency needed
 
   const crossFadeTo = useCallback((index) => {
     const incoming = activeFrame === 'A' ? 'B' : 'A';
@@ -168,7 +172,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
       setActiveFrame(incoming);
       setClipIdx(index);
     }, 400);
-  }, [activeFrame, loadClip, addTimer]);
+  }, [activeFrame, loadClip, addTimer, videoUrls]);
 
   const startThinking = useCallback(() => {
     setPhase('thinking');
@@ -218,7 +222,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
     if (aiReady && phase === 'cinematic' && cinematicDone) setPhase('thinking');
   }, [aiReady, phase, cinematicDone]);
 
-  const currentClip     = clips[clipIdx] || clips[0];
+  const currentClip     = clipsRef.current[clipIdx] || clipsRef.current[0] || clips[clipIdx] || clips[0];
   const thoughtProgress = Math.round((displayedThoughts.length / thoughts.length) * 100);
   const pills = [
     `${nights} nights`, travellers,
