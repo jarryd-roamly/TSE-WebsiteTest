@@ -64,19 +64,7 @@ const REGION_CLIPS = {
 
 const FALLBACK = REGION_CLIPS['kruger-sabi-sand'];
 
-function ytSrc(vid, start) {
-  // NO end= parameter — this prevents the pause state that triggers controls
-  // We reload via JS timer before YouTube loops naturally
-  return [
-    `https://www.youtube-nocookie.com/embed/${vid}`,
-    `?start=${start}`,
-    `&autoplay=1&mute=1&controls=0`,
-    `&playsinline=1&rel=0&modestbranding=1`,
-    `&iv_load_policy=3&disablekb=1&fs=0`,
-    `&loop=0`,  // loop=0 so we control the reload ourselves
-    `&color=white&showinfo=0`,
-  ].join('');
-}
+// Video served from Cloudflare R2 as direct MP4
 
 const THOUGHTS_RETURNING = [
   "Reading your travel history…","You've been before — ready for something deeper.",
@@ -103,18 +91,36 @@ const THOUGHTS_FIRST = [
 ];
 
 export default function SafariCinematicResearch({ answers = {}, aiReady = false, onComplete }) {
+  // Load R2 video URLs from Supabase cinematic_videos table
+  const [videoUrls, setVideoUrls] = useState({});
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        );
+        const { data } = await sb.from('cinematic_videos').select('region,url');
+        if (data) setVideoUrls(Object.fromEntries(data.map(r => [r.region, r.url])));
+      } catch(e) { /* fall through — cinematic plays without video */ }
+    };
+    load();
+  }, []);
   const { experience='returning', regions=[], nights=7, travellers='couple', budget='' } = answers;
 
   const clips = (() => {
-    const valid = (regions||[]).filter(r => r !== 'inspire-me' && REGION_CLIPS[r]);
+    const valid = (regions||[]).filter(r => r !== 'inspire-me' && REGION_META[r]);
     const chosen = valid.length > 0 ? valid.slice(0,2) : ['kruger-sabi-sand','okavango-delta'];
-    const result = chosen.map(slug => (REGION_CLIPS[slug]||FALLBACK)[0]);
-    if (result.length === 1) result.push((REGION_CLIPS[valid[0]||'kruger-sabi-sand']||FALLBACK)[1]);
-    return result;
+    return chosen.map(slug => {
+      const meta = REGION_META[slug] || REGION_META['kruger-sabi-sand'];
+      const mp4  = videoUrls[slug] || null;
+      return { ...meta, mp4 };
+    });
   })();
 
   const CLIP_DURATION = 8000;
-  const RELOAD_INTERVAL = 7200; // reload before YouTube natural loop (~8s clips, reload at 7.2s)
+
   const MIN_TOTAL = clips.length * CLIP_DURATION;
   const thoughts = experience === 'first' ? THOUGHTS_FIRST : THOUGHTS_RETURNING;
 
@@ -130,7 +136,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
   const ifrBRef    = useRef(null);
   const thoughtsRef= useRef(null);
   const timers     = useRef([]);
-  const reloadTimer= useRef(null);
+
   const aiReadyRef = useRef(aiReady);
 
   useEffect(() => { aiReadyRef.current = aiReady; }, [aiReady]);
@@ -143,21 +149,16 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
 
   useEffect(() => () => {
     timers.current.forEach(clearTimeout);
-    if (reloadTimer.current) clearInterval(reloadTimer.current);
   }, []);
 
   const loadClip = useCallback((index, frame) => {
     const clip = clips[index];
-    if (!clip) return;
-    const ifr = frame === 'A' ? ifrARef.current : ifrBRef.current;
-    if (ifr) ifr.src = ytSrc(clip.vid, clip.start);
-
-    // Reload timer — prevents YouTube from ever reaching its natural end state
-    // which would show the pause controls
-    if (reloadTimer.current) clearInterval(reloadTimer.current);
-    reloadTimer.current = setInterval(() => {
-      if (ifr && ifr.isConnected) ifr.src = ytSrc(clip.vid, clip.start);
-    }, RELOAD_INTERVAL);
+    if (!clip?.mp4) return;
+    const el = frame === 'A' ? ifrARef.current : ifrBRef.current;
+    if (el && 'play' in el) {
+      (el as HTMLVideoElement).src = clip.mp4;
+      (el as HTMLVideoElement).play().catch(() => {});
+    }
   }, [clips]);
 
   const crossFadeTo = useCallback((index) => {
@@ -353,21 +354,24 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
         <div className="scr-c tl"/><div className="scr-c tr"/>
         <div className="scr-c bl"/><div className="scr-c br"/>
 
-        {/* VIDEO LAYER */}
+        {/* VIDEO LAYER — R2 MP4s via <video> tag, zero controls */}
         <div className="scr-vid-layer">
           <div className={`scr-vid-frame ${activeFrame==='A'?'show':''}`}>
-            <iframe ref={ifrARef} allow="autoplay;encrypted-media" allowFullScreen={false} title="region-A"/>
+            {clips[0]?.mp4
+              ? <video ref={ifrARef} src={clips[0].mp4} autoPlay muted loop playsInline
+                  style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/>
+              : <div style={{position:'absolute',inset:0,background:'#0a0800'}}/>
+            }
           </div>
           <div className={`scr-vid-frame ${activeFrame==='B'?'show':''}`}>
-            <iframe ref={ifrBRef} allow="autoplay;encrypted-media" allowFullScreen={false} title="region-B"/>
+            {clips[1]?.mp4
+              ? <video ref={ifrBRef} src={clips[1]?.mp4} muted loop playsInline
+                  style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/>
+              : <div style={{position:'absolute',inset:0,background:'#0a0800'}}/>
+            }
           </div>
-
-          {/* Gradient overlays */}
           <div className="scr-ov"/>
           <div className="scr-vg"/>
-
-          {/* Centre mask — covers YouTube play/pause button area */}
-          <div className="scr-centre-mask"/>
         </div>
 
         {phase === 'cinematic' && (<>
