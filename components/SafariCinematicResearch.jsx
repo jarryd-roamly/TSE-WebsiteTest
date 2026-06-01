@@ -156,8 +156,8 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
     if (!clip?.mp4) return;
     const el = frame === 'A' ? ifrARef.current : ifrBRef.current;
     if (el && 'play' in el) {
-      (el as HTMLVideoElement).src = clip.mp4;
-      (el as HTMLVideoElement).play().catch(() => {});
+      el.src = clip.mp4;
+      el.play().catch(() => {});
     }
   }, [clips]);
 
