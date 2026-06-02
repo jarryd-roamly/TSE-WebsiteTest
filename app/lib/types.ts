@@ -84,7 +84,8 @@ export type Screen =
   | 'my-brief'         // Free text
   | 'knowledge-base'   // Specialist KB management
   | 'checkout'
-  | 'confirming';      // Journey confirmation before payment
+  | 'confirming'       // Journey confirmation before payment
+  | 'journey-loading'; // Cinematic pre-checkout experience
 
 export type InputMode = 'socratic' | 'builder' | 'brief';
 export type Pillar    = 'flights' | 'hotels' | 'transfers' | 'activities';
