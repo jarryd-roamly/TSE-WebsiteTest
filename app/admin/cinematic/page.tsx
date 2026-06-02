@@ -32,11 +32,13 @@ const R2_PUBLIC_BASE = 'https://pub-e9a9b8d329454195b19ec8971297583a.r2.dev';
 const R2_ENDPOINT    = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
 const REGIONS = [
-  { id: 'kruger-sabi-sand', label: 'Sabi Sand',      country: 'South Africa', icon: '🐆', description: 'Leopard territory · Private reserves' },
-  { id: 'okavango-delta',   label: 'Okavango Delta', country: 'Botswana',     icon: '🐘', description: 'Aerial waterways · Elephant herds' },
-  { id: 'chobe-vic-falls',  label: 'Victoria Falls',  country: 'Zimbabwe',    icon: '💧', description: 'The smoke that thunders' },
-  { id: 'cape-town',        label: 'Cape Town',       country: 'South Africa', icon: '🏔', description: 'Table Mountain · City panorama' },
-  { id: 'madikwe',          label: 'Madikwe',         country: 'South Africa', icon: '🦏', description: 'Koppie · Elephant · Malaria-free' },
+  { id: 'hero',             label: 'Hero Background', country: 'Landing Page',  icon: '🎬', description: 'Full-screen background video on the homepage' },
+  { id: 'hero_circle',      label: 'Hero Circle',     country: 'Landing Page',  icon: '⭕', description: 'Circular wildlife video on the right side of the hero' },
+  { id: 'kruger-sabi-sand', label: 'Sabi Sand',       country: 'South Africa',  icon: '🐆', description: 'Leopard territory · Private reserves' },
+  { id: 'okavango-delta',   label: 'Okavango Delta',  country: 'Botswana',      icon: '🐘', description: 'Aerial waterways · Elephant herds' },
+  { id: 'chobe-vic-falls',  label: 'Victoria Falls',  country: 'Zimbabwe',      icon: '💧', description: 'The smoke that thunders' },
+  { id: 'cape-town',        label: 'Cape Town',        country: 'South Africa', icon: '🏔', description: 'Table Mountain · City panorama' },
+  { id: 'madikwe',          label: 'Madikwe',          country: 'South Africa', icon: '🦏', description: 'Koppie · Elephant · Malaria-free' },
 ];
 
 // ── AWS Signature V4 for browser
