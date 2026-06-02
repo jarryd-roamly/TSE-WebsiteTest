@@ -20,6 +20,7 @@
 // and shows end screen) — keeps video in playing state, never paused
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { buildThoughts } from '@/app/lib/buildThoughts';
 
 // ─── Region → YouTube clip mapping ───────────────────────────────────────────
 // start/end chosen for the most visually striking 8-second window
@@ -147,7 +148,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
   const CLIP_DURATION = 8000;
 
   const MIN_TOTAL = clips.length * CLIP_DURATION;
-  const thoughts = experience === 'first' ? THOUGHTS_FIRST : THOUGHTS_RETURNING;
+  const thoughts = buildThoughts(answers);
 
   const [phase,             setPhase]             = useState('cinematic');
   const [clipIdx,           setClipIdx]           = useState(0);
