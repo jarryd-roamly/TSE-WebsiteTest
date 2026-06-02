@@ -34,6 +34,11 @@ const R2_ENDPOINT    = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 const REGIONS = [
   { id: 'hero',             label: 'Hero Background', country: 'Landing Page',  icon: '🎬', description: 'Full-screen background video on the homepage' },
   { id: 'hero_circle',      label: 'Hero Circle',     country: 'Landing Page',  icon: '⭕', description: 'Circular wildlife video on the right side of the hero' },
+  { id: 'kruger-sabi-sand-journey', label: 'Sabi Sand — Journey',    country: 'Journey Loader', icon: '🐆', description: 'Background for Journey Loading Screen · Sabi Sand bookings' },
+  { id: 'okavango-delta-journey',   label: 'Okavango — Journey',     country: 'Journey Loader', icon: '🐘', description: 'Background for Journey Loading Screen · Okavango bookings' },
+  { id: 'chobe-vic-falls-journey',  label: 'Victoria Falls — Journey',country: 'Journey Loader', icon: '💧', description: 'Background for Journey Loading Screen · Vic Falls bookings' },
+  { id: 'cape-town-journey',        label: 'Cape Town — Journey',     country: 'Journey Loader', icon: '🏔', description: 'Background for Journey Loading Screen · Cape Town bookings' },
+  { id: 'madikwe-journey',          label: 'Madikwe — Journey',       country: 'Journey Loader', icon: '🦏', description: 'Background for Journey Loading Screen · Madikwe bookings' },
   { id: 'kruger-sabi-sand', label: 'Sabi Sand',       country: 'South Africa',  icon: '🐆', description: 'Leopard territory · Private reserves' },
   { id: 'okavango-delta',   label: 'Okavango Delta',  country: 'Botswana',      icon: '🐘', description: 'Aerial waterways · Elephant herds' },
   { id: 'chobe-vic-falls',  label: 'Victoria Falls',  country: 'Zimbabwe',      icon: '💧', description: 'The smoke that thunders' },
