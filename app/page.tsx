@@ -27,6 +27,7 @@ import { lastMileFor, lastMileZar, defaultCommercialTarget,
          priceTransfer, CARRIER_ADJUST,
          exitLastMileFor, originHubAirport }  from './lib/transfers';
 import SafariCinematicResearch from '@/components/SafariCinematicResearch'
+import LandingHero from '@/components/LandingHero';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
               InterTransferState, UpgradeState, Itinerary,
@@ -2061,70 +2062,14 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       <style suppressHydrationWarning>{GLOBAL_CSS}</style>
       {showValidation && <ValidationModal issues={validationIssues} onProceed={doCheckout} onBack={()=>setShowValidation(false)} />}
 
-      {/* LANDING */}
+     {/* LANDING */}
       {screen==='landing' && (
-        <div style={{ minHeight:'100vh', background:T.bg }}>
-          <Nav {...navProps} />
-          <div style={{ position:'relative', height:'82vh', minHeight:520, overflow:'hidden' }}>
-            <img src={edition.heroImage} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'center 40%' }} />
-            <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom,rgba(10,10,10,0.1) 0%,rgba(10,10,10,0.45) 55%,rgba(10,10,10,1) 100%)' }} />
-            <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'0 24px 52px', maxWidth:900, margin:'0 auto' }}>
-              <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.2em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:12 }}>{edition.name}</div>
-              <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(30px,5.5vw,56px)', fontWeight:700, lineHeight:1.1, marginBottom:16, color:T.text }}>Africa's finest wilderness,<br /><em style={{ color:T.gold }}>curated for you.</em></h1>
-              <p style={{ fontSize:16, color:T.textMid, lineHeight:1.7, marginBottom:32, maxWidth:500 }}>Handpicked lodges, negotiated rates, perfectly sequenced journeys.</p>
-              <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
-                {[
-                  { label:'✦ Plan My Journey', sub:"We'll build your dream trip in a few clicks", action:()=>setScreen('inspire-input'), primary:true },
-                  { label:'Curated Journeys', sub:'Ready to book — from price', action:()=>setScreen('curated'), primary:false },
-                  { label:'Send Your Brief', sub:'Write anything — we\'ll handle the rest', action:()=>setScreen('my-brief'), primary:false },
-                ].map(btn => (
-                  <button key={btn.label} onClick={btn.action} style={{ padding:'16px 24px', borderRadius:12, border:`1.5px solid ${btn.primary?T.gold:T.border}`, background:btn.primary?`linear-gradient(135deg,${T.gold},${T.goldLight})`:'rgba(255,255,255,0.06)', color:btn.primary?'#0a0a0a':T.text, cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const, minWidth:180 }}>
-                    <div style={{ fontSize:15, fontWeight:700 }}>{btn.label}</div>
-                    <div style={{ fontSize:11, marginTop:4, opacity:0.7, fontWeight:400 }}>{btn.sub}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div style={{ maxWidth:900, margin:'0 auto', padding:'52px 20px 80px' }}>
-            <div style={{ marginBottom:40 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:20, flexWrap:'wrap', gap:8 }}>
-                <div><div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:4 }}>Curated Journeys</div><h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:24, fontWeight:700, color:T.text, margin:0 }}>Ready to book — from price</h2></div>
-                <button onClick={()=>setScreen('curated')} style={{ background:'none', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>View all →</button>
-              </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:16 }}>
-                {CURATED_JOURNEYS.slice(0,4).map(j => (
-                  <div key={j.id} className="card" style={{ cursor:'pointer' }} onClick={()=>setScreen('curated')}>
-                    <div style={{ position:'relative', height:180, overflow:'hidden' }}>
-                      <img src={j.image} alt={j.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 52%)' }} />
-                      <div style={{ position:'absolute', top:10, left:10, background:j.badgeColor, color:'#0a0a0a', fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20 }}>{j.badge}</div>
-                      <div style={{ position:'absolute', bottom:10, left:12, right:12 }}>
-                        <div style={{ fontSize:14, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#fff' }}>{j.name}</div>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginTop:4 }}>
-                          <div style={{ fontSize:11, color:'rgba(255,255,255,0.6)' }}>{j.nights}n · {j.pax} pax</div>
-                          <div style={{ fontSize:15, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(j.priceFrom)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:12 }}>
-              {[{icon:'✦',title:'Negotiated rates',sub:"Contracted directly with Africa's finest lodges."},{icon:'🛡',title:'Verified lodges',sub:'Every property vetted for service and reliability.'},{icon:'📞',title:'Journey specialists',sub:'Real people, available before and during your trip.'},{icon:'🔄',title:'Flexible booking',sub:'Our cancellation terms are the most generous available.'}].map(f => (
-                <div key={f.title} style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'18px 16px' }}>
-                  <div style={{ fontSize:20, marginBottom:8 }}>{f.icon}</div>
-                  <div style={{ fontSize:14, fontWeight:600, marginBottom:5, color:T.text }}>{f.title}</div>
-                  <div style={{ fontSize:12, color:T.textDim, lineHeight:1.65 }}>{f.sub}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={()=>setChatOpen(false)} edition={edition} />}
-        </div>
+        <LandingHero
+          onPlanJourney={() => setScreen('inspire-input')}
+          onCuratedJourneys={() => setScreen('curated')}
+          onSendBrief={() => setScreen('my-brief')}
+        />
       )}
-
       {/* CURATED */}
       {screen==='curated' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
