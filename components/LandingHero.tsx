@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
-import { T } from './lib/theme';
+import { T } from '@/app/lib/theme';
 
 // Supabase row shape: { region: 'hero', url: 'https://r2.../hero.mp4' }
 // Upload via Admin → Videos → Hero Video
