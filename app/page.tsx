@@ -28,6 +28,7 @@ import { lastMileFor, lastMileZar, defaultCommercialTarget,
          exitLastMileFor, originHubAirport }  from './lib/transfers';
 import SafariCinematicResearch from '@/components/SafariCinematicResearch'
 import LandingHero from '@/components/LandingHero';
+import JourneyLoadingScreen from '@/components/JourneyLoadingScreen';
 import JourneyConfirmation from '@/components/JourneyConfirmation';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
@@ -2038,7 +2039,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       setShowValidation(true);
       return;
     }
-    setScreen('confirming');
+    setScreen('journey-loading');
   };
 
   const doCheckout = async () => {
@@ -2078,11 +2079,14 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       {showValidation && <ValidationModal issues={validationIssues} onProceed={doCheckout} onBack={()=>setShowValidation(false)} />}
 
      {/* LANDING */}
-      {screen==='landing' && (
+{screen === 'landing' && (
         <LandingHero
           onPlanJourney={() => setScreen('inspire-input')}
           onCuratedJourneys={() => setScreen('curated')}
           onSendBrief={() => setScreen('my-brief')}
+          currency={currency}
+          onCurrencyChange={setCurrency}
+          currencies={CURRENCIES}
         />
       )}
       {/* CURATED */}
@@ -2552,6 +2556,22 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
           edition={edition}
           onConfirm={doCheckout}
           onBack={() => setScreen('builder')}
+        />
+      )}
+    
+     {/* JOURNEY LOADING */}
+      {screen==='journey-loading' && itinerary && (
+        <JourneyLoadingScreen
+          itinerary={itinerary}
+          cityStays={cityStays}
+          hotelsByMargin={hotelsByMargin}
+          checkinDate={checkinDate}
+          nights={nights}
+          grandTotal={grandTotal}
+          fmt={fmt}
+          edition={edition}
+          selectedRegions={selectedRegions}
+          onComplete={() => setScreen('confirming')}
         />
       )}
              
