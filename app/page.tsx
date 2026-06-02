@@ -2261,6 +2261,9 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
       nights,
       travellers: adults === 1 ? 'solo' : adults === 2 ? 'couple' : `group of ${adults}`,
       budget: fmt(budget),
+      adults,
+      children,
+      origin: needsIntlFlight ? intlOrigin : origin,
     }}
     aiReady={itinerary !== null}
     onComplete={() => setScreen('builder')}
