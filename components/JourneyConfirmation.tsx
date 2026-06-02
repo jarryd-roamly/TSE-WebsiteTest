@@ -40,9 +40,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { T } from './lib/theme';
-import { CITY_TO_SLUG } from './lib/types'; // adjust import as needed
-import { resolveHotelUpgrades, makeFmt }    from './lib/pricing';
+import { T } from '@/app/lib/theme';
+const SLUG: Record<string, string> = {
+  'kruger':'kruger-sabi-sand','sabi sand':'kruger-sabi-sand',
+  'kruger / sabi sand':'kruger-sabi-sand','sabi sands':'kruger-sabi-sand',
+  'okavango':'okavango-delta','okavango delta':'okavango-delta',
+  'cape town':'cape-town','madikwe':'madikwe',
+  'chobe':'chobe-vic-falls','victoria falls':'chobe-vic-falls',
+  'chobe / victoria falls':'chobe-vic-falls','vic falls':'chobe-vic-falls',
+  'victoria falls, zimbabwe':'chobe-vic-falls',
+  'masai mara':'masai-mara','masai mara, kenya':'masai-mara',
+  'the masai mara':'masai-mara',
+  'phinda':'phinda','mozambique':'mozambique','bwindi':'bwindi',
+};
+import { resolveHotelUpgrades } from '@/app/lib/pricing';
 
 // ─── Prop types ───────────────────────────────────────────────────────────────
 interface ConfirmationProps {
