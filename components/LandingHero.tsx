@@ -65,7 +65,7 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
   const [circleVideo,  setCircleVideo]  = useState<string | null>(null);
   const [logoUrl,      setLogoUrl]      = useState<string | null>(null);
   const [logoFailed,   setLogoFailed]   = useState(false);
-  const [revealed,     setRevealed]     = useState(false);
+  const [revealed,     setRevealed]     = useState(true);
   const [editionOpen,  setEditionOpen]  = useState(false);
   const [scrolled,     setScrolled]     = useState(false);
   const [regionImages, setRegionImages] = useState<Record<string, string>>({});
