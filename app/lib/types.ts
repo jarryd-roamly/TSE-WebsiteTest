@@ -80,9 +80,11 @@ export type Screen =
   | 'inspire-research' // AI building animation
   | 'inspire-plan'     // Shared itinerary output (all 3 inputs land here)
   | 'builder'          // Build your own
+  | 'curated'          // Curated journeys list
   | 'my-brief'         // Free text
   | 'knowledge-base'   // Specialist KB management
-  | 'checkout';
+  | 'checkout'
+  | 'confirming';      // Journey confirmation before payment
 
 export type InputMode = 'socratic' | 'builder' | 'brief';
 export type Pillar    = 'flights' | 'hotels' | 'transfers' | 'activities';
