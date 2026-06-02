@@ -28,6 +28,7 @@ import { lastMileFor, lastMileZar, defaultCommercialTarget,
          exitLastMileFor, originHubAirport }  from './lib/transfers';
 import SafariCinematicResearch from '@/components/SafariCinematicResearch'
 import LandingHero from '@/components/LandingHero';
+import JourneyConfirmation from '@/components/JourneyConfirmation';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
               InterTransferState, UpgradeState, Itinerary,
@@ -2024,7 +2025,21 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [checkoutKey] = useState(() => generateIdempotencyKey());
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const handleValidateAndPay = () => setShowValidation(true);
+  const handleValidateAndPay = () => {
+    const issues = validateItinerary({
+      cities: itinerary?.cities ?? [],
+      checkinDate,
+      infants,
+      hasOwnFlights: !includeIntlFlight,
+      arrivalFlightNo,
+    });
+    const hardIssues = issues.filter(i => i.severity === 'hard');
+    if (hardIssues.length > 0) {
+      setShowValidation(true);
+      return;
+    }
+    setScreen('confirming');
+  };
 
   const doCheckout = async () => {
     setShowValidation(false);
@@ -2518,6 +2533,28 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
         </div>
       )}
 
+{/* JOURNEY CONFIRMATION */}
+      {screen==='confirming' && itinerary && (
+        <JourneyConfirmation
+          itinerary={itinerary}
+          cityStays={cityStays}
+          hotelsByMargin={hotelsByMargin}
+          selectedTransferIds={selectedTransferIds}
+          selectedActivities={selectedActivities}
+          activities={activities}
+          checkinDate={checkinDate}
+          nights={nights}
+          adults={adults}
+          children={children}
+          grandTotal={grandTotal}
+          fmt={fmt}
+          currency={currency}
+          edition={edition}
+          onConfirm={doCheckout}
+          onBack={() => setScreen('builder')}
+        />
+      )}
+             
       {/* MY BRIEF */}
       {screen==='my-brief' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
