@@ -1,27 +1,222 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   globals.css — The Travel Catalogue · Safari Edition
+   Design system base. Loaded once at app root via layout.tsx.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Tailwind base (required for any Tailwind usage) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS Custom Properties — design tokens ────────────────────────────────── */
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+  /* Backgrounds */
+  --bg:          #0a0a0a;
+  --bg2:         #111111;
+  --bg3:         #181818;
+  --surface:     #1a1a1a;
+
+  /* Brand colours */
+  --gold:        #d4af37;
+  --gold-light:  #f0c040;
+  --gold-dim:    rgba(212,175,55,0.12);
+  --border-gold: rgba(212,175,55,0.28);
+
+  /* Text */
+  --text:        #f5f0e8;
+  --text-mid:    rgba(245,240,232,0.58);
+  --text-dim:    rgba(245,240,232,0.32);
+
+  /* Borders */
+  --border:      rgba(255,255,255,0.07);
+
+  /* Accent */
+  --green:       #4ade80;
+  --red:         #f87171;
+  --amber:       #fb923c;
+  --blue:        #60a5fa;
+
+  /* Typography */
+  --font-display: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  --font-body:    'Jost', 'DM Sans', -apple-system, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+/* ── Base reset & typography ─────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background:    var(--bg);
+  color:         var(--text);
+  font-family:   var(--font-body);
+  font-weight:   300;
+  line-height:   1.55;
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar         { width: 3px; height: 3px; }
+::-webkit-scrollbar-track   { background: transparent; }
+::-webkit-scrollbar-thumb   { background: rgba(212,175,55,0.28); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(212,175,55,0.5); }
+
+/* ── Form elements ───────────────────────────────────────────────────────── */
+input,
+textarea,
+select {
+  font-family: var(--font-body);
+  font-size:   inherit;
+  color:       var(--text);
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width:         100%;
+  height:        2px;
+  border-radius: 1px;
+  background:    rgba(255,255,255,0.1);
+  outline:       none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width:         18px;
+  height:        18px;
+  border-radius: 50%;
+  background:    var(--gold);
+  cursor:        pointer;
+  border:        2px solid var(--bg);
+}
+
+textarea { resize: vertical; }
+
+select option { background: #1a1a1a; }
+
+/* ── Global utility classes ──────────────────────────────────────────────── */
+
+/* Buttons */
+.btn-gold {
+  background:    linear-gradient(135deg, var(--gold), var(--gold-light));
+  border:        none;
+  color:         #0a0a0a;
+  border-radius: 8px;
+  padding:       12px 22px;
+  font-size:     14px;
+  font-weight:   600;
+  font-family:   var(--font-body);
+  letter-spacing:0.04em;
+  cursor:        pointer;
+  transition:    opacity 0.2s, transform 0.2s;
+}
+.btn-gold:hover    { opacity: 0.88; transform: translateY(-1px); }
+.btn-gold:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.btn-ghost {
+  background:    rgba(255,255,255,0.05);
+  border:        0.5px solid rgba(255,255,255,0.12);
+  color:         var(--text);
+  border-radius: 8px;
+  padding:       12px 22px;
+  font-size:     14px;
+  font-family:   var(--font-body);
+  cursor:        pointer;
+  transition:    background 0.15s, border-color 0.15s;
+}
+.btn-ghost:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.18); }
+
+/* Overlay backdrop */
+.overlay {
+  position:        fixed;
+  inset:           0;
+  background:      rgba(0,0,0,0.76);
+  z-index:         400;
+  display:         flex;
+  align-items:     flex-end;
+  justify-content: center;
+}
+@media (min-width: 600px) { .overlay { align-items: center; } }
+
+/* Cards */
+.card {
+  background:    var(--surface);
+  border:        0.5px solid var(--border);
+  border-radius: 14px;
+  overflow:      hidden;
+  transition:    border-color 0.2s;
+}
+.card:hover { border-color: rgba(212,175,55,0.18); }
+
+/* Loading spinner */
+.spinner {
+  width:        22px;
+  height:       22px;
+  border-radius:50%;
+  border:       2px solid rgba(212,175,55,0.12);
+  border-top-color: var(--gold);
+  animation:    spin 0.75s linear infinite;
+  display:      inline-block;
+}
+
+/* Pill tags */
+.trust-pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           4px;
+  background:    rgba(74,222,128,0.08);
+  border:        0.5px solid rgba(74,222,128,0.25);
+  border-radius: 20px;
+  padding:       3px 10px;
+  font-size:     11px;
+  color:         var(--green);
+  font-weight:   500;
+}
+
+/* Fun fact / KB block */
+.fun-fact {
+  background:    rgba(212,175,55,0.06);
+  border:        0.5px solid rgba(212,175,55,0.14);
+  border-radius: 8px;
+  padding:       9px 13px;
+  font-size:     12px;
+  color:         rgba(212,175,55,0.82);
+  line-height:   1.55;
+  margin-top:    10px;
+}
+
+/* Transfer chip */
+.inter-transfer {
+  background:    rgba(96,165,250,0.05);
+  border:        0.5px solid rgba(96,165,250,0.18);
+  border-radius: 9px;
+  padding:       9px 13px;
+  margin:        7px 0;
+  cursor:        pointer;
+  transition:    background 0.15s;
+}
+.inter-transfer:hover { background: rgba(96,165,250,0.1); }
+
+/* KB tags */
+.kb-tag-regional  { background:rgba(96,165,250,0.1);  border:0.5px solid rgba(96,165,250,0.3);  color:#60a5fa; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600; }
+.kb-tag-property  { background:rgba(212,175,55,0.1);  border:0.5px solid rgba(212,175,55,0.3);  color:var(--gold); padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600; }
+.kb-tag-trade_tip { background:rgba(74,222,128,0.1);  border:0.5px solid rgba(74,222,128,0.3);  color:var(--green); padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600; }
+.kb-flagged       { background:rgba(248,113,113,0.07); border:0.5px solid rgba(248,113,113,0.25); border-radius:7px; padding:5px 9px; font-size:11px; color:var(--red); }
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes fadeUp  { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse   { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+@keyframes spin    { to { transform: rotate(360deg); } }
+@keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes glow    { 0%,100% { box-shadow: 0 0 0 rgba(212,175,55,0); } 50% { box-shadow: 0 0 24px rgba(212,175,55,0.5); } }
+
+.fade-up { animation: fadeUp 0.45s ease forwards; }
