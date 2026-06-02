@@ -75,17 +75,6 @@ interface ConfirmationProps {
   onBack:               () => void;
 }
 
-// Slug map — mirror of CITY_TO_SLUG in page.tsx
-const SLUG: Record<string, string> = {
-  'kruger': 'kruger-sabi-sand', 'sabi sand': 'kruger-sabi-sand',
-  'kruger / sabi sand': 'kruger-sabi-sand', 'sabi sands': 'kruger-sabi-sand',
-  'okavango': 'okavango-delta', 'okavango delta': 'okavango-delta',
-  'cape town': 'cape-town', 'madikwe': 'madikwe',
-  'chobe': 'chobe-vic-falls', 'victoria falls': 'chobe-vic-falls',
-  'chobe / victoria falls': 'chobe-vic-falls', 'vic falls': 'chobe-vic-falls',
-  'masai mara': 'masai-mara', 'the masai mara': 'masai-mara',
-};
-
 function slugFor(city: string) {
   return SLUG[city?.toLowerCase().trim()] ?? city?.toLowerCase().replace(/\s+/g, '-') ?? '';
 }
