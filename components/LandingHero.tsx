@@ -34,22 +34,33 @@ const STATS = [
   { value: 4.9, suffix: '★',   label: 'Guest satisfaction' },
 ];
 
+// Unsplash fallback images per curated journey
 const CURATED = [
-  { name: 'The Sabi Sand Classic',    tagline: "South Africa's finest leopard territory", nights: 5, priceFrom: 142000, otaPrice: 192000, image: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', badge: 'Most popular', badgeColor: '#d4af37' },
-  { name: 'The Grand Safari Circuit', tagline: 'Two countries. Three ecosystems.',         nights: 9, priceFrom: 298000, otaPrice: 412000, image: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', badge: 'Signature',    badgeColor: '#a78bfa' },
-  { name: 'Kruger & Victoria Falls',  tagline: 'Big Five then one of the Seven Wonders',  nights: 7, priceFrom: 198000, otaPrice: 272000, image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', badge: 'Classic',      badgeColor: '#4ade80' },
-  { name: 'Safari & Indian Ocean',    tagline: 'Bush then beach — the perfect balance',   nights: 8, priceFrom: 224000, otaPrice: 316000, image: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', badge: 'Our favourite', badgeColor: '#60a5fa' },
+  { name: 'The Sabi Sand Classic',    tagline: "South Africa's finest leopard territory", nights: 5, priceFrom: 142000, otaPrice: 192000, fallbackImage: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', badge: 'Most popular', badgeColor: '#d4af37', regionSlug: 'kruger-sabi-sand' },
+  { name: 'The Grand Safari Circuit', tagline: 'Two countries. Three ecosystems.',         nights: 9, priceFrom: 298000, otaPrice: 412000, fallbackImage: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', badge: 'Signature',    badgeColor: '#a78bfa', regionSlug: 'okavango-delta'   },
+  { name: 'Kruger & Victoria Falls',  tagline: 'Big Five then one of the Seven Wonders',  nights: 7, priceFrom: 198000, otaPrice: 272000, fallbackImage: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', badge: 'Classic',      badgeColor: '#4ade80', regionSlug: 'chobe-vic-falls'  },
+  { name: 'Safari & Indian Ocean',    tagline: 'Bush then beach — the perfect balance',   nights: 8, priceFrom: 224000, otaPrice: 316000, fallbackImage: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', badge: 'Our favourite', badgeColor: '#60a5fa', regionSlug: 'phinda'           },
 ];
 
-function fmtR(n: number) { return `R ${Math.round(n).toLocaleString()}`; }
+const CURRENCIES = [
+  { code: 'ZAR', symbol: 'R ',  rate: 1     },
+  { code: 'USD', symbol: '$',   rate: 18.62 },
+  { code: 'GBP', symbol: '£',   rate: 23.48 },
+  { code: 'EUR', symbol: '€',   rate: 20.14 },
+];
+type Currency = { code: string; symbol: string; rate: number };
 
 interface LandingHeroProps {
   onPlanJourney:     () => void;
   onCuratedJourneys: () => void;
   onSendBrief:       () => void;
+  // Optional — pass from page.tsx so currency persists across the whole site
+  currency?:         Currency;
+  onCurrencyChange?: (c: Currency) => void;
+  currencies?:       Currency[];
 }
 
-export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBrief }: LandingHeroProps) {
+export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBrief, currency: currencyProp, onCurrencyChange, currencies: currenciesProp }: LandingHeroProps) {
   const [heroBg,       setHeroBg]       = useState<string | null>(null);
   const [circleVideo,  setCircleVideo]  = useState<string | null>(null);
   const [logoUrl,      setLogoUrl]      = useState<string | null>(null);
@@ -57,6 +68,16 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
   const [revealed,     setRevealed]     = useState(false);
   const [editionOpen,  setEditionOpen]  = useState(false);
   const [scrolled,     setScrolled]     = useState(false);
+  const [regionImages, setRegionImages] = useState<Record<string, string>>({});
+  // Local currency state — used when parent doesn't pass props
+  const [localCurrency, setLocalCurrency] = useState<Currency>(CURRENCIES[0]);
+  const activeCurrency  = currencyProp ?? localCurrency;
+  const activeCurrencies = currenciesProp ?? CURRENCIES;
+  const handleCurrencyChange = (c: Currency) => {
+    setLocalCurrency(c);
+    onCurrencyChange?.(c);
+  };
+  const fmt = (n: number) => `${activeCurrency.symbol}${Math.round(n / activeCurrency.rate).toLocaleString()}`;
   const circleRef = useRef<HTMLVideoElement>(null);
 
   // Load hero background + circle video from Supabase cinematic_videos
@@ -77,9 +98,42 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
       .catch(() => {});
   }, []);
 
+  // Load real supplier images per region for curated cards
   useEffect(() => {
-    const t = setTimeout(() => setRevealed(true), 100);
-    return () => clearTimeout(t);
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    const slugs = ['kruger-sabi-sand', 'okavango-delta', 'chobe-vic-falls', 'phinda', 'mozambique'];
+    fetch(
+      `${url}/rest/v1/suppliers?select=region_slug,images,hero_image,cover_image&is_active=eq.true&region_slug=in.(${slugs.join(',')})&order=trust_score.desc`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    )
+      .then(r => r.json())
+      .then((rows: any[]) => {
+        const map: Record<string, string> = {};
+        rows.forEach((s: any) => {
+          if (map[s.region_slug]) return; // already have best image for this region
+          let img = '';
+          try {
+            if (typeof s.images === 'string' && s.images.startsWith('http')) {
+              img = s.images;
+            } else {
+              const imgs: any[] = Array.isArray(s.images) ? s.images : (s.images ? JSON.parse(s.images) : []);
+              const primary = imgs.find((i: any) => i.is_primary && i.status === 'approved')
+                ?? imgs.find((i: any) => i.status === 'approved')
+                ?? imgs[0];
+              if (primary?.url) img = primary.url;
+            }
+          } catch {}
+          if (!img || img.includes('unsplash')) {
+            if (s.hero_image)  img = s.hero_image;
+            else if (s.cover_image) img = s.cover_image;
+          }
+          if (img && !img.includes('unsplash')) map[s.region_slug] = img;
+        });
+        if (Object.keys(map).length > 0) setRegionImages(map);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -117,6 +171,14 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
         .lh2-nav-links a { font-weight:300; font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(255,255,255,0.5); text-decoration:none; transition:color 0.2s; }
         .lh2-nav-links a:hover { color:rgba(200,169,110,0.9); }
         .lh2-nav-right { display:flex; align-items:center; gap:10px; }
+        .lh2-currency-sel {
+          background:rgba(255,255,255,0.05); border:0.5px solid rgba(255,255,255,0.1);
+          color:rgba(245,240,232,0.65); border-radius:4px; padding:6px 10px;
+          font-size:11px; outline:none; cursor:pointer; font-family:'Jost',sans-serif;
+          letter-spacing:0.1em; appearance:none; -webkit-appearance:none;
+        }
+        .lh2-currency-sel:hover { border-color:rgba(200,169,110,0.35); color:rgba(200,169,110,0.85); }
+        .lh2-currency-sel option { background:#0f0f0a; color:#f5f0e8; }
         .lh2-nav-admin { font-size:11px; letter-spacing:0.14em; color:rgba(245,240,232,0.35); text-decoration:none; padding:6px 12px; border:0.5px solid rgba(255,255,255,0.1); border-radius:4px; transition:border-color 0.2s, color 0.2s; }
         .lh2-nav-admin:hover { border-color:rgba(200,169,110,0.4); color:rgba(200,169,110,0.8); }
         .lh2-nav-cta { font-weight:500; font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(200,169,110,0.95); background:rgba(200,169,110,0.1); border:1px solid rgba(200,169,110,0.35); padding:8px 18px; border-radius:2px; cursor:pointer; font-family:'Jost',sans-serif; transition:background 0.2s; }
@@ -325,8 +387,20 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
             <li><a href="/contact">Contact</a></li>
           </ul>
 
-          {/* Right: admin + CTA */}
+          {/* Right: currency + admin + CTA */}
           <div className="lh2-nav-right">
+            <select
+              className="lh2-currency-sel"
+              value={activeCurrency.code}
+              onChange={e => {
+                const c = activeCurrencies.find(x => x.code === e.target.value);
+                if (c) handleCurrencyChange(c);
+              }}
+            >
+              {activeCurrencies.map(c => (
+                <option key={c.code} value={c.code}>{c.code}</option>
+              ))}
+            </select>
             <a href="/admin" className="lh2-nav-admin">Admin →</a>
             <button className="lh2-nav-cta" onClick={onPlanJourney}>Plan My Journey</button>
           </div>
@@ -480,26 +554,29 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
               <button className="lh2-view-btn" onClick={onCuratedJourneys}>View all →</button>
             </div>
             <div className="lh2-curated-grid">
-              {CURATED.map(j => (
-                <div key={j.name} className="lh2-curated-card" onClick={onCuratedJourneys}>
-                  <div className="lh2-curated-img">
-                    <img src={j.image} alt={j.name} />
-                    <div className="lh2-curated-img-ov" />
-                    <div style={{ position: 'absolute', top: 10, left: 12, background: j.badgeColor, color: '#0a0a0a', fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20 }}>{j.badge}</div>
-                  </div>
-                  <div className="lh2-card-body">
-                    <div className="lh2-card-name">{j.name}</div>
-                    <div className="lh2-card-tag">{j.tagline}</div>
-                    <div className="lh2-card-price-row">
-                      <div>
-                        <div className="lh2-card-price">{fmtR(j.priceFrom)}</div>
-                        <div className="lh2-card-nights">{j.nights} nights · 2 pax</div>
+              {CURATED.map(j => {
+                const cardImage = regionImages[j.regionSlug] || j.fallbackImage;
+                return (
+                  <div key={j.name} className="lh2-curated-card" onClick={onCuratedJourneys}>
+                    <div className="lh2-curated-img">
+                      <img src={cardImage} alt={j.name} />
+                      <div className="lh2-curated-img-ov" />
+                      <div style={{ position: 'absolute', top: 10, left: 12, background: j.badgeColor, color: '#0a0a0a', fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20 }}>{j.badge}</div>
+                    </div>
+                    <div className="lh2-card-body">
+                      <div className="lh2-card-name">{j.name}</div>
+                      <div className="lh2-card-tag">{j.tagline}</div>
+                      <div className="lh2-card-price-row">
+                        <div>
+                          <div className="lh2-card-price">{fmt(j.priceFrom)}</div>
+                          <div className="lh2-card-nights">{j.nights} nights · 2 pax</div>
+                        </div>
+                        <div className="lh2-card-saving">Save {fmt(j.otaPrice - j.priceFrom)}</div>
                       </div>
-                      <div className="lh2-card-saving">Save {fmtR(j.otaPrice - j.priceFrom)}</div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
