@@ -245,3 +245,4 @@ export function getAllRegionFunFacts(slugs: string[]): Array<{ region: string; f
     facts:  REGION_FUN_FACTS[slug] || [],
   }));
 }
+export { buildThoughtsV2 as buildThoughts };
