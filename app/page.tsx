@@ -546,12 +546,12 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:10, flexWrap:'wrap' }}>
             <div style={{ fontSize:20, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>
-              {fmt(hotel.netRate * M_HOTELS)}<span style={{ fontSize:11, color:T.textDim, fontWeight:400 }}>/night base</span>
+              {fmt(hotel.displayRate)}<span style={{ fontSize:11, color:T.textDim, fontWeight:400 }}>/night</span>
             </div>
             {addedCost > 0 && (<div style={{ fontSize:12, color:T.green }}>+ {fmt(addedCost)} in selected add-ons</div>)}
             {hotel.otaRate && (
               <div style={{ fontSize:11, color:T.textDim, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'2px 10px' }}>
-                Save {fmt(Math.max(0, hotel.otaRate - hotel.netRate * M_HOTELS))}/night vs direct
+               Save {fmt(Math.max(0, (hotel.otaRate||0) - hotel.displayRate))}/night vs direct
               </div>
             )}
           </div>
@@ -773,7 +773,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
           {addedCost > 0 && (
             <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:10 }}>
               <span style={{ color:T.textDim }}>Base rate + add-ons</span>
-              <span style={{ color:T.gold, fontWeight:600 }}>{fmt(hotel.netRate * M_HOTELS + addedCost)}/night equivalent</span>
+             <span style={{ color:T.gold, fontWeight:600 }}>{fmt(hotel.displayRate + addedCost)}/night equivalent</span>
             </div>
           )}
           <button onClick={onClose} className="btn-gold" style={{ width:'100%', padding:15, fontSize:15 }}>
