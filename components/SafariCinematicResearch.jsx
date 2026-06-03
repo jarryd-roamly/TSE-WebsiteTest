@@ -133,7 +133,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
       .filter(r => r !== 'inspire-me')
       .map(toSlug)
       .filter(slug => REGION_CLIPS[slug]);
-    const chosen = valid.length > 0 ? valid.slice(0,2) : ['kruger-sabi-sand','okavango-delta'];
+    const chosen = valid.length > 0 ? valid : ['kruger-sabi-sand','okavango-delta'];
     return chosen.map(slug => {
       const meta = (REGION_CLIPS[slug] || REGION_CLIPS['kruger-sabi-sand'])[0];
       const mp4  = videoUrls[slug] || null;
@@ -250,7 +250,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
   const pills = [
     `${nights} nights`, travellers,
     ...(budget ? [budget] : []),
-    ...((regions||[]).filter(r => r !== 'inspire-me').slice(0,2)
+    ...((regions||[]).filter(r => r !== 'inspire-me')
       .map(r => r.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()))),
   ].filter(Boolean);
 
@@ -319,7 +319,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
         .scr-stat-n{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:clamp(28px,4vw,52px);color:rgba(200,169,110,.9);line-height:1;}
         .scr-stat-l{font-weight:200;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-top:4px;}
 
-        .scr-thinking{position:absolute;inset:0;z-index:20;background:rgba(10,8,0,.97);backdrop-filter:blur(12px);display:flex;opacity:0;pointer-events:none;transition:opacity .8s ease;}
+        .scr-thinking{position:absolute;inset:0;z-index:20;background:rgba(10,8,0,.75);backdrop-filter:blur(12px);display:flex;opacity:0;pointer-events:none;transition:opacity .8s ease;}
         .scr-thinking.visible{opacity:1;pointer-events:all;}
         .scr-tleft{flex:1;position:relative;overflow:hidden;}
         .scr-tleft-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.22;filter:saturate(.55);animation:scrPan 22s ease-in-out infinite alternate;}
