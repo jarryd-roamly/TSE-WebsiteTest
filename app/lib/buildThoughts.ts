@@ -1,256 +1,247 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// buildThoughts.ts — Itinerary-specific thought stream generator
-//
-// Replaces the two hardcoded arrays in SafariCinematicResearch.
-// Called BEFORE runPlannerEngine so thoughts can appear while AI is working.
-//
-// Usage in SafariCinematicResearch (replace THOUGHTS_RETURNING / THOUGHTS_FIRST):
-//   import { buildThoughts } from './buildThoughts';
-//   const thoughts = buildThoughts(answers);
-//
-// answers shape mirrors the existing SafariCinematicResearch `answers` prop:
-//   { experience, regions, nights, travellers, budget, adults, children, origin }
+// ─── BUILD THOUGHTS — v2 ──────────────────────────────────────────────────────
+// Generates the rolling "thinking" text shown during the cinematic spinner.
+// FIXES BUG #8: 3 regions in but only 2 in thoughts — now always honours N.
+// FIXES BUG B3: free-text brief keywords not surfaced — now personalised.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface ThoughtAnswers {
-  experience?: 'first' | 'returning';
-  regions?:    string[];
-  nights?:     number;
-  travellers?: string;           // "couple", "solo", "group of 4", etc.
-  budget?:     string;           // formatted string e.g. "R 450,000"
-  adults?:     number;
-  children?:   number;
-  origin?:     string;           // e.g. "LHR", "JFK", "JNB"
+interface ThoughtContext {
+  regions:        string[];       // region slugs from the actual input
+  nights:         number;
+  adults:         number;
+  children:       number;
+  infants:        number;
+  budget:         number;          // ZAR
+  origin:         string;          // LHR, JFK, etc.
+  // From brief extraction (mode === 'brief' only)
+  occasion?:      string | null;   // 'honeymoon' | 'anniversary' | ...
+  style?:         string | null;
+  party?:         string | null;
+  themeTags?:     string[];
+  briefText?:     string;
 }
 
-// ─── Region labels ────────────────────────────────────────────────────────────
 const REGION_LABELS: Record<string, string> = {
-  'kruger':         'Sabi Sand',
   'kruger-sabi-sand': 'Sabi Sand',
-  'okavango':       'Okavango Delta',
-  'okavango-delta': 'Okavango Delta',
-  'chobe':          'Chobe / Victoria Falls',
-  'chobe-vic-falls':'Chobe / Victoria Falls',
-  'cape-town':      'Cape Town',
-  'madikwe':        'Madikwe',
-  'masai-mara':     'Masai Mara',
-  'bwindi':         'Bwindi',
-  'phinda':         'Phinda',
-  'mozambique':     'Mozambique',
+  'okavango-delta':   'Okavango Delta',
+  'cape-town':        'Cape Town',
+  'madikwe':          'Madikwe',
+  'chobe-vic-falls':  'Victoria Falls',
+  'masai-mara':       'Masai Mara',
+  'bwindi':           'Bwindi',
+  'phinda':           'Phinda',
 };
 
-// ─── Region-specific live details injected into thoughts ─────────────────────
-const REGION_INTEL: Record<string, string[]> = {
+const REGION_FUN_FACTS: Record<string, string[]> = {
   'kruger-sabi-sand': [
-    'The Sabi Sand has three leopard cubs active right now.',
-    'Checking concession access rights — private traversing active.',
-    'Lion pride density highest from May–September. Noted.',
+    'Sabi Sand has the highest leopard density of any reserve on Earth.',
+    'Singita\'s traversing rights cover 13,000 hectares — larger than Manhattan.',
+    'Private vehicles can off-road for sightings here. Most reserves cannot.',
   ],
   'okavango-delta': [
-    'Delta flood level peaking — mokoro routes fully navigable.',
-    'Wild dog pack confirmed active in NG33 concession.',
-    'Helicopter availability checked — Maun base confirmed.',
-  ],
-  'chobe-vic-falls': [
-    'Victoria Falls at peak flow. Spray visible from 40km. Noted.',
-    'Chobe river elephant herds at maximum — dry season concentration.',
-    'Flight connections Kasane → Maun confirmed for multi-region routing.',
+    'The Okavango is the largest inland delta in the world.',
+    '95% of the Delta is private concessions — meaning low vehicle density.',
+    'Wild dog populations here are growing — the only big African predator on the rise.',
   ],
   'cape-town': [
-    'Cape Town summer winds checked — mountain accessible.',
-    'Ellerman House and The Silo availability cross-referenced.',
-    'Winelands day itinerary options loaded from Knowledge Base.',
+    'Table Mountain is one of the New Seven Wonders of Nature.',
+    'The Cape Floral Kingdom is the smallest of the world\'s six floral kingdoms.',
+    'Cape Town gets more direct hours of sunshine annually than most Mediterranean cities.',
   ],
   'madikwe': [
-    'Madikwe confirmed malaria-free — no prophylactics required.',
-    'Big Five density above average this season. Lion cubs active.',
-    'Jamala and Jaci\'s rates checked against contracted net rates.',
+    'Madikwe is one of only two reserves in Africa with stable wild dog and rhino populations.',
+    'No day visitors are permitted — every guest is staying overnight.',
+    'The reserve was created from former cattle farmland — a conservation success story.',
+  ],
+  'chobe-vic-falls': [
+    'Victoria Falls is twice the height of Niagara, twice the width.',
+    'Chobe has the largest elephant population in Africa — over 50,000.',
+    'The local name for the Falls is "Mosi-oa-Tunya" — the smoke that thunders.',
   ],
   'masai-mara': [
-    'Great Migration river-crossing probability calculated for your dates.',
-    'Light aircraft schedules Nairobi → Mara checked.',
-    'Mara plains lion coalition — 12 individuals — confirmed active.',
+    '1.5 million wildebeest cross the Mara River each year between July and October.',
+    'The Mara is home to over 22 lion prides — the highest density in Africa.',
+    'Hot air balloon safaris depart at first light — landing for champagne breakfast.',
+  ],
+  'bwindi': [
+    'Bwindi means "place of darkness" in the local language.',
+    'Half the world\'s remaining mountain gorillas live here.',
+    'Permits are limited to 8 trekkers per gorilla family per day.',
   ],
 };
 
-// ─── Origin-specific flight thoughts ─────────────────────────────────────────
-const ORIGIN_THOUGHTS: Record<string, string> = {
-  'LHR': 'Checking London Heathrow → Johannesburg flight options…',
-  'LGW': 'Scanning London Gatwick departure slots…',
-  'JFK': 'New York JFK → Johannesburg routing — checking connections…',
-  'LAX': 'Los Angeles → Johannesburg via Dakar or Nairobi. Comparing fares…',
-  'AMS': 'Amsterdam direct to Johannesburg — KLM and SAA checked.',
-  'FRA': 'Frankfurt → Johannesburg Lufthansa and SAA options loaded.',
-  'MAN': 'Manchester — connecting via London or Amsterdam. Optimising.',
-  'DXB': 'Dubai → Johannesburg Emirates direct — flagging for specialist.',
-  'SYD': 'Sydney — longest routing. Qantas via JNB checked.',
-  'JNB': 'Johannesburg — internal routing only. No international leg.',
-  'CPT': 'Cape Town — internal connection to first destination confirmed.',
+// ── Per-region "thinking" lines (rotated through during spinner) ─────────────
+const REGION_THINKING: Record<string, string[]> = {
+  'kruger-sabi-sand': [
+    'Reviewing leopard sighting data for the past 90 days...',
+    'Cross-referencing Sabi Sand lodge availability...',
+    'Checking traversing rights and concession boundaries...',
+    'Calibrating private game drive vehicle ratios...',
+  ],
+  'okavango-delta': [
+    'Mapping mokoro routes through the Delta channels...',
+    'Confirming flood levels affect water-based activities...',
+    'Reviewing wild dog pack locations...',
+    'Checking helicopter charter availability for transfers...',
+  ],
+  'cape-town': [
+    'Selecting boutique hotels along the Atlantic Seaboard...',
+    'Reviewing private winelands tour operators...',
+    'Checking Table Mountain cable car availability...',
+    'Sourcing Robben Island ferry timings...',
+  ],
+  'madikwe': [
+    'Confirming family-friendly camps with children\'s programmes...',
+    'Reviewing wild dog and rhino sighting patterns...',
+    'Cross-checking road transfer times from Johannesburg...',
+    'Verifying malaria-free zone boundaries...',
+  ],
+  'chobe-vic-falls': [
+    'Sourcing sunset cruise availability on the Zambezi...',
+    'Reviewing Falls activity packages — gorge walks, helicopter flips...',
+    'Coordinating Chobe day trip with elephant herd movements...',
+    'Confirming border transfer logistics Zambia ↔ Zimbabwe...',
+  ],
+  'masai-mara': [
+    'Tracking the Great Migration progress through the corridor...',
+    'Reviewing river crossing hotspots — Mara River, Talek River...',
+    'Sourcing hot air balloon operators with safety certification...',
+    'Checking conservancy access (Olare Motorogi, Mara North)...',
+  ],
+  'bwindi': [
+    'Confirming gorilla trekking permit availability...',
+    'Reviewing forest lodge locations relative to gorilla families...',
+    'Checking Volcanoes vs Bwindi alternatives based on group strength...',
+    'Coordinating Entebbe and Kigali transfer options...',
+  ],
 };
 
-// ─── Budget commentary ────────────────────────────────────────────────────────
-function budgetComment(budget: string, nights: number): string | null {
-  // Extract numeric from formatted string like "R 450,000" or "$24,000"
-  const num = parseInt(budget.replace(/[^\d]/g, ''), 10);
-  if (!num || !nights) return null;
-  const perNight = Math.round(num / nights);
-  if (perNight > 50000)  return `Budget at ${budget} — accessing premium tier inventory.`;
-  if (perNight > 25000)  return `Budget per night: R ${perNight.toLocaleString()} — strong selection available.`;
-  if (perNight > 10000)  return `Budget optimisation active — finding best value at ${budget} total.`;
-  return `Working within ${budget} — identifying value-tier properties.`;
+// ── Universal opener lines ───────────────────────────────────────────────────
+const OPENER_LINES = [
+  'Reading the brief...',
+  'Cross-checking specialist Knowledge Base entries...',
+  'Pulling availability across preferred suppliers...',
+];
+
+// ── Theme-driven lines (appear once each, mid-sequence) ──────────────────────
+const OCCASION_LINES: Record<string, string> = {
+  honeymoon:   'Filtering for private, romantic retreats...',
+  anniversary: 'Prioritising properties known for milestone moments...',
+  birthday:    'Looking for memorable, story-worthy lodges...',
+  babymoon:    'Filtering to malaria-free, low-altitude options...',
+  retirement:  'Sourcing premium options with relaxed pacing...',
+};
+
+const STYLE_LINES: Record<string, string> = {
+  adventure:    'Sourcing walking safaris, horseback, helicopter add-ons...',
+  photography:  'Reviewing photography-host guides and hide access...',
+  conservation: 'Identifying lodges with active research and rhino projects...',
+  romantic:     'Filtering for private decks, outdoor showers, exclusive-use camps...',
+  luxury:       'Including butler service, helicopter transfers, wine pairing...',
+  wildlife:     'Optimising for predator density and Big Five sighting rates...',
+  cultural:     'Including community visits and heritage experiences...',
+};
+
+const PARTY_LINES: Record<string, string> = {
+  family:           'Prioritising family-friendly camps with children\'s programmes...',
+  multigenerational: 'Sourcing camps suitable for three generations under one roof...',
+  group:            'Reviewing group-buyout options and family suites...',
+  solo:             'Including hosted-table dining and small group drives...',
+  friends:          'Considering exclusive-use camps for the whole party...',
+};
+
+// ── Budget-aware lines ────────────────────────────────────────────────────────
+function budgetLine(budget: number): string | null {
+  if (budget <= 0)         return null;
+  if (budget < 100000)     return 'Calibrating value-led options without compromising quality...';
+  if (budget < 250000)     return 'Reviewing well-known properties with strong reputations...';
+  if (budget < 600000)     return 'Including signature lodges across our preferred suppliers...';
+  if (budget < 1200000)    return 'Considering exclusive-use camps and helicopter transfers...';
+  return 'Reviewing the most exclusive properties — including private islands and full-house buyouts...';
 }
 
-// ─── Traveller-specific note ──────────────────────────────────────────────────
-function travellerNote(adults: number, children: number): string | null {
-  if (children > 0) return `Family configuration: ${adults} adults, ${children} child${children > 1 ? 'ren' : ''} — filtering for family-friendly lodges.`;
-  if (adults === 1)  return 'Solo traveller — single occupancy supplements noted. Private guide option flagged.';
-  if (adults >= 6)   return `Group of ${adults} — checking villa and exclusive-use inventory.`;
-  return null;
-}
+// ── Closing lines ────────────────────────────────────────────────────────────
+const CLOSING_LINES = [
+  'Sequencing the routing to minimise transit time...',
+  'Verifying seasonal weather conditions for travel dates...',
+  'Applying margin optimisation across the package...',
+  'Final integrity check — assembling your journey...',
+];
 
-// ─── Core builder ─────────────────────────────────────────────────────────────
-export function buildThoughts(answers: ThoughtAnswers): string[] {
-  const {
-    experience = 'returning',
-    regions    = [],
-    nights     = 7,
-    travellers = 'couple',
-    budget     = '',
-    adults     = 2,
-    children   = 0,
-    origin     = '',
-  } = answers;
+// ── Main exported function ────────────────────────────────────────────────────
+export function buildThoughtsV2(ctx: ThoughtContext): string[] {
+  const out: string[] = [];
 
-  const validRegions = (regions || [])
-    .filter(r => r !== 'inspire-me')
-    .map(r => REGION_LABELS[r] || r.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+  // Opener
+  out.push(...OPENER_LINES);
 
-  const regionStr = validRegions.length > 0
-    ? validRegions.join(' and ')
-    : 'Southern Africa';
-
-  const thoughts: string[] = [];
-
-  // ── Opening line — experience-aware ──────────────────────────────────────
-  if (experience === 'first') {
-    thoughts.push(`First trip to Africa — building your perfect introduction.`);
-  } else {
-    thoughts.push(`Returning traveller detected — going deeper than last time.`);
-  }
-
-  // ── Region confirmation ───────────────────────────────────────────────────
-  if (validRegions.length === 0) {
-    thoughts.push(`No region specified — selecting the two best destinations for ${nights} nights.`);
-  } else if (validRegions.length === 1) {
-    thoughts.push(`Focusing on ${validRegions[0]} — finding the best ${nights} nights there.`);
-  } else {
-    thoughts.push(`${validRegions.length}-destination journey: ${regionStr}. Optimising sequence.`);
-  }
-
-  // ── Scanning inventory ────────────────────────────────────────────────────
-  thoughts.push(`Scanning availability across ${20 + Math.floor(Math.random() * 12)} properties in ${regionStr}…`);
-
-  // ── Regional intel (specific to each selected region) ────────────────────
-  const regionSlugs = (regions || [])
-    .filter(r => r !== 'inspire-me')
-    .map(r => r === 'kruger' ? 'kruger-sabi-sand' : r === 'okavango' ? 'okavango-delta' : r === 'chobe' ? 'chobe-vic-falls' : r);
-
-  for (const slug of regionSlugs.slice(0, 2)) {
-    const intel = REGION_INTEL[slug] || [];
-    if (intel.length > 0) {
-      thoughts.push(intel[Math.floor(Math.random() * intel.length)]);
+  // ── Region-specific thinking — ALWAYS one line per region selected ────────
+  for (const slug of ctx.regions) {
+    const label = REGION_LABELS[slug] || slug.replace(/-/g, ' ');
+    const lines = REGION_THINKING[slug] || [];
+    if (lines.length > 0) {
+      out.push(lines[0]);  // first line per region
+    } else {
+      out.push(`Reviewing lodges in ${label}...`);
     }
   }
 
-  // ── Night split ───────────────────────────────────────────────────────────
-  if (validRegions.length >= 2 && nights >= 6) {
-    const split1 = Math.ceil(nights * 0.55);
-    const split2 = nights - split1;
-    thoughts.push(`Night allocation: ${split1} nights ${validRegions[0]}, ${split2} nights ${validRegions[1]}. Checking transitions.`);
-  } else if (nights <= 5) {
-    thoughts.push(`${nights} nights — focused itinerary. Prioritising single destination for depth.`);
-  } else {
-    thoughts.push(`${nights} nights — checking optimal pacing. Minimum 3 nights per destination.`);
+  // ── Add a "fact-discovery" line per region ────────────────────────────────
+  for (const slug of ctx.regions) {
+    const facts = REGION_FUN_FACTS[slug] || [];
+    if (facts.length > 0) {
+      const fact = facts[Math.floor(Math.random() * facts.length)];
+      out.push(`Note: ${fact}`);
+    }
   }
 
-  // ── Traveller-specific ────────────────────────────────────────────────────
-  const travNote = travellerNote(adults, children);
-  if (travNote) thoughts.push(travNote);
+  // ── Travel party context ──────────────────────────────────────────────────
+  if (ctx.party && PARTY_LINES[ctx.party]) out.push(PARTY_LINES[ctx.party]);
 
-  // ── Budget commentary ─────────────────────────────────────────────────────
-  const budNote = budgetComment(budget, nights);
-  if (budNote) thoughts.push(budNote);
-
-  // ── Origin / flights ──────────────────────────────────────────────────────
-  if (origin && ORIGIN_THOUGHTS[origin]) {
-    thoughts.push(ORIGIN_THOUGHTS[origin]);
+  // ── Occasion context ──────────────────────────────────────────────────────
+  if (ctx.occasion && ctx.occasion !== 'none' && OCCASION_LINES[ctx.occasion]) {
+    out.push(OCCASION_LINES[ctx.occasion]);
   }
 
-  // ── Knowledge Base injection ──────────────────────────────────────────────
-  thoughts.push(`Loading Knowledge Base: ${85 + Math.floor(Math.random() * 60)} specialist notes injected.`);
+  // ── Style context ─────────────────────────────────────────────────────────
+  if (ctx.style && STYLE_LINES[ctx.style]) out.push(STYLE_LINES[ctx.style]);
 
-  // ── Rate check ───────────────────────────────────────────────────────────
-  thoughts.push(`Cross-referencing your budget against contracted net rates…`);
+  // ── Malaria + infants ─────────────────────────────────────────────────────
+  if (ctx.infants > 0) out.push('Filtering to malaria-free regions for infant travellers...');
 
-  // ── Date arbitrage ────────────────────────────────────────────────────────
-  const saving = Math.round((Math.random() * 18000 + 8000) / 1000) * 1000;
-  thoughts.push(`Date arbitrage scan: shifting ±${Math.random() > 0.5 ? 3 : 7} days saves R ${saving.toLocaleString()}.`);
+  // ── Budget ────────────────────────────────────────────────────────────────
+  const bl = budgetLine(ctx.budget);
+  if (bl) out.push(bl);
 
-  // ── Transfer routing ──────────────────────────────────────────────────────
-  if (validRegions.length >= 2) {
-    thoughts.push(`Charter routing ${validRegions[0]} → ${validRegions[1]} confirmed. Timing checked.`);
-  }
-
-  // ── Malaria note if relevant ──────────────────────────────────────────────
-  const malariaRegions = ['kruger-sabi-sand', 'okavango-delta', 'masai-mara', 'chobe-vic-falls'];
-  const hasMalaria = regionSlugs.some(s => malariaRegions.includes(s));
-  if (hasMalaria && children === 0) {
-    thoughts.push(`Malaria zone confirmed — prophylactic requirements flagged for your Journey Specialist.`);
-  }
-
-  // ── Children age restriction ──────────────────────────────────────────────
-  if (children > 0) {
-    thoughts.push(`Filtering for minimum age compliance — removing camps with under-12 restrictions.`);
+  // ── Origin-specific flight line ───────────────────────────────────────────
+  if (ctx.origin) {
+    const map: Record<string, string> = {
+      LHR: 'Reviewing London → Johannesburg direct flights with BA, Virgin, SAA...',
+      JFK: 'Sourcing New York → Johannesburg via direct (Delta) or one-stop (Doha, Dubai)...',
+      LAX: 'Reviewing Los Angeles → Africa routings via Doha or Dubai...',
+      FRA: 'Sourcing Frankfurt → Johannesburg with Lufthansa direct service...',
+      AMS: 'Reviewing Amsterdam → Johannesburg via KLM direct...',
+      DXB: 'Sourcing Dubai → Africa with Emirates daily service...',
+    };
+    if (map[ctx.origin]) out.push(map[ctx.origin]);
   }
 
   // ── Closing ───────────────────────────────────────────────────────────────
-  thoughts.push(`Margin optimisation complete. Your rates are 15–27% below direct booking.`);
-  thoughts.push(`Building your personalised itinerary for ${regionStr}…`);
-  thoughts.push(`Almost there. This one is worth the wait.`);
+  out.push(...CLOSING_LINES);
 
-  return thoughts;
+  return out;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// INTEGRATION NOTE for SafariCinematicResearch.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// 1. Import at top of SafariCinematicResearch.jsx:
-//    import { buildThoughts } from './buildThoughts';
-//
-// 2. Replace the existing thoughts derivation:
-//    // OLD:
-//    const thoughts = experience === 'first' ? THOUGHTS_FIRST : THOUGHTS_RETURNING;
-//
-//    // NEW:
-//    const thoughts = buildThoughts(answers);
-//
-// 3. Pass additional fields from page.tsx into the answers prop:
-//    <SafariCinematicResearch
-//      answers={{
-//        experience: adults === 1 ? 'first' : 'returning',
-//        regions: selectedRegions,
-//        nights,
-//        travellers: adults === 1 ? 'solo' : adults === 2 ? 'couple' : `group of ${adults}`,
-//        budget: fmt(budget),
-//        adults,
-//        children,
-//        origin: needsIntlFlight ? intlOrigin : origin,
-//      }}
-//      aiReady={itinerary !== null}
-//      onComplete={() => setScreen('builder')}
-//    />
-//
-// That's the entire change required. buildThoughts() is pure — no side effects,
-// no async — so it fires synchronously before the first thought is rendered.
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Get a region fun fact for the confirmation page ──────────────────────────
+export function getRegionFunFact(slug: string): string {
+  const facts = REGION_FUN_FACTS[slug];
+  if (!facts || facts.length === 0) return '';
+  return facts[Math.floor(Math.random() * facts.length)];
+}
+
+// ── Get all fun facts for a region (for the confirming-journey panel) ────────
+export function getAllRegionFunFacts(slugs: string[]): Array<{ region: string; facts: string[] }> {
+  return slugs.map(slug => ({
+    region: REGION_LABELS[slug] || slug,
+    facts:  REGION_FUN_FACTS[slug] || [],
+  }));
+}
