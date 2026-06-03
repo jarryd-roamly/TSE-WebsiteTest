@@ -324,10 +324,8 @@ export default function JourneyPage() {
                     <div style={{ fontSize:9, color:T.gold, letterSpacing:'0.28em', textTransform:'uppercase' as const, fontWeight:400 }}>
                       {pillarLabel(c.pillar)}
                     </div>
-                    {c.display_rate_zar > 0 && (
-                      <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:16, fontWeight:300, color:T.green }}>
-                        {fmt(c.display_rate_zar)}
-                      </div>
+                   {c.pillar==='hotel'&&c.nights>0&&(
+                      <div style={{fontSize:12,color:T.textDim}}>{c.nights} night{c.nights!==1?'s':''}</div>
                     )}
                   </div>
 
