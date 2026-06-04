@@ -1810,7 +1810,26 @@ const [selectedTheme, setSelectedTheme] = useState<string>('');
   const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
   const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => ((b.displayRate||0)-(b.netRate||0)) - ((a.displayRate||0)-(a.netRate||0))), [hotels]);
-const regionImageMap = useMemo(() => {
+// Cinematic videos per region — for the inspire-input right panel
+  const [regionVideoMap, setRegionVideoMap] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    fetch(`${url}/rest/v1/cinematic_videos?select=region,url`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    })
+      .then(r => r.json())
+      .then((rows: any[]) => {
+        if (rows?.length) {
+          const map: Record<string,string> = {};
+          rows.forEach(r => { if (r.region && r.url) map[r.region] = r.url; });
+          setRegionVideoMap(map);
+        }
+      })
+      .catch(() => {});
+  }, []);
+         const regionImageMap = useMemo(() => {
     const map: Record<string, string> = {};
     REGIONS.forEach(r => {
       if (!r.slug) return;
@@ -2459,13 +2478,19 @@ const runBriefPlanner = (briefText: string) => {
               <div style={{ position:'absolute', inset:0, opacity:panelFade?1:0, transition:'opacity 0.35s ease' }}>
                 {selectedRegions.length <= 1 ? (
                   // Single region or default: full-panel image
-                  <div style={{
-                    position:'absolute', inset:0,
-                    backgroundImage:`url(${selectedRegions.length === 1
-                      ? (regionImageMap[REGIONS.find(r=>r.id===selectedRegions[0])?.slug??''] || REGION_DEFAULT_IMAGE)
-                      : REGION_DEFAULT_IMAGE})`,
-                    backgroundSize:'cover', backgroundPosition:'center',
-                  }} />
+{(() => {
+                    const slug = selectedRegions.length === 1
+                      ? (REGIONS.find(r=>r.id===selectedRegions[0])?.slug ?? '')
+                      : '';
+                    const videoSrc = regionVideoMap[slug];
+                    const imgSrc   = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
+                    return videoSrc ? (
+                      <video key={videoSrc} src={videoSrc} autoPlay muted loop playsInline
+                        style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} />
+                    ) : (
+                      <div style={{ position:'absolute', inset:0, backgroundImage:`url(${imgSrc})`, backgroundSize:'cover', backgroundPosition:'center' }} />
+                    );
+                  })()}
                 ) : (
                   // Multiple regions: vertical split — each region gets equal height band
                   selectedRegions.map((id, idx) => {
@@ -2479,13 +2504,13 @@ const runBriefPlanner = (briefText: string) => {
                         overflow:'hidden',
                       }}>
                         {/* Each band fills its space — background-position centres vertically within band */}
-                        <div style={{
-                          position:'absolute', inset:0,
-                          backgroundImage:`url(${img})`,
-                          backgroundSize:'cover',
-                          backgroundPosition:'center',
-                          transform:'scale(1.05)', // slight zoom so crop doesn't show edges
-                        }} />
+                        {regionVideoMap[slug] ? (
+                          <video key={regionVideoMap[slug]} src={regionVideoMap[slug]}
+                            autoPlay muted loop playsInline
+                            style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', transform:'scale(1.05)' }} />
+                        ) : (
+                          <div style={{ position:'absolute', inset:0, backgroundImage:`url(${img})`, backgroundSize:'cover', backgroundPosition:'center', transform:'scale(1.05)' }} />
+                        )}
                         {/* Region label on each band */}
                         <div style={{
                           position:'absolute', top:'50%', left:20,
