@@ -72,7 +72,7 @@ function TableToolbar({search,onSearch,searchPlaceholder,filters,activeFilter,on
   return(
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
       <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif"}}>{title}</div>
+        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>"}}>{title}</div>
         {count!==undefined&&<div style={{fontSize:12,color:T.textDim,background:'rgba(255,255,255,0.06)',borderRadius:20,padding:'2px 9px'}}>{count}</div>}
       </div>
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
@@ -136,7 +136,7 @@ function SectionHeader({title,sub,action}:{title:string,sub?:string,action?:Reac
   return(
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
       <div>
-        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif"}}>{title}</div>
+        <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>"}}>{title}</div>
         {sub&&<div style={{fontSize:12,color:T.textDim,marginTop:4}}>{sub}</div>}
       </div>
       {action}
@@ -186,11 +186,11 @@ function Login({onLogin}:{onLogin:(name:string)=>void}){
   const SUPPLIER_USERS=ALL_USERS.filter(u=>u.type==='supplier')
   return(
     <div style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Arial,sans-serif'}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap')`}</style>
+
       <div style={{width:'100%',maxWidth:760,padding:'24px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}}>
         <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,padding:'32px'}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:11,color:T.gold,letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6}}>The Safari Edition</div>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,fontWeight:700,marginBottom:4}}>Sign In</div>
+          <div style={{fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",fontSize:11,color:T.gold,letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6}}>The Safari Edition</div>
+          <div style={{fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",fontSize:24,color:T.text,fontWeight:700,marginBottom:4}}>Sign In</div>
           <div style={{fontSize:12,color:T.textDim,marginBottom:24}}>Edition team and supplier partners</div>
           <div style={{marginBottom:12}}>
             <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:5}}>Email address</label>
@@ -243,7 +243,7 @@ function StatCard({label,value,sub,color,onClick}:{label:string,value:string,sub
       onMouseEnter={e=>{if(onClick)(e.currentTarget as HTMLElement).style.background='rgba(212,175,55,0.04)'}}
       onMouseLeave={e=>{if(onClick)(e.currentTarget as HTMLElement).style.background=T.surface}}>
       <div style={{fontSize:11,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>{label}</div>
-      <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,fontWeight:700,color:color||T.gold}}>{value}</div>
+      <div style={{fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",fontSize:24,fontWeight:700,color:color||T.gold}}>{value}</div>
       {sub&&<div style={{fontSize:11,color:T.textDim,marginTop:4}}>{sub}</div>}
       {onClick&&<div style={{fontSize:10,color:T.gold,marginTop:6}}>View →</div>}
     </div>
@@ -288,7 +288,7 @@ function OpenQuotes({onBack}:{onBack:()=>void}){
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
         <button onClick={onBack} style={{background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:8,padding:'6px 12px',color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>← Dashboard</button>
         <div>
-          <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif"}}>Open Quotes</div>
+          <div style={{fontSize:20,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>"}}>Open Quotes</div>
           <div style={{fontSize:12,color:T.textDim}}>{filtered.length} quotes · Pipeline {fmt(totalValue)}</div>
         </div>
       </div>
@@ -324,7 +324,7 @@ function Dashboard({setActive,userName}:{setActive:(s:string)=>void,userName?:st
   return(
     <div>
       <div style={{marginBottom:24}}>
-        <div style={{fontSize:22,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:4}}>Good morning ✦</div>
+        <div style={{fontSize:22,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",marginBottom:4}}>Good morning ✦</div>
         <div style={{fontSize:13,color:T.textDim}}>The Safari Edition — Admin Overview</div>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,marginBottom:28}}>
@@ -1152,7 +1152,7 @@ function SupplierDashboard({supplier,onClose}:{supplier:any,onClose:()=>void}){
         <div style={{flex:1,overflowY:'auto',padding:24}}>
           {tab==='overview'&&(
             <div>
-              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:16}}>Supplier Overview</div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",marginBottom:16}}>Supplier Overview</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10,marginBottom:20}}>
                 {[
                   {l:'Trust Score',v:`${stats.trust_score}/100`,c:T.green,sub:`Peer avg: ${stats.peer_avg_trust}`},
@@ -1164,7 +1164,7 @@ function SupplierDashboard({supplier,onClose}:{supplier:any,onClose:()=>void}){
                 ].map((s,i)=>(
                   <div key={i} style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:11,padding:'14px 16px'}}>
                     <div style={{fontSize:10,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.07em',marginBottom:5}}>{s.l}</div>
-                    <div style={{fontSize:20,fontWeight:700,color:s.c,fontFamily:"'Playfair Display',serif"}}>{s.v}</div>
+                    <div style={{fontSize:20,fontWeight:700,color:s.c,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>"}}>{s.v}</div>
                     <div style={{fontSize:10,color:T.textDim,marginTop:3}}>{s.sub}</div>
                   </div>
                 ))}
@@ -1183,7 +1183,7 @@ function SupplierDashboard({supplier,onClose}:{supplier:any,onClose:()=>void}){
           )}
           {tab==='bookings'&&(
             <div>
-              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:16}}>Bookings — {supplier.name}</div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",marginBottom:16}}>Bookings — {supplier.name}</div>
               {[{label:'Past',data:past,color:T.textDim},{label:'Current / In-house',data:current,color:T.blue},{label:'Future',data:future,color:T.green}].map(group=>(
                 <div key={group.label} style={{marginBottom:20}}>
                   <div style={{fontSize:11,color:group.color,textTransform:'uppercase' as const,letterSpacing:'0.08em',fontWeight:700,marginBottom:8}}>{group.label} ({group.data.length})</div>
@@ -1202,7 +1202,7 @@ function SupplierDashboard({supplier,onClose}:{supplier:any,onClose:()=>void}){
           )}
           {tab==='banking'&&(
             <div>
-              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:8}}>Banking Details</div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",marginBottom:8}}>Banking Details</div>
               <div style={{background:'rgba(248,113,113,0.06)',border:'0.5px solid rgba(248,113,113,0.2)',borderRadius:10,padding:'12px 16px',marginBottom:20,fontSize:12,color:T.red}}>
                 🔐 Banking details require TWO rounds of approval before any change takes effect.
               </div>
@@ -1221,7 +1221,7 @@ function SupplierDashboard({supplier,onClose}:{supplier:any,onClose:()=>void}){
           )}
           {tab==='audit'&&(
             <div>
-              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",marginBottom:16}}>Audit Log</div>
+              <div style={{fontSize:18,fontWeight:700,color:T.text,fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",marginBottom:16}}>Audit Log</div>
               <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:11,overflow:'hidden'}}>
                 <div style={{display:'grid',gridTemplateColumns:'1.5fr 2fr 1fr 1fr',gap:8,padding:'9px 14px',borderBottom:`0.5px solid ${T.border}`,fontSize:9,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.07em'}}>
                   <div>Action</div><div>Detail</div><div>By</div><div>Date</div>
@@ -1290,11 +1290,11 @@ export default function AdminPage(){
   }
   return(
     <div style={{minHeight:'100vh',background:T.bg,display:'flex',fontFamily:'Arial,sans-serif',color:T.text}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap');*{box-sizing:border-box}`}</style>
+      <style>{`*{box-sizing:border-box}`}</style>
       {viewingSupplier&&<SupplierDashboard supplier={viewingSupplier} onClose={()=>setViewingSupplier(null)}/>}
       <div style={{width:220,background:T.bg2,borderRight:`0.5px solid ${T.border}`,display:'flex',flexDirection:'column',flexShrink:0,position:'sticky',top:0,height:'100vh',overflowY:'auto'}}>
         <div style={{padding:'20px 16px',borderBottom:`0.5px solid ${T.border}`}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:16,color:T.gold,fontWeight:700}}>✦ The Safari Edition</div>
+          <div style={{fontFamily:"<style>{`*{box-sizing:border-box}`}</style>",fontSize:16,color:T.gold,fontWeight:700}}>✦ The Safari Edition</div>
           <div style={{fontSize:11,color:T.textDim,marginTop:3}}>Admin Portal</div>
         </div>
         <nav style={{padding:'8px',flex:1}}>
