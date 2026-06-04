@@ -38,7 +38,7 @@ const T = {
 };
 
 const GLOBAL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,600;0,700;1,400&family=Jost:wght@300;400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: ${T.bg}; color: ${T.text}; font-family: 'DM Sans', sans-serif; }
   ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -414,7 +414,7 @@ function TabOverview({ supplier, images, reels, heroType, setHeroType, locked, s
             <div style={{ fontSize: 11, color: T.textDim }}>{score.pct >= 80 ? 'Featured eligible ✓' : score.pct >= 60 ? 'Good — keep going' : 'Needs work'}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: score.pct>=80?T.gold:score.pct>=60?T.text:T.amber, fontFamily:"'Playfair Display',serif" }}>{score.total}<span style={{ fontSize: 12, color: T.textDim, fontWeight: 400 }}>/65</span></div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: score.pct>=80?T.gold:score.pct>=60?T.text:T.amber, fontFamily:"'Cormorant Garamond',serif" }}>{score.total}<span style={{ fontSize: 12, color: T.textDim, fontWeight: 400 }}>/65</span></div>
             <div style={{ fontSize: 11, color: T.textDim }}>{scoreOpen?'▲':'▼'}</div>
           </div>
         </div>
@@ -781,7 +781,7 @@ function TabRooms({ supplierId, isAdmin }) {
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-                      <div style={{ fontSize:14, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{room.name}</div>
+                      <div style={{ fontSize:14, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif" }}>{room.name}</div>
                       {room.category && (
                         <span style={{ fontSize:9, background:cat.bg, border:`0.5px solid ${cat.border}`, color:cat.text, borderRadius:20, padding:'2px 8px', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>{room.category}</span>
                       )}
@@ -981,7 +981,7 @@ function TabActivities({ supplierId, supplier, isAdmin }) {
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
-                      <div style={{ fontSize:14, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{act.name}</div>
+                      <div style={{ fontSize:14, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif" }}>{act.name}</div>
                       {act.category && <span style={{ fontSize:9, color:T.textDim, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'1px 7px' }}>{act.category}</span>}
                     </div>
                     {act.description && <div style={{ fontSize:11, color:T.textDim, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{act.description}</div>}
@@ -1134,7 +1134,7 @@ function PreviewPanel({ supplier, slides, activeSlideIdx, onSlideChange }) {
             {activeSlideIdx>0&&<button onClick={()=>onSlideChange(activeSlideIdx-1)} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:26, height:26, borderRadius:'50%', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>‹</button>}
             {activeSlideIdx<slides.length-1&&<button onClick={()=>onSlideChange(activeSlideIdx+1)} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:26, height:26, borderRadius:'50%', cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>›</button>}
             <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 12px 10px' }}>
-              <div style={{ fontSize:14, fontWeight:700, color:'#fff', fontFamily:"'Playfair Display',serif", lineHeight:1.2 }}>{name}</div>
+              <div style={{ fontSize:14, fontWeight:700, color:'#fff', fontFamily:"'Cormorant Garamond',serif", lineHeight:1.2 }}>{name}</div>
               <div style={{ fontSize:10, color:'rgba(255,255,255,0.55)', marginTop:2 }}>{destination} · ★ {trust}/100</div>
             </div>
           </div>
@@ -1152,9 +1152,9 @@ function PreviewPanel({ supplier, slides, activeSlideIdx, onSlideChange }) {
         <div style={{ width:'100%', maxWidth:420, borderRadius:'14px 14px 0 0', background:'#0f0f0f', border:`0.5px solid ${T.border}`, overflow:'hidden' }}>
           <div style={{ padding:'14px 16px 10px', borderBottom:`0.5px solid rgba(255,255,255,0.08)` }}>
             <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700, marginBottom:3 }}>✦ Upgrade & Personalise</div>
-            <div style={{ fontSize:15, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{name}</div>
+            <div style={{ fontSize:15, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif" }}>{name}</div>
             <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{destination}</div>
-            <div style={{ fontSize:17, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif", marginTop:8 }}>R {rate.toLocaleString()}<span style={{ fontSize:10, color:T.textDim, fontWeight:400 }}>/night</span></div>
+            <div style={{ fontSize:17, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", marginTop:8 }}>R {rate.toLocaleString()}<span style={{ fontSize:10, color:T.textDim, fontWeight:400 }}>/night</span></div>
           </div>
           <div style={{ position:'relative', height:180, overflow:'hidden', background:'#111' }}>
             {slide ? <img src={slide.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:T.textDim }}>No image</div>}
