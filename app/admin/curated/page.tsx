@@ -160,6 +160,72 @@ function SupplierSelector({ regionSlug, nights, selectedId, onSelect }: { region
   );
 }
 
+// ── Hero image drag-drop upload ───────────────────────────────────────────────
+function HeroImageUpload({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+  const [drag,     setDrag]     = useState(false);
+  const [status,   setStatus]   = useState<'idle'|'uploading'|'done'|'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const upload = async (file: File) => {
+    if (!file.type.startsWith('image/')) { setErrorMsg('Images only (JPG, PNG, WEBP)'); return; }
+    if (file.size > 20 * 1024 * 1024)   { setErrorMsg('Max 20MB');                      return; }
+    setStatus('uploading'); setErrorMsg('');
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('supplier_id', 'system');
+    fd.append('media_type', 'images');
+    fd.append('caption', 'curated-hero');
+    fd.append('uploaded_by', 'admin');
+    try {
+      const res  = await fetch('/api/upload', { method:'POST', body:fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      onChange(data.url);
+      setStatus('done');
+    } catch(e: any) {
+      setErrorMsg(e.message);
+      setStatus('error');
+    }
+  };
+
+  return (
+    <div>
+      {/* Drop zone */}
+      <div
+        onDragOver={e => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if(f) upload(f); }}
+        style={{ border:`1.5px dashed ${drag ? T.gold : T.border}`, borderRadius:10, padding:'20px 16px', textAlign:'center', background:drag ? T.goldDim : 'rgba(255,255,255,0.02)', transition:'all 0.15s', marginBottom:8 }}>
+        {status === 'uploading'
+          ? <div style={{ fontSize:12, color:T.amber }}>⏳ Uploading…</div>
+          : status === 'done'
+          ? <div style={{ fontSize:12, color:T.green }}>✓ Uploaded</div>
+          : <>
+              <div style={{ fontSize:11, color:T.textDim, marginBottom:8 }}>Drag & drop an image here</div>
+              <label style={{ background:`linear-gradient(135deg,${T.gold},${T.goldLight})`, color:'#0a0a0a', borderRadius:7, padding:'6px 16px', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                Choose file
+                <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => { const f = e.target.files?.[0]; if(f) upload(f); e.target.value=''; }} />
+              </label>
+            </>
+        }
+        {errorMsg && <div style={{ fontSize:11, color:T.red, marginTop:6 }}>{errorMsg}</div>}
+      </div>
+      {/* Current image preview */}
+      {value && (
+        <div style={{ position:'relative' }}>
+          <img src={value} alt="" style={{ width:'100%', height:110, objectFit:'cover', borderRadius:8 }} onError={e=>{(e.target as any).style.display='none'}} />
+          <button onClick={() => onChange('')}
+            style={{ position:'absolute', top:6, right:6, width:22, height:22, borderRadius:'50%', background:'rgba(0,0,0,0.7)', border:'none', color:'#fff', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+        </div>
+      )}
+      {/* Fallback URL paste */}
+      <input value={value} onChange={e => onChange(e.target.value)}
+        placeholder="Or paste an image URL…"
+        style={{ width:'100%', marginTop:8, background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:8, padding:'8px 12px', color:T.textDim, fontSize:11, outline:'none', fontFamily:'inherit', boxSizing:'border-box' as const }} />
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function CuratedAdminPage() {
   const [journeys, setJourneys]   = useState<Journey[]>([]);
@@ -264,9 +330,11 @@ export default function CuratedAdminPage() {
                   </div>
                 </div>
                 <div style={{ marginBottom:14 }}>
-                  <label style={labelStyle}>Hero image URL</label>
-                  <input value={editing.hero_image} onChange={e => setEditing({...editing, hero_image:e.target.value})} style={inputStyle} placeholder="https://… (leave blank to auto-use supplier photo)" />
-                  {editing.hero_image && <img src={editing.hero_image} alt="" style={{ width:'100%', height:100, objectFit:'cover', borderRadius:7, marginTop:8 }} onError={e=>{(e.target as any).style.display='none'}} />}
+                  <label style={labelStyle}>Hero image</label>
+                  <HeroImageUpload
+                    value={editing.hero_image}
+                    onChange={url => setEditing({...editing, hero_image:url})}
+                  />
                 </div>
                 <div>
                   <label style={labelStyle}>Themes</label>
