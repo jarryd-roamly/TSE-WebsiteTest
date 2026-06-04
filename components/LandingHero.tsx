@@ -69,6 +69,8 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
   const [editionOpen,  setEditionOpen]  = useState(false);
   const [scrolled,     setScrolled]     = useState(false);
   const [regionImages, setRegionImages] = useState<Record<string, string>>({});
+  const [curatedJourneys, setCuratedJourneys] = useState<any[]>([]);
+  const [curatedLoading, setCuratedLoading] = useState(true);
   // Local currency state — used when parent doesn't pass props
   const [localCurrency, setLocalCurrency] = useState<Currency>(CURRENCIES[0]);
   const activeCurrency  = currencyProp ?? localCurrency;
@@ -134,6 +136,22 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
         if (Object.keys(map).length > 0) setRegionImages(map);
       })
       .catch(() => {});
+  }, []);
+  // Load curated journeys from Supabase
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) { setCuratedLoading(false); return; }
+    fetch(
+      `${url}/rest/v1/curated_journeys?select=*&status=eq.published&edition_id=eq.safari&order=created_at.asc&limit=6`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    )
+      .then(r => r.json())
+      .then((rows: any[]) => {
+        if (rows && rows.length > 0) setCuratedJourneys(rows);
+      })
+      .catch(() => {})
+      .finally(() => setCuratedLoading(false));
   }, []);
 
   useEffect(() => {
@@ -580,24 +598,31 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
               <button className="lh2-view-btn" onClick={onCuratedJourneys}>View all →</button>
             </div>
             <div className="lh2-curated-grid">
-              {CURATED.map(j => {
-                const cardImage = regionImages[j.regionSlug] || j.fallbackImage;
+              {(curatedJourneys.length > 0 ? curatedJourneys : CURATED).map((j: any) => {
+                // Image priority: 1) hero_image from DB  2) best supplier image for first region  3) Unsplash fallback
+                const firstRegionSlug = j.cities?.[0]?.regionSlug ?? j.regionSlug ?? '';
+                const cardImage = j.hero_image || regionImages[firstRegionSlug] || j.fallbackImage || 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80';
+                const priceFrom  = j.price_from_zar ?? j.priceFrom ?? 0;
+                const otaPrice   = j.ota_price_zar  ?? j.otaPrice  ?? 0;
+                const saving     = otaPrice - priceFrom;
                 return (
-                  <div key={j.name} className="lh2-curated-card" onClick={onCuratedJourneys}>
+                  <div key={j.id ?? j.name} className="lh2-curated-card" onClick={onCuratedJourneys}>
                     <div className="lh2-curated-img">
                       <img src={cardImage} alt={j.name} />
                       <div className="lh2-curated-img-ov" />
-                      <div style={{ position: 'absolute', top: 10, left: 12, background: j.badgeColor, color: '#0a0a0a', fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20 }}>{j.badge}</div>
+                      {j.badge && (
+                        <div style={{ position: 'absolute', top: 10, left: 12, background: j.badge_color ?? j.badgeColor ?? '#d4af37', color: '#0a0a0a', fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20 }}>{j.badge}</div>
+                      )}
                     </div>
                     <div className="lh2-card-body">
                       <div className="lh2-card-name">{j.name}</div>
                       <div className="lh2-card-tag">{j.tagline}</div>
                       <div className="lh2-card-price-row">
                         <div>
-                          <div className="lh2-card-price">{fmt(j.priceFrom)}</div>
-                          <div className="lh2-card-nights">{j.nights} nights · 2 pax</div>
+                          <div className="lh2-card-price">{fmt(priceFrom)}</div>
+                          <div className="lh2-card-nights">{j.nights}n · 2 pax</div>
                         </div>
-                        <div className="lh2-card-saving">Save {fmt(j.otaPrice - j.priceFrom)}</div>
+                        {saving > 0 && <div className="lh2-card-saving">Save {fmt(saving)}</div>}
                       </div>
                     </div>
                   </div>
