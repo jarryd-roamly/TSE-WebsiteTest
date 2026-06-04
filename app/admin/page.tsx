@@ -144,8 +144,7 @@ function SectionHeader({title,sub,action}:{title:string,sub?:string,action?:Reac
   )
 }
 
-const NAV=[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'bookings',label:'Bookings',icon:'📋'},{id:'suppliers',label:'Suppliers',icon:'🏕️'},{id:'activities',label:'Activities',icon:'🎟️'},{id:'stack',label:'Stack Manager',icon:'🎯'},{id:'knowledge',label:'Knowledge Base',icon:'📚'},{id:'itineraries',label:'Itineraries',icon:'🗺️'},{id:'users',label:'Users',icon:'👥'}]
-
+const NAV=[{id:'dashboard',label:'Dashboard',icon:'📊'},{id:'bookings',label:'Bookings',icon:'📋'},{id:'suppliers',label:'Suppliers',icon:'🏕️'},{id:'activities',label:'Activities',icon:'🎟️'},{id:'stack',label:'Stack Manager',icon:'🎯'},{id:'knowledge',label:'Knowledge Base',icon:'📚'},{id:'itineraries',label:'Itineraries',icon:'🗺️'},{id:'users',label:'Users',icon:'👥'},{id:'curated',label:'Curated Journeys',icon:'✦',href:'/admin/curated'},{id:'region-video',label:'Region Videos',icon:'🎬',href:'/admin/region-video'},{id:'cms',label:'Media / Images',icon:'🖼️',href:'/admin/suppliers'}]
 const ALL_USERS = [
   {email:'admin@thesafariedition.com', pwd:'safari2026', name:'JD (Founder)', type:'edition', role:'edition_admin'},
   {email:'ops@thesafariedition.com',   pwd:'ops2026',    name:'Sarah Mitchell', type:'edition', role:'edition_ops'},
@@ -1298,9 +1297,13 @@ export default function AdminPage(){
           <div style={{fontSize:11,color:T.textDim,marginTop:3}}>Admin Portal</div>
         </div>
         <nav style={{padding:'8px',flex:1}}>
-          {NAV.map(n=>(
-            <button key={n.id} onClick={()=>setActive(n.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:9,border:'none',background:active===n.id?T.goldDim:'transparent',color:active===n.id?T.gold:T.textMid,fontSize:13,cursor:'pointer',fontFamily:'inherit',textAlign:'left',marginBottom:2}}>
-              <span style={{fontSize:16}}>{n.icon}</span>{n.label}
+{NAV.map(n=>(
+            (n as any).href
+              ? <a key={n.id} href={(n as any).href} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:9,background:'transparent',color:T.textMid,fontSize:13,cursor:'pointer',fontFamily:'inherit',textDecoration:'none',marginBottom:2}}>
+                  <span style={{fontSize:16}}>{n.icon}</span>{n.label}
+                </a>
+              : <button key={n.id} onClick={()=>setActive(n.id)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:9,border:'none',background:active===n.id?T.goldDim:'transparent',color:active===n.id?T.gold:T.textMid,fontSize:13,cursor:'pointer',fontFamily:'inherit',textAlign:'left',marginBottom:2}}>
+                  <span style={{fontSize:16}}>{n.icon}</span>{n.label}
             </button>
           ))}
         </nav>
