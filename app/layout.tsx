@@ -46,7 +46,7 @@ export default function RootLayout({
           Playfair Display  — kept for any remaining backward-compat references
         */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@200;300;400;500;600&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap"
+         href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&display=swap"
           rel="stylesheet"
         />
       </head>
