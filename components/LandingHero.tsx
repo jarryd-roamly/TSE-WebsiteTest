@@ -225,18 +225,44 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
         .lh2-logo-name { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(28px,4.5vw,52px); letter-spacing:0.22em; color:rgba(255,255,255,0.92); text-transform:uppercase; line-height:1; }
         .lh2-logo-sub  { font-weight:200; font-size:9px; letter-spacing:0.55em; text-transform:uppercase; color:rgba(200,169,110,0.65); }
 
-        /* VIDEO CIRCLE — the green circle */
+        /* VIDEO CIRCLE — dreamlike, fades into acacia background */
         .lh2-circle {
-          position:absolute; z-index:8;
-          right:clamp(-4%,2vw,6%); top:52%; transform:translateY(-52%);
-          width:clamp(280px,40vw,580px); height:clamp(280px,40vw,580px);
+          position:absolute; z-index:4;
+          right:clamp(-6%,0vw,3%); top:50%; transform:translateY(-50%);
+          width:clamp(300px,44vw,620px); height:clamp(300px,44vw,620px);
           border-radius:50%; overflow:hidden;
-          border:1.5px solid rgba(200,169,110,0.25);
-          box-shadow:0 0 80px rgba(0,0,0,0.5), inset 0 0 40px rgba(0,0,0,0.3);
+          border:none;
+          box-shadow:none;
+          opacity:0.52;
+          -webkit-mask-image:radial-gradient(circle at 50% 50%,
+            black 25%,
+            rgba(0,0,0,0.85) 40%,
+            rgba(0,0,0,0.45) 58%,
+            rgba(0,0,0,0.12) 70%,
+            transparent 82%
+          );
+          mask-image:radial-gradient(circle at 50% 50%,
+            black 25%,
+            rgba(0,0,0,0.85) 40%,
+            rgba(0,0,0,0.45) 58%,
+            rgba(0,0,0,0.12) 70%,
+            transparent 82%
+          );
         }
-        .lh2-circle video { width:100%; height:100%; object-fit:cover; }
-        .lh2-circle-ov { position:absolute; inset:0; background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,0.45) 100%); z-index:1; pointer-events:none; }
-        .lh2-circle-ring { position:absolute; inset:-12px; border-radius:50%; border:0.5px solid rgba(200,169,110,0.1); pointer-events:none; z-index:2; }
+        .lh2-circle video {
+          width:100%; height:100%; object-fit:cover;
+          filter:saturate(0.6) brightness(0.85);
+        }
+        .lh2-circle-ov {
+          position:absolute; inset:0;
+          background:radial-gradient(ellipse at center,
+            rgba(10,8,0,0.05) 0%,
+            rgba(10,8,0,0.35) 65%,
+            rgba(10,8,0,0.75) 100%
+          );
+          z-index:1; pointer-events:none;
+        }
+        .lh2-circle-ring { display:none; }
 
         /* HERO CONTENT */
         .lh2-content { position:relative; z-index:10; flex:1; display:flex; align-items:flex-end; padding:0 clamp(20px,5vw,64px) clamp(40px,6vh,72px); }
