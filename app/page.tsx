@@ -507,7 +507,20 @@ function ImageMiniChat({ hotel, slide, edition, onEscalate, onClose }: { hotel:H
     </div>
   );
 }
-
+function SectionLabel({ text, sub, noMargin }: { text:string; sub?:string; noMargin?:boolean }) {
+  return (
+    <div style={{ marginBottom:noMargin?0:14 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <div style={{ width:2, height:13, background:'#d4af37', borderRadius:1, flexShrink:0 }} />
+        <div style={{ fontSize:10, color:'rgba(245,240,232,0.7)', letterSpacing:'0.18em', textTransform:'uppercase' as const, fontWeight:500 }}>{text}</div>
+      </div>
+      {sub && <div style={{ fontSize:11, color:'rgba(245,240,232,0.32)', marginTop:4, paddingLeft:12 }}>{sub}</div>}
+    </div>
+  );
+}
+function InputDivider() {
+  return <div style={{ height:'0.5px', background:'rgba(255,255,255,0.055)', margin:'0 0 28px 0' }} />;
+}
 const M_HOTELS = 1.15;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2208,86 +2221,114 @@ const runBriefPlanner = (briefText: string) => {
       )}
 
       {/* INSPIRE INPUT */}
-      {screen==='inspire-input' && (
+     {screen==='inspire-input' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
           <Nav {...navProps} />
-          <div className="fade-up" style={{ maxWidth:660, margin:'0 auto', padding:'32px 20px 100px' }}>
-            <button onClick={()=>setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>← Back</button>
-            <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Journey Planner</div>
-            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us about your dream safari</h2>
-            <p style={{ fontSize:14, color:T.textMid, marginBottom:28, lineHeight:1.65 }}>We'll build a fully-priced, bookable itinerary in under 30 seconds.</p>
+          <div className="fade-up" style={{ maxWidth:640, margin:'0 auto', padding:'32px 20px 110px' }}>
 
-            <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'16px 18px', marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:12 }}>International flights</div>
-              <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom: flightIntent ? 12 : 0 }}>
-                {[
-                  { val:'include' as const, icon:'✈', title:'Find flights for me', sub:"We'll search and include your international flights in the package" },
-                  { val:'own' as const,     icon:'🎫', title:"I've already booked",   sub:'Share your arrival details so we can plan around your schedule' },
-                  { val:'flexible' as const,icon:'📅', title:'Dates still flexible',   sub:'Your Journey Specialist will find the best fares once dates are confirmed' },
-                ].map(opt => (
-                  <button key={opt.val} onClick={() => { setFlightIntent(opt.val); setNeedsIntlFlight(opt.val === 'include'); setIncludeIntlFlight(opt.val === 'include'); }} style={{ padding:'11px 14px', borderRadius:10, textAlign:'left' as const, border:`1.5px solid ${flightIntent===opt.val ? T.gold : T.border}`, background:flightIntent===opt.val ? T.goldDim : T.bg3, color:flightIntent===opt.val ? T.gold : T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'flex-start', gap:10 }}>
-                    <span style={{ fontSize:18, flexShrink:0 }}>{opt.icon}</span>
-                    <div>
-                      <div style={{ fontWeight:600, marginBottom:2 }}>{opt.title}</div>
-                      <div style={{ fontSize:11, opacity:0.7, fontWeight:400 }}>{opt.sub}</div>
-                    </div>
-                  </button>
-                ))}
+            {/* Header */}
+            <button onClick={()=>setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:7, padding:'6px 14px', fontSize:11, cursor:'pointer', fontFamily:'inherit', marginBottom:36, letterSpacing:'0.04em' }}>← Back</button>
+            <div style={{ marginBottom:36 }}>
+              <div style={{ fontSize:9, color:T.gold, letterSpacing:'0.32em', textTransform:'uppercase' as const, fontWeight:500, marginBottom:14 }}>Plan your journey</div>
+              <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(34px,5.5vw,52px)', fontWeight:300, marginBottom:10, color:T.text, lineHeight:1.05, letterSpacing:'-0.01em' }}>
+                Tell us about your{' '}
+                <em style={{ color:'rgba(212,175,55,0.9)' }}>dream safari</em>
+              </h2>
+              <p style={{ fontSize:13, color:T.textDim, lineHeight:1.75, fontWeight:300, maxWidth:480 }}>
+                We'll build a fully-priced, bookable itinerary in under 30 seconds.
+              </p>
+            </div>
+
+            {/* ── 1. DESTINATION ───────────────────────────────────── */}
+            <div style={{ marginBottom:28 }}>
+              <SectionLabel text="Where do you want to go?" sub="Select one or more — or let us inspire you" />
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                {REGIONS.map(r => {
+                  const isActive = r.id==='inspire-me' ? selectedRegions.length===0 : selectedRegions.includes(r.id);
+                  return (
+                    <button key={r.id} onClick={()=>toggleRegion(r.id)}
+                      style={{ padding:'13px 16px', borderRadius:10, border:`1px solid ${isActive?T.gold:T.border}`, background:isActive?T.goldDim:'rgba(255,255,255,0.02)', color:isActive?T.gold:T.textMid, fontSize:13, fontWeight:isActive?600:400, cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontFamily:'inherit', position:'relative' as const, transition:'all 0.15s' }}>
+                      {isActive && r.id!=='inspire-me' && <span style={{ fontSize:9 }}>✦</span>}
+                      {r.label}
+                    </button>
+                  );
+                })}
               </div>
-              {flightIntent === 'include' && (
-                <div style={{ marginTop:12, borderTop:`0.5px solid ${T.border}`, paddingTop:14 }}>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Flying from</div>
-                  <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit', marginBottom:12 }}>
+              {selectedRegions.length>1 && (
+                <div style={{ marginTop:10, fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'7px 13px' }}>
+                  ✦ {selectedRegions.length} regions selected — multi-destination journey
+                </div>
+              )}
+            </div>
+
+            <InputDivider />
+
+            {/* ── 2. INTERNATIONAL FLIGHTS ─────────────────────────── */}
+            <div style={{ marginBottom:28 }}>
+              <SectionLabel text="International flights" />
+              <div style={{ display:'flex', flexDirection:'column' as const, gap:8 }}>
+                {[
+                  { val:'include' as const, title:'Find flights for me',   sub:"We'll search and include your international flights in the package" },
+                  { val:'own'     as const, title:"I've already booked",   sub:'Share your arrival details so we can plan around your schedule' },
+                  { val:'flexible'as const, title:'Dates still flexible',  sub:'Your Journey Specialist will find the best fares once dates are confirmed' },
+                ].map(opt => {
+                  const isSel = flightIntent===opt.val;
+                  return (
+                    <button key={opt.val}
+                      onClick={() => { setFlightIntent(opt.val); setNeedsIntlFlight(opt.val==='include'); setIncludeIntlFlight(opt.val==='include'); }}
+                      style={{ padding:'13px 16px', borderRadius:10, textAlign:'left' as const, border:`1px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:'rgba(255,255,255,0.02)', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'flex-start', gap:12, transition:'all 0.15s' }}>
+                      <div style={{ width:16, height:16, borderRadius:'50%', border:`1.5px solid ${isSel?T.gold:'rgba(255,255,255,0.2)'}`, flexShrink:0, marginTop:2, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s' }}>
+                        {isSel && <div style={{ width:6, height:6, borderRadius:'50%', background:T.gold }} />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:600, color:isSel?T.gold:T.text, marginBottom:2 }}>{opt.title}</div>
+                        <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{opt.sub}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {flightIntent==='include' && (
+                <div style={{ marginTop:12, paddingTop:14, borderTop:`0.5px solid ${T.border}` }}>
+                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:8 }}>Flying from</div>
+                  <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:9, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit', marginBottom:12 }}>
                     {INTERNATIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
                   </select>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Gateway routing</div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:8 }}>Gateway preference</div>
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:7 }}>
                     {[
-                      { val:'open_jaw' as const, label:'System finds cheapest combination', sub:'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
-                      { val:'return'   as const, label:'Return — same airport in and out',   sub:'e.g. LHR → JNB → LHR' },
+                      { val:'open_jaw' as const, label:'Cheapest combination', sub:'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
+                      { val:'return'   as const, label:'Same airport in and out', sub:'e.g. LHR → JNB → LHR' },
                     ].map(opt => (
-                      <button key={opt.val} onClick={() => setGatewayPreference(opt.val)} style={{ padding:'9px 13px', borderRadius:9, textAlign:'left' as const, border:`1px solid ${gatewayPreference===opt.val ? T.gold : T.border}`, background:gatewayPreference===opt.val ? T.goldDim : 'transparent', cursor:'pointer', fontFamily:'inherit' }}>
-                        <div style={{ fontSize:12, color:gatewayPreference===opt.val ? T.gold : T.text }}>{opt.label}</div>
+                      <button key={opt.val} onClick={()=>setGatewayPreference(opt.val)}
+                        style={{ padding:'10px 13px', borderRadius:9, textAlign:'left' as const, border:`1px solid ${gatewayPreference===opt.val?T.gold:T.border}`, background:gatewayPreference===opt.val?T.goldDim:'transparent', cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
+                        <div style={{ fontSize:12, color:gatewayPreference===opt.val?T.gold:T.text, fontWeight:600 }}>{opt.label}</div>
                         <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>{opt.sub}</div>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
-              {flightIntent === 'own' && (
-                <div style={{ marginTop:12 }}>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:600, marginBottom:6 }}>Arriving into</div>
-                  <select value={origin} onChange={e=>setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:10, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
+              {flightIntent==='own' && (
+                <div style={{ marginTop:12, paddingTop:14, borderTop:`0.5px solid ${T.border}` }}>
+                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:8 }}>Arriving into</div>
+                  <select value={origin} onChange={e=>setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:9, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
                     {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
                   </select>
                 </div>
               )}
-              {flightIntent === 'flexible' && (
-                <div style={{ marginTop:12, background:'rgba(212,175,55,0.06)', border:`0.5px solid ${T.borderGold}`, borderRadius:10, padding:'11px 14px', fontSize:12, color:T.textDim, lineHeight:1.6 }}>
+              {flightIntent==='flexible' && (
+                <div style={{ marginTop:10, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:9, padding:'11px 14px', fontSize:12, color:T.textDim, lineHeight:1.6 }}>
                   Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
                 </div>
               )}
             </div>
 
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:4 }}>Destination region</div>
-              <div style={{ fontSize:11, color:T.textDim, marginBottom:8 }}>Select one or more — or tap Inspire Me</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                {REGIONS.map(r=>{
-                  const isActive = r.id==='inspire-me' ? selectedRegions.length===0 : selectedRegions.includes(r.id);
-                  return (
-                    <button key={r.id} onClick={()=>toggleRegion(r.id)} style={{ padding:'12px 14px', borderRadius:10, border:`1.5px solid ${isActive?T.gold:T.border}`, background:isActive?T.goldDim:T.surface, color:isActive?T.gold:T.textMid, fontSize:13, fontWeight:isActive?600:400, cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontFamily:'inherit', position:'relative' as const }}>
-                      {isActive&&r.id!=='inspire-me'&&<div style={{ position:'absolute', top:6, right:6, width:14, height:14, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#0a0a0a', fontWeight:800 }}>✓</div>}
-                      <span>{r.icon}</span>{r.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedRegions.length>1&&<div style={{ marginTop:8, fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'6px 12px' }}>✦ {selectedRegions.length} regions selected — multi-destination journey</div>}
-            </div>
-{/* JOURNEY THEME */}
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:4 }}>Journey theme <span style={{ fontWeight:400, textTransform:'none' as const, letterSpacing:0, fontSize:11 }}>(optional)</span></div>
+            <InputDivider />
+
+            {/* ── 3. JOURNEY THEME ─────────────────────────────────── */}
+            <div style={{ marginBottom:28 }}>
+              <SectionLabel text="Journey theme" sub="Optional — personalises your recommendations" />
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
                 {([
                   { id:'honeymoon',   label:'Honeymoon',   icon:'💍' },
@@ -2297,10 +2338,10 @@ const runBriefPlanner = (briefText: string) => {
                   { id:'bucket-list', label:'Bucket list', icon:'🌍' },
                   { id:'returning',   label:'Been before', icon:'🔄' },
                 ] as {id:string;label:string;icon:string}[]).map(t => {
-                  const active = selectedTheme === t.id;
+                  const active = selectedTheme===t.id;
                   return (
-                    <button key={t.id} onClick={() => setSelectedTheme(active ? '' : t.id)}
-                      style={{ padding:'10px 8px', borderRadius:10, border:`1.5px solid ${active ? T.gold : T.border}`, background:active ? T.goldDim : T.surface, color:active ? T.gold : T.textMid, fontSize:12, fontWeight:active ? 600 : 400, cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:4, fontFamily:'inherit' }}>
+                    <button key={t.id} onClick={()=>setSelectedTheme(active?'':t.id)}
+                      style={{ padding:'12px 8px', borderRadius:10, border:`1px solid ${active?T.gold:T.border}`, background:active?T.goldDim:'rgba(255,255,255,0.02)', color:active?T.gold:T.textMid, fontSize:11, fontWeight:active?600:400, cursor:'pointer', display:'flex', flexDirection:'column' as const, alignItems:'center', gap:5, fontFamily:'inherit', transition:'all 0.15s' }}>
                       <span style={{ fontSize:18 }}>{t.icon}</span>
                       <span>{t.label}</span>
                     </button>
@@ -2308,61 +2349,87 @@ const runBriefPlanner = (briefText: string) => {
                 })}
               </div>
             </div>
-                   
-            <div style={{ marginBottom:16 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-                <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const }}>Total budget</div>
-                <div style={{ fontSize:15, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(budget)}</div>
-              </div>
-              <input type="range" min={20000} max={2000000} step={10000} value={budget} onChange={e=>setBudget(+e.target.value)} />
-              <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}><span style={{ fontSize:10, color:T.textDim }}>{fmt(20000)}</span><span style={{ fontSize:10, color:T.textDim }}>{fmt(2000000)}</span></div>
-            </div>
 
-            <div style={{ marginBottom:16 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
-                <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const }}>Trip length</div>
-                <div style={{ fontSize:14, fontWeight:600, color:T.text }}>{nights} nights</div>
-              </div>
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                {[5,7,10,12,14,21].map(n=>(
-                  <button key={n} onClick={()=>setNights(n)} style={{ padding:'7px 14px', borderRadius:8, border:`1.5px solid ${nights===n?T.gold:T.border}`, background:nights===n?T.goldDim:'transparent', color:nights===n?T.gold:T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>{n}n</button>
-                ))}
-              </div>
-            </div>
+            <InputDivider />
 
-            {/* [V6-1] TRAVELLERS — Adults aligned with Children/Infants */}
-            <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'16px 18px', marginBottom:24 }}>
-              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:12 }}>Travellers</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, alignItems:'end' }}>
+            {/* ── 4. TRAVELLERS ────────────────────────────────────── */}
+            <div style={{ marginBottom:28 }}>
+              <SectionLabel text="Who's travelling?" />
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
                 {[
-                  { label:'Adults',   sub:'\u00a0',         value:adults,   set:setAdults,   min:1 },
-                  { label:'Children', sub:'Ages 2\u201317', value:children, set:setChildren, min:0 },
-                  { label:'Infants',  sub:'Under 2',        value:infants,  set:setInfants,  min:0 },
+                  { label:'Adults',   sub:'\u00a0',    value:adults,   set:setAdults,   min:1 },
+                  { label:'Children', sub:'Ages 2–17', value:children, set:setChildren, min:0 },
+                  { label:'Infants',  sub:'Under 2',   value:infants,  set:setInfants,  min:0 },
                 ].map(p => (
-                  <div key={p.label} style={{ display:'flex', flexDirection:'column', gap:3 }}>
-                    <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:T.textDim, textTransform:'uppercase' as const }}>{p.label}</div>
-                    <div style={{ fontSize:9, color:T.textDim, minHeight:14 }}>{p.sub}</div>
-                    <div style={{ display:'flex', alignItems:'center', gap:0, background:'rgba(255,255,255,0.06)', border:`0.5px solid ${T.border}`, borderRadius:8, overflow:'hidden', height:36 }}>
-                      <button onClick={() => p.set(Math.max(p.min, p.value-1))} style={{ width:36, height:36, border:'none', background:'transparent', color:p.value>p.min?T.text:T.textDim, fontSize:18, cursor:p.value>p.min?'pointer':'default', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>−</button>
-                      <div style={{ flex:1, textAlign:'center' as const, fontSize:15, fontWeight:600, color:T.text }}>{p.value}</div>
-                      <button onClick={() => p.set(p.value+1)} style={{ width:36, height:36, border:'none', background:'transparent', color:T.text, fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>+</button>
+                  <div key={p.label}>
+                    <div style={{ fontSize:9, fontWeight:600, letterSpacing:'0.14em', color:T.textDim, textTransform:'uppercase' as const, marginBottom:3 }}>{p.label}</div>
+                    <div style={{ fontSize:9, color:T.textDim, marginBottom:6, minHeight:13 }}>{p.sub}</div>
+                    <div style={{ display:'flex', alignItems:'center', background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:8, overflow:'hidden', height:38 }}>
+                      <button onClick={()=>p.set(Math.max(p.min,p.value-1))} style={{ width:38, height:38, border:'none', background:'transparent', color:p.value>p.min?T.text:T.textDim, fontSize:20, cursor:p.value>p.min?'pointer':'default', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>−</button>
+                      <div style={{ flex:1, textAlign:'center' as const, fontSize:16, fontWeight:500, color:T.text }}>{p.value}</div>
+                      <button onClick={()=>p.set(p.value+1)} style={{ width:38, height:38, border:'none', background:'transparent', color:T.text, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>+</button>
                     </div>
                   </div>
                 ))}
               </div>
-              {infants>0&&<div style={{ marginTop:12, background:'rgba(251,191,36,0.07)', border:'0.5px solid rgba(251,191,36,0.2)', borderRadius:8, padding:'8px 12px', fontSize:12, color:T.amber, lineHeight:1.55 }}>⚠ Some camps restrict under-5s on open game drives — we'll flag this in your itinerary.</div>}
+              {infants>0 && (
+                <div style={{ marginTop:12, background:'rgba(251,191,36,0.06)', border:'0.5px solid rgba(251,191,36,0.2)', borderRadius:8, padding:'9px 13px', fontSize:12, color:T.amber, lineHeight:1.55 }}>
+                  ⚠ Some camps restrict under-5s on open game drives — we'll flag this and can suggest malaria-free alternatives.
+                </div>
+              )}
             </div>
 
-            <div style={{ marginBottom:20 }}>
+            <InputDivider />
+
+            {/* ── 5. DATES ─────────────────────────────────────────── */}
+            <div style={{ marginBottom:28 }}>
+              <SectionLabel text="When are you travelling?" />
               <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
             </div>
 
-            <button className="btn-gold" style={{ width:'100%', padding:16, fontSize:15 }} onClick={runSocraticPlanner}>✦ Build My Itinerary →</button>
-            <p style={{ textAlign:'center' as const, fontSize:12, color:T.textDim, marginTop:10 }}>Usually ready in under 30 seconds</p>
+            <InputDivider />
+
+            {/* ── 6. TRIP LENGTH ───────────────────────────────────── */}
+            <div style={{ marginBottom:28 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
+                <SectionLabel text="Trip length" noMargin />
+                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:300, color:T.text }}>{nights} <span style={{ fontSize:13, color:T.textDim }}>nights</span></span>
+              </div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' as const }}>
+                {[5,7,10,12,14,21].map(n => (
+                  <button key={n} onClick={()=>setNights(n)}
+                    style={{ padding:'8px 18px', borderRadius:8, border:`1px solid ${nights===n?T.gold:T.border}`, background:nights===n?T.goldDim:'transparent', color:nights===n?T.gold:T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
+                    {n}n
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <InputDivider />
+
+            {/* ── 7. BUDGET ────────────────────────────────────────── */}
+            <div style={{ marginBottom:40 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
+                <SectionLabel text="Total budget" noMargin />
+                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:26, fontWeight:300, color:T.gold }}>{fmt(budget)}</span>
+              </div>
+              <input type="range" min={20000} max={2000000} step={10000} value={budget} onChange={e=>setBudget(+e.target.value)} style={{ width:'100%' }} />
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop:5 }}>
+                <span style={{ fontSize:10, color:T.textDim }}>{fmt(20000)}</span>
+                <span style={{ fontSize:10, color:T.textDim }}>{fmt(2000000)}</span>
+              </div>
+            </div>
+
+            {/* ── BUILD BUTTON ─────────────────────────────────────── */}
+            <button className="btn-gold" style={{ width:'100%', padding:'17px 24px', fontSize:14, letterSpacing:'0.08em' }} onClick={runSocraticPlanner}>
+              ✦  Build My Itinerary
+            </button>
+            <p style={{ textAlign:'center' as const, fontSize:11, color:T.textDim, marginTop:10, letterSpacing:'0.04em' }}>
+              Ready in under 30 seconds · Fully priced · No commitment
+            </p>
           </div>
         </div>
       )}
-
       {/* INSPIRE RESEARCH */}
 {screen === 'inspire-research' && (
   <SafariCinematicResearch
