@@ -573,13 +573,13 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.12em', fontWeight:700, marginBottom:3 }}>✦ Customise</div>
-              <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif", lineHeight:1.2 }}>{hotel.name}</div>
+              <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif", lineHeight:1.2 }}>{hotel.name}</div>
               <div style={{ fontSize:12, color:T.textDim, marginTop:2 }}>{hotel.destination} · {hotel.country}</div>
             </div>
             <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:T.textMid, width:34, height:34, borderRadius:'50%', cursor:'pointer', fontSize:17, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginLeft:12 }}>×</button>
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:10, flexWrap:'wrap' }}>
-            <div style={{ fontSize:20, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>
+            <div style={{ fontSize:20, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>
               {fmt(hotel.displayRate)}<span style={{ fontSize:11, color:T.textDim, fontWeight:400 }}>/night</span>
             </div>
             {addedCost > 0 && (<div style={{ fontSize:12, color:T.green }}>+ {fmt(addedCost)} in selected add-ons</div>)}
@@ -731,7 +731,7 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                           )}
                           <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
                             <div>
-                              <div style={{ fontSize:14, fontWeight:700, color:'#fff', fontFamily:"'Playfair Display',serif" }}>{opt.label}</div>
+                              <div style={{ fontSize:14, fontWeight:700, color:'#fff', fontFamily:"'Cormorant Garamond',serif" }}>{opt.label}</div>
                               {roomSlideList.length > 1 && (
                                 <div style={{ display:'flex', gap:3, marginTop:4 }}>
                                   {roomSlideList.map((_,i) => <div key={i} style={{ width:i===rSlideIdx?12:4, height:4, borderRadius:2, background:i===rSlideIdx?T.gold:'rgba(255,255,255,0.35)', transition:'all 0.2s' }} />)}
@@ -879,7 +879,7 @@ function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities }: {
                   <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 50%)' }} />
                   {isSel && <div style={{ position:'absolute', top:8, right:8, width:20, height:20, borderRadius:'50%', background:T.gold, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#0a0a0a', fontWeight:800 }}>✓</div>}
                   <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'8px 10px' }}>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#fff', lineHeight:1.2, fontFamily:"'Playfair Display',serif" }}>{act.name}</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#fff', lineHeight:1.2, fontFamily:"'Cormorant Garamond',serif" }}>{act.name}</div>
                     <div style={{ fontSize:10, color:'rgba(255,255,255,0.5)', marginTop:1 }}>{act.duration}</div>
                   </div>
                 </div>
@@ -1110,7 +1110,7 @@ function NestedPropertyCarousel({
                   <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 14px 12px' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
                       <div>
-                        <div style={{ fontSize:16, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#fff', lineHeight:1.2 }}>{hotel.name}</div>
+                        <div style={{ fontSize:16, fontWeight:700, fontFamily:"'Cormorant Garamond',serif", color:'#fff', lineHeight:1.2 }}>{hotel.name}</div>
                         <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)', marginTop:2 }}>{hotel.destination} · ★ {hotel.trustScore}/100</div>
                       </div>
                       <div style={{ textAlign:'right' as const }}>
@@ -1603,7 +1603,7 @@ function LoginGate({ onUnlock }: { onUnlock: () => void }) {
   return (
     <div style={{ minHeight:'100vh', background:'#0a0a0a', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24 }}>
       <div style={{ marginBottom:32, textAlign:'center' as const }}>
-        <div style={{ fontSize:28, color:'#d4af37', fontFamily:"'Playfair Display',serif", fontWeight:700, marginBottom:8 }}>✦ The Safari Edition</div>
+        <div style={{ fontSize:28, color:'#d4af37', fontFamily:"'Cormorant Garamond',serif", fontWeight:700, marginBottom:8 }}>✦ The Safari Edition</div>
         <div style={{ fontSize:13, color:'rgba(245,240,232,0.4)', letterSpacing:'0.15em', textTransform:'uppercase' as const }}>Private Preview</div>
       </div>
       <div style={{ width:'100%', maxWidth:340, animation:shaking?'shake 0.4s ease':'none' }}>
@@ -1651,7 +1651,7 @@ function Nav({ edition, setScreen, currency, setCurrency, chatOpen, setChatOpen,
           <button onClick={() => setScreen('curated')} style={{ background:'none', border:'none', cursor:'pointer', color:T.textMid, fontSize:12, fontFamily:'inherit', padding:'6px 10px', borderRadius:7 }}>Curated →</button>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          {hasPricedItems && <div style={{ fontSize:13, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(totalZAR)}</div>}
+          {hasPricedItems && <div style={{ fontSize:13, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(totalZAR)}</div>}
           <select value={currency.code} onChange={(e:any)=>setCurrency(CURRENCIES.find((c:any)=>c.code===e.target.value)!)} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, borderRadius:8, padding:'5px 10px', fontSize:12, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
             {CURRENCIES.map(c=><option key={c.code} value={c.code}>{c.code}</option>)}
           </select>
@@ -2165,7 +2165,7 @@ const runBriefPlanner = (briefText: string) => {
           <div className="fade-up" style={{ maxWidth:900, margin:'0 auto', padding:'28px 20px 80px' }}>
             <button onClick={()=>setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>← Back</button>
             <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Curated Journeys</div>
-            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, marginBottom:6, color:T.text }}>Ready to book — from price</h2>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, fontWeight:700, marginBottom:6, color:T.text }}>Ready to book — from price</h2>
             <p style={{ fontSize:14, color:T.textMid, marginBottom:24 }}>All-inclusive. Negotiated rates. Every detail handled.</p>
             <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'14px 18px', marginBottom:24, display:'flex', flexWrap:'wrap', gap:20 }}>
               {[{label:'Theme',val:curTheme,set:setCurTheme,opts:[{v:'all',l:'All'},{v:'safari',l:'Safari'},{v:'luxury',l:'Luxury'},{v:'romance',l:'Romance'},{v:'family',l:'Family'},{v:'adventure',l:'Adventure'},{v:'beach',l:'Beach'}]},{label:'Region',val:curRegion,set:setCurRegion,opts:[{v:'all',l:'Any'},{v:'southern-africa',l:'Southern Africa'},{v:'east-africa',l:'East Africa'},{v:'both',l:'Multi-region'}]},{label:'Length',val:curNights,set:setCurNights,opts:[{v:'all',l:'Any'},{v:'short',l:'≤6 nights'},{v:'medium',l:'7–10 nights'},{v:'long',l:'11+ nights'}]}].map(filt => (
@@ -2188,13 +2188,13 @@ const runBriefPlanner = (briefText: string) => {
                     <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.68) 0%,transparent 52%)' }} />
                     <div style={{ position:'absolute', top:10, left:10, background:j.badgeColor, color:'#0a0a0a', fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20 }}>{j.badge}</div>
                     <div style={{ position:'absolute', bottom:10, left:12, right:12 }}>
-                      <div style={{ fontSize:15, fontWeight:700, fontFamily:"'Playfair Display',serif", color:'#fff' }}>{j.name}</div>
+                      <div style={{ fontSize:15, fontWeight:700, fontFamily:"'Cormorant Garamond',serif", color:'#fff' }}>{j.name}</div>
                       <div style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginTop:1 }}>{j.tagline}</div>
                     </div>
                   </div>
                   <div style={{ padding:'14px 16px' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
-                      <div><div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{j.nights}n · {j.pax} pax</div><div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(j.priceFrom)}</div></div>
+                      <div><div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{j.nights}n · {j.pax} pax</div><div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(j.priceFrom)}</div></div>
                       <div style={{ textAlign:'right' as const }}><div style={{ fontSize:10, color:T.textDim, marginBottom:2 }}>vs direct</div><div style={{ fontSize:13, color:T.green, fontWeight:600 }}>Save {fmt(j.otaEquivalent-j.priceFrom)}</div></div>
                     </div>
                     <div style={{ borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>{j.includes.slice(0,3).map((inc:string,i:number)=><div key={i} style={{ fontSize:11, color:T.textMid, display:'flex', gap:6, marginBottom:3 }}><span style={{ color:T.gold, flexShrink:0 }}>✓</span>{inc}</div>)}</div>
@@ -2214,7 +2214,7 @@ const runBriefPlanner = (briefText: string) => {
           <div className="fade-up" style={{ maxWidth:660, margin:'0 auto', padding:'32px 20px 100px' }}>
             <button onClick={()=>setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>← Back</button>
             <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Journey Planner</div>
-            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us about your dream safari</h2>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us about your dream safari</h2>
             <p style={{ fontSize:14, color:T.textMid, marginBottom:28, lineHeight:1.65 }}>We'll build a fully-priced, bookable itinerary in under 30 seconds.</p>
 
             <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:14, padding:'16px 18px', marginBottom:16 }}>
@@ -2312,7 +2312,7 @@ const runBriefPlanner = (briefText: string) => {
             <div style={{ marginBottom:16 }}>
               <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const }}>Total budget</div>
-                <div style={{ fontSize:15, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(budget)}</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(budget)}</div>
               </div>
               <input type="range" min={20000} max={2000000} step={10000} value={budget} onChange={e=>setBudget(+e.target.value)} />
               <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}><span style={{ fontSize:10, color:T.textDim }}>{fmt(20000)}</span><span style={{ fontSize:10, color:T.textDim }}>{fmt(2000000)}</span></div>
@@ -2391,12 +2391,12 @@ const runBriefPlanner = (briefText: string) => {
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:8 }}>
                 <div>
                   <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Your Journey</div>
-                  <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:"'Playfair Display',serif" }}>{itinerary.title}</div>
+                  <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif" }}>{itinerary.title}</div>
                   <div style={{ fontSize:12, color:T.textDim, marginTop:4 }}>{itinerary.routing}</div>
                 </div>
                 <div style={{ textAlign:'right' as const }}>
                   <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights · {selectedFlightOffer ? 'incl. flights' : 'excl. flights'}</div>
-                  <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif" }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
+                  <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
                 </div>
               </div>
 
@@ -2607,7 +2607,7 @@ const runBriefPlanner = (briefText: string) => {
             <div style={{ maxWidth:680, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
               <div>
                 <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>Package total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights</div>
-                <div style={{ fontSize:24, fontWeight:700, color:T.gold, fontFamily:"'Playfair Display',serif", lineHeight:1 }}>{fmt(grandTotal)}</div>
+                <div style={{ fontSize:24, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>{fmt(grandTotal)}</div>
                 {(() => {
                   const actCost = itinerary.cities.reduce((sum,city) => {
                     const sl = CITY_TO_SLUG[city.city.toLowerCase().trim()]??'';
@@ -2674,7 +2674,7 @@ const runBriefPlanner = (briefText: string) => {
           <div style={{ maxWidth:660, margin:'0 auto', padding:'32px 20px 80px' }}>
             <button onClick={()=>setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>← Back</button>
             <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Your Brief</div>
-            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us what you're dreaming of</h2>
+            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us what you're dreaming of</h2>
             <p style={{ fontSize:14, color:T.textMid, marginBottom:24, lineHeight:1.65 }}>Write anything — we'll read it and build your journey around it.</p>
             <BriefScreen nights={nights} setNights={setNights} adults={adults} setAdults={setAdults} children={children} setChildren={setChildren} infants={infants} setInfants={setInfants} onBuild={(text:string)=>runBriefPlanner(text)} />
           </div>
