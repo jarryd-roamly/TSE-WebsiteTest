@@ -594,7 +594,7 @@ function TabGallery({ supplierId, isAdmin, images, setImages, locked }) {
                   </div>
                 </div>
                 <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                  <button onClick={()=>setPrimary(idx)} style={{ background:img.is_primary?T.goldDim:'rgba(255,255,255,0.04)', border:'0.5px solid '+(img.is_primary?T.borderGold:T.border), borderRadius:7, width:28, height:28, cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', color:img.is_primary?T.gold:T.textDim }}>★</button>
+                  <button onClick={(e)=>{e.stopPropagation();setPrimary(idx);}} draggable={false} style={{ background:img.is_primary?T.goldDim:'rgba(255,255,255,0.04)', border:'0.5px solid '+(img.is_primary?T.borderGold:T.border), borderRadius:7, width:28, height:28, cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', color:img.is_primary?T.gold:T.textDim }}>★</button>
                   <button onClick={()=>openEdit(idx)} style={{ background:editIdx===idx?T.goldDim:'rgba(255,255,255,0.04)', border:'0.5px solid '+(editIdx===idx?T.borderGold:T.border), borderRadius:7, width:28, height:28, cursor:'pointer', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', color:editIdx===idx?T.gold:T.textDim }}>✎</button>
                 </div>
               </div>
@@ -1235,7 +1235,11 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch(e) { setError(`Save failed: ${e.message}`); }
+} catch(e) {
+      const msg = `Save failed: ${e.message}`;
+      setError(msg);
+      alert(msg); // surface it immediately — remove once RLS is confirmed working
+    }
     finally { setSaving(false); }
   };
 
