@@ -61,7 +61,15 @@ const OTHER_EDITIONS = [
   { id:'japan',     name:'The Japan Edition',     icon:'⛩',  color:'#f87171', desc:'Tokyo · Kyoto · Hokkaido' },
   { id:'ski',       name:'The Ski Edition',       icon:'⛷',  color:'#a78bfa', desc:'Alps · Aspen · Hokkaido' },
 ];
-
+const REGION_WHY: Record<string, string> = {
+  'kruger-sabi-sand': 'The finest predator territory on Earth. Leopard, lion, wild dog.',
+  'okavango-delta':   'No roads. No fences. A flooded wilderness unlike anywhere else.',
+  'cape-town':        'Mountain, ocean, winelands. The perfect journey bookend.',
+  'madikwe':          'Malaria-free Big Five. 90 minutes from Johannesburg.',
+  'chobe-vic-falls':  'The smoke that thunders. One of the Seven Natural Wonders.',
+  'masai-mara':       'The greatest wildlife spectacle on Earth.',
+};
+const REGION_DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=1400&q=85';
 const REGIONS = [
   { id: 'kruger',     label: 'Kruger / Sabi Sand',  icon: '🐆', slug: 'kruger-sabi-sand' },
   { id: 'okavango',   label: 'Okavango Delta',       icon: '🛶', slug: 'okavango-delta'   },
@@ -1739,12 +1747,15 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
   const [needsIntlFlight, setNeedsIntlFlight] = useState<boolean|null>(null);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
-  const toggleRegion = (id: string) => {
+const toggleRegion = (id: string) => {
+    setPanelFade(false);
+    setTimeout(() => setPanelFade(true), 50);
     if (id==='inspire-me') { setSelectedRegions([]); return; }
     setSelectedRegions(prev => prev.includes(id) ? prev.filter(r=>r!==id) : [...prev.filter(r=>r!=='inspire-me'), id]);
   };
          
 const [selectedTheme, setSelectedTheme] = useState<string>('');
+         const [panelFade, setPanelFade] = useState(true);
   const [budget,      setBudget]      = useState(120000);
   const [origin,      setOrigin]      = useState('JNB');
   const [intlOrigin,  setIntlOrigin]  = useState('LHR');
@@ -1799,7 +1810,17 @@ const [selectedTheme, setSelectedTheme] = useState<string>('');
   const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
   const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => ((b.displayRate||0)-(b.netRate||0)) - ((a.displayRate||0)-(a.netRate||0))), [hotels]);
-
+const regionImageMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    REGIONS.forEach(r => {
+      if (!r.slug) return;
+      const best = hotelsByMargin.find(h => h.subRegion === r.slug && h.image && !h.image.includes('unsplash'));
+      const fallback = hotelsByMargin.find(h => h.subRegion === r.slug && h.image);
+      const img = best?.image || fallback?.image;
+      if (img) map[r.slug] = img;
+    });
+    return map;
+  }, [hotelsByMargin]);
   const [chatOpen,    setChatOpen]    = useState(false);
   const [chatMsgs,    setChatMsgs]    = useState<ChatMessage[]>([{ role:'assistant', text:`Welcome to ${edition.name}. How can our team help?` }]);
   const [chatInput,   setChatInput]   = useState('');
@@ -2221,10 +2242,11 @@ const runBriefPlanner = (briefText: string) => {
       )}
 
       {/* INSPIRE INPUT */}
-     {screen==='inspire-input' && (
+{screen==='inspire-input' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
           <Nav {...navProps} />
-          <div className="fade-up" style={{ maxWidth:640, margin:'0 auto', padding:'32px 20px 110px' }}>
+          <div className="inspire-split">
+          <div className="fade-up inspire-form">
 
             {/* Header */}
             <button onClick={()=>setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:7, padding:'6px 14px', fontSize:11, cursor:'pointer', fontFamily:'inherit', marginBottom:36, letterSpacing:'0.04em' }}>← Back</button>
@@ -2427,9 +2449,117 @@ const runBriefPlanner = (briefText: string) => {
             <p style={{ textAlign:'center' as const, fontSize:11, color:T.textDim, marginTop:10, letterSpacing:'0.04em' }}>
               Ready in under 30 seconds · Fully priced · No commitment
             </p>
-          </div>
+         </div>{/* end inspire-form */}
+
+          {/* ── RIGHT PANEL — atmospheric imagery responding to selections ── */}
+          <div className="inspire-panel">
+            <div style={{ position:'relative', width:'100%', height:'100%', overflow:'hidden' }}>
+
+              {/* Image layer(s) — single or multi-split */}
+              <div style={{ position:'absolute', inset:0, opacity:panelFade?1:0, transition:'opacity 0.35s ease' }}>
+                {selectedRegions.length <= 1 ? (
+                  // Single region or default: full-panel image
+                  <div style={{
+                    position:'absolute', inset:0,
+                    backgroundImage:`url(${selectedRegions.length === 1
+                      ? (regionImageMap[REGIONS.find(r=>r.id===selectedRegions[0])?.slug??''] || REGION_DEFAULT_IMAGE)
+                      : REGION_DEFAULT_IMAGE})`,
+                    backgroundSize:'cover', backgroundPosition:'center',
+                  }} />
+                ) : (
+                  // Multiple regions: vertical split — each region gets equal height band
+                  selectedRegions.map((id, idx) => {
+                    const slug = REGIONS.find(r=>r.id===id)?.slug ?? '';
+                    const img  = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
+                    const pct  = 100 / selectedRegions.length;
+                    return (
+                      <div key={id} style={{
+                        position:'absolute', left:0, right:0,
+                        top:`${idx * pct}%`, height:`${pct}%`,
+                        overflow:'hidden',
+                      }}>
+                        {/* Each band fills its space — background-position centres vertically within band */}
+                        <div style={{
+                          position:'absolute', inset:0,
+                          backgroundImage:`url(${img})`,
+                          backgroundSize:'cover',
+                          backgroundPosition:'center',
+                          transform:'scale(1.05)', // slight zoom so crop doesn't show edges
+                        }} />
+                        {/* Region label on each band */}
+                        <div style={{
+                          position:'absolute', top:'50%', left:20,
+                          transform:'translateY(-50%)',
+                          fontSize:10, fontWeight:600, letterSpacing:'0.18em',
+                          color:'rgba(255,255,255,0.55)', textTransform:'uppercase',
+                          textShadow:'0 1px 8px rgba(0,0,0,0.8)',
+                          zIndex:2,
+                        }}>
+                          {REGIONS.find(r=>r.id===id)?.label}
+                        </div>
+                        {/* Thin separator between bands */}
+                        {idx > 0 && (
+                          <div style={{
+                            position:'absolute', top:0, left:0, right:0,
+                            height:'1.5px', background:'rgba(10,10,10,0.85)',
+                            zIndex:3,
+                          }} />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Gradient overlays for depth */}
+              <div style={{ position:'absolute', inset:0, background:'linear-gradient(to right, rgba(10,10,10,0.5) 0%, transparent 35%)', pointerEvents:'none' }} />
+              <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.15) 45%, transparent 70%)', pointerEvents:'none' }} />
+
+              {/* Bottom overlay text */}
+              <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'24px 24px 32px', zIndex:4 }}>
+                {selectedRegions.length === 0 && (
+                  <>
+                    <div style={{ fontSize:9, color:'rgba(212,175,55,0.55)', letterSpacing:'0.28em', textTransform:'uppercase', marginBottom:8 }}>Southern Africa</div>
+                    <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:300, fontStyle:'italic', color:'rgba(245,240,232,0.7)', lineHeight:1.25 }}>
+                      Select a destination<br/>to begin your journey
+                    </div>
+                  </>
+                )}
+                {selectedRegions.length === 1 && (() => {
+                  const slug = REGIONS.find(r=>r.id===selectedRegions[0])?.slug ?? '';
+                  const reg  = REGIONS.find(r=>r.id===selectedRegions[0]);
+                  return (
+                    <>
+                      <div style={{ fontSize:9, color:'rgba(212,175,55,0.65)', letterSpacing:'0.28em', textTransform:'uppercase', marginBottom:8 }}>Selected destination</div>
+                      <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:26, fontWeight:300, color:'rgba(245,240,232,0.95)', marginBottom:8, lineHeight:1.15 }}>{reg?.label}</div>
+                      {REGION_WHY[slug] && <div style={{ fontSize:11, color:'rgba(245,240,232,0.48)', lineHeight:1.65, maxWidth:260 }}>{REGION_WHY[slug]}</div>}
+                    </>
+                  );
+                })()}
+                {selectedRegions.length > 1 && (
+                  <>
+                    <div style={{ fontSize:9, color:'rgba(212,175,55,0.65)', letterSpacing:'0.28em', textTransform:'uppercase', marginBottom:8 }}>
+                      {selectedRegions.length}-destination journey
+                    </div>
+                    <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:18, fontWeight:300, color:'rgba(245,240,232,0.85)', marginBottom:10 }}>
+                      {selectedRegions.map(id => REGIONS.find(r=>r.id===id)?.label).filter(Boolean).join(' · ')}
+                    </div>
+                    <div style={{ fontSize:11, color:'rgba(245,240,232,0.4)' }}>
+                      {selectedRegions.reduce((sum, id) => {
+                        const slug = REGIONS.find(r=>r.id===id)?.slug ?? '';
+                        return sum + ({'kruger-sabi-sand':3,'okavango-delta':3,'cape-town':3,'madikwe':2,'chobe-vic-falls':2}[slug] || 2);
+                      }, 0)}+ recommended nights
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>{/* end inspire-panel */}
+
+          </div>{/* end inspire-split */}
         </div>
       )}
+
       {/* INSPIRE RESEARCH */}
 {screen === 'inspire-research' && (
   <SafariCinematicResearch
