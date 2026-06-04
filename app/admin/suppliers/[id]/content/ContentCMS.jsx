@@ -853,20 +853,19 @@ function TabRooms({ supplierId, isAdmin }) {
     } catch(e) { alert('Save failed: ' + e.message); }
     finally { setSaving(null); }
   };
-
-  const handleRoomFiles = async (room, files) => {
-    // Upload files and append URLs to room.images
+const handleRoomFiles = async (room, files) => {
     for (const file of files) {
-      const id = `up-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
       try {
-        await db.uploadFile(supplierId, file, isAdmin);
-        // After upload, the image URL is added to suppliers.images by the API.
-        // We also append a local reference to this room's image array.
-        const url = URL.createObjectURL(file);
-        updateRoom(room.id, {
-          images: [...(room.images||[]), { url, caption: file.name.replace(/\.[^.]+$/,'').slice(0,60), is_primary: (room.images||[]).length===0 }]
-        });
-      } catch(e) { /* silently skip failed uploads */ }
+        const result = await db.uploadFile(supplierId, file, isAdmin);
+        if (!result?.url) continue;
+        const updatedImages = [
+          ...(room.images||[]),
+          { url: result.url, caption: file.name.replace(/\.[^.]+$/,'').slice(0,60), is_primary: (room.images||[]).length===0, status:'approved' }
+        ];
+        updateRoom(room.id, { images: updatedImages });
+        // Auto-save to room_types table after each upload
+        await db.patch('room_types', `id=eq.${room.id}`, { images: updatedImages });
+      } catch(e) { alert('Upload failed: ' + e.message); }
     }
   };
 
@@ -954,7 +953,41 @@ function TabRooms({ supplierId, isAdmin }) {
                       )}
                       <DropZone compact onFiles={files=>handleRoomFiles(room, files)} />
                     </div>
-
+{/* MP4 upload per room */}
+                    <div style={{ marginBottom:16 }}>
+                      <Label>Room video (MP4)</Label>
+                      <div style={{ fontSize:11, color:T.textDim, marginBottom:8 }}>Upload a direct MP4 for this room. Plays as ambient background in the property carousel.</div>
+                      {(room.reels||[]).filter(r => r.source==='mp4').map((reel, i) => (
+                        <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:T.bg3, border:`0.5px solid ${T.border}`, borderRadius:8, marginBottom:6 }}>
+                          <video src={reel.url} style={{ width:72, height:46, objectFit:'cover', borderRadius:5 }} muted playsInline preload="metadata" />
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:11, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{reel.caption || 'Room video'}</div>
+                            <div style={{ fontSize:10, color:T.textDim, marginTop:1 }}>MP4 · {reel.status==='pending'?'Pending review':'✓ Live'}</div>
+                          </div>
+                          <Btn variant="danger" onClick={async () => {
+                            const updated = (room.reels||[]).filter((_,j)=>j!==i);
+                            updateRoom(room.id, { reels: updated });
+                            await db.patch('room_types', `id=eq.${room.id}`, { reels: updated });
+                          }}>Remove</Btn>
+                        </div>
+                      ))}
+                      <label style={{ display:'inline-flex', alignItems:'center', gap:8, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, color:T.gold, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                        🎥 Upload MP4
+                        <input type="file" accept="video/mp4,video/quicktime" style={{ display:'none' }} onChange={async e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const result = await db.uploadFile(supplierId, file, isAdmin, 'reels');
+                            if (!result?.url) return;
+                            const newReel = { source:'mp4', url:result.url, caption:room.name+' room video', status:isAdmin?'approved':'pending', uploaded_at: new Date().toISOString() };
+                            const updated = [...(room.reels||[]), newReel];
+                            updateRoom(room.id, { reels: updated });
+                            await db.patch('room_types', `id=eq.${room.id}`, { reels: updated });
+                          } catch(err) { alert('Upload failed: ' + err.message); }
+                          e.target.value = '';
+                        }} />
+                      </label>
+                    </div>
                     {/* YouTube reel for this room */}
                     <div style={{ marginBottom:16 }}>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
