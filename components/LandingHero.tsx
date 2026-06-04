@@ -239,14 +239,14 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
             rgba(0,0,0,0.85) 40%,
             rgba(0,0,0,0.45) 58%,
             rgba(0,0,0,0.12) 70%,
-            transparent 82%
+            transparent 72%
           );
           mask-image:radial-gradient(circle at 50% 50%,
             black 25%,
             rgba(0,0,0,0.85) 40%,
             rgba(0,0,0,0.45) 58%,
             rgba(0,0,0,0.12) 70%,
-            transparent 82%
+            transparent 72%
           );
         }
         .lh2-circle video {
