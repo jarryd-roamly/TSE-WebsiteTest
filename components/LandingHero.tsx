@@ -105,7 +105,7 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) return;
-    const slugs = ['kruger-sabi-sand', 'okavango-delta', 'chobe-vic-falls', 'phinda', 'mozambique'];
+    const slugs = ['kruger-sabi-sand', 'okavango-delta', 'chobe-vic-falls', 'cape-town', 'madikwe'];
     fetch(
       `${url}/rest/v1/suppliers?select=region_slug,images,hero_image,cover_image&is_active=eq.true&region_slug=in.(${slugs.join(',')})&order=trust_score.desc`,
       { headers: { apikey: key, Authorization: `Bearer ${key}` } }
@@ -601,7 +601,7 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
               {(curatedJourneys.length > 0 ? curatedJourneys : CURATED).map((j: any) => {
                 // Image priority: 1) hero_image from DB  2) best supplier image for first region  3) Unsplash fallback
                 const firstRegionSlug = j.cities?.[0]?.regionSlug ?? j.regionSlug ?? '';
-                const cardImage = j.hero_image || regionImages[firstRegionSlug] || j.fallbackImage || 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80';
+                const cardImage = regionImages[firstRegionSlug] || j.hero_image || j.fallbackImage || 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80';
                 const priceFrom  = j.price_from_zar ?? j.priceFrom ?? 0;
                 const otaPrice   = j.ota_price_zar  ?? j.otaPrice  ?? 0;
                 const saving     = otaPrice - priceFrom;
