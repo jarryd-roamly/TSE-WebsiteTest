@@ -226,6 +226,9 @@ const INTERNAL_LEGS: Record<string, InternalLeg & { road_viable?: boolean }> = {
   'cape-town→madikwe':        { fromLabel:'Cape Town', toLabel:'Madikwe',         mode:'scheduled', provider:'Airlink CPT→JNB + 3.5hr private drive or 45min charter', duration:'~4h total', estimatedCostZAR:11000, aiNote:'Fly CPT→JNB, then 3.5hr private drive north or 45min charter to Madikwe airstrip.', bufferHours:4, road_viable:false },
   'kruger-sabi-sand→madikwe': { fromLabel:'Sabi Sand', toLabel:'Madikwe',         mode:'scheduled', provider:'Federal Air + Airlink JNB connection', duration:'~3h', estimatedCostZAR:9500, aiNote:'Connect via O.R. Tambo. Allow 2hr connection.', bufferHours:3, road_viable:false },
   'madikwe→cape-town':        { fromLabel:'Madikwe', toLabel:'Cape Town',         mode:'scheduled', provider:'Road to JNB (3.5hr) + Airlink JNB→CPT', duration:'~4h total', estimatedCostZAR:11000, aiNote:'Early morning departure from Madikwe to catch morning flights from JNB.', bufferHours:4, road_viable:false },
+  'cape-town→chobe-vic-falls': { fromLabel:'Cape Town', toLabel:'Victoria Falls', mode:'scheduled', provider:'Airlink CPT→JNB + Air Zimbabwe or Fastjet JNB→VFA', duration:'~3h 30m', estimatedCostZAR:13500, aiNote:'Morning departure from CPT. Connect at O.R. Tambo — allow 2hr. Afternoon arrival at VFA.', bufferHours:3.5, road_viable:false },
+  'chobe-vic-falls→kruger-sabi-sand': { fromLabel:'Victoria Falls', toLabel:'Sabi Sand', mode:'charter', provider:'Charter VFA→Skukuza or scheduled VFA→JNB→Skukuza', duration:'~3h', estimatedCostZAR:15000, aiNote:'Specialist confirms best routing. VFA→JNB scheduled + Federal Air JNB→Skukuza most reliable.', bufferHours:3, road_viable:false },
+       
 };
 
 function getInternalLeg(fromSlug: string, toSlug: string): InternalLeg | null {
@@ -338,7 +341,7 @@ function mapSupplierRow(s: any): Hotel {
     location:destination ? `${destination}, ${s.country}` : s.country??'',
     destination, subRegion:s.region_slug??'', region:COUNTRY_REGION[s.country]||'southern-africa',
     country:s.country||'', stars:5, trustScore:s.trust_score||85, contentScore:s.content_score||70,
-    netRate, otaRate:s.ota_rate_per_night ? Number(s.ota_rate_per_night) : null,
+    netRate, displayRate, otaRate:s.ota_rate_per_night ? Number(s.ota_rate_per_night) : null,
     marginScore:displayRate>0 ? Math.round((displayRate-netRate)/displayRate*100) : 20,
     image:imageUrl, reelUrl:s.reel_url??s.video_url??null,
     funFact:s.short_tagline??(s.description ? String(s.description).slice(0,120) : null),
@@ -357,7 +360,6 @@ function mapSupplierRow(s: any): Hotel {
 }
 
 function buildFallbackItinerary(nights: number, budget: number, mode: InputMode, selectedSlugs: string[]): Itinerary {
-  const firstSlug = selectedSlugs[0];
   const destMap: Record<string, {label:string;country:string;why:string;highlights:string[]}> = {
     'kruger-sabi-sand':{ label:'Kruger / Sabi Sand', country:'South Africa', why:'Highest leopard density in Africa. The benchmark safari experience.', highlights:['Leopard tracking at dawn','Night drive','Sundowner in the bush'] },
     'okavango-delta':  { label:'Okavango Delta',     country:'Botswana',     why:"No roads. No fences. The world's finest wilderness safari.", highlights:['Mokoro through papyrus','Walking safari','Helicopter over Delta'] },
@@ -365,17 +367,49 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode,
     'chobe-vic-falls': { label:'Chobe / Victoria Falls', country:'Zimbabwe', why:'One of the Seven Wonders of Nature.', highlights:['Victoria Falls','Chobe River cruise','Elephant herds'] },
     'masai-mara':      { label:'Masai Mara',         country:'Kenya',        why:'The greatest wildlife spectacle on Earth.', highlights:['Great Migration','Hot air balloon','Big cats'] },
     'madikwe':         { label:'Madikwe',            country:'South Africa', why:'Malaria-free Big Five. Excellent for families.', highlights:['Big Five game drives','Malaria-free','Excellent guiding'] },
+    'bwindi':          { label:'Bwindi',             country:'Uganda',       why:'Half the world\'s mountain gorillas live here.', highlights:['Gorilla trekking','Forest walks','Community visit'] },
   };
-  if (firstSlug && destMap[firstSlug]) {
-    const dest = destMap[firstSlug];
-    if (selectedSlugs.length >= 2 && destMap[selectedSlugs[1]]) {
-      const dest2 = destMap[selectedSlugs[1]];
-      const n1 = Math.ceil(nights*0.55); const n2 = nights-n1;
-      return { title:`${nights}-Night ${dest.label} & ${dest2.label}`, summary:`A perfectly sequenced journey combining ${dest.label} and ${dest2.label}.`, routing:`JNB → ${dest.label} (${n1}n) → ${dest2.label} (${n2}n) → JNB`, bestTiming:'June–September: dry season, short grass, animals at water.', cities:[{ city:dest.label, country:dest.country, nights:n1, why:dest.why, highlights:dest.highlights, estimatedCost:Math.round(budget*0.52), hotelRate:45000, flightCost:7600, transferCost:3800, activityCost:0, arrivalGap:'Arrive midday, first drive at 16:00', departureGap:'Final morning drive before charter' },{ city:dest2.label, country:dest2.country, nights:n2, why:dest2.why, highlights:dest2.highlights, estimatedCost:Math.round(budget*0.40), hotelRate:45000, flightCost:8200, transferCost:2400, activityCost:0, arrivalGap:'Land 12:00, settle in for evening drive', departureGap:'Final morning before departure' }], totalEstimate:Math.round(budget*0.92), aiInsights:['Our rates are 20–27% below booking direct'], warnings:[], inputMode:mode };
-    }
-    return { title:`${nights}-Night ${dest.label}`, summary:`A focused ${nights}-night journey in ${dest.label}.`, routing:`JNB → ${dest.label} (${nights}n) → JNB`, bestTiming:'June–September: dry season, short grass, animals at water.', cities:[{ city:dest.label, country:dest.country, nights, why:dest.why, highlights:dest.highlights, estimatedCost:Math.round(budget*0.92), hotelRate:45000, flightCost:7600, transferCost:3800, activityCost:0, arrivalGap:'Arrive midday, first drive at 16:00', departureGap:'Final morning drive before departure' }], totalEstimate:Math.round(budget*0.92), aiInsights:['Our rates are 20–27% below booking direct'], warnings:[], inputMode:mode };
+
+  const validSlugs = selectedSlugs.filter(s => destMap[s]);
+
+  // No recognisable region — default to Sabi + Okavango
+  if (validSlugs.length === 0) {
+    const n1 = Math.ceil(nights * 0.55); const n2 = nights - n1;
+    return { title:`${nights}-Night Safari Journey`, summary:`A perfectly sequenced ${nights}-night journey across two of Africa's finest wilderness areas.`, routing:`JNB → Kruger / Sabi Sand (${n1}n) → Okavango (${n2}n) → JNB`, bestTiming:'June–September: dry season.', cities:[{ city:'Kruger / Sabi Sand', country:'South Africa', nights:n1, why:'First destination while fresh.', highlights:['Leopard tracking','Night drive','Sundowner'], estimatedCost:Math.round(budget*0.52), hotelRate:56000, flightCost:7600, transferCost:3800, activityCost:0, arrivalGap:'Land Skukuza 09:30, lodge 11:00', departureGap:'Final morning drive 05:30–09:30' },{ city:'Okavango Delta', country:'Botswana', nights:n2, why:'Contrast — water, mokoro, birds.', highlights:['Mokoro','Walking safari','Helicopter'], estimatedCost:Math.round(budget*0.42), hotelRate:62000, flightCost:9200, transferCost:2400, activityCost:0, arrivalGap:'Land 12:00, evening drive', departureGap:'Final mokoro 07:00–10:00' }], totalEstimate:Math.round(budget*0.94), aiInsights:['Our rates are 20–27% below booking direct'], warnings:[], inputMode:mode };
   }
-  return { title:`${nights}-Night Safari Journey`, summary:`A perfectly sequenced ${nights}-night journey across two of Africa's finest wilderness areas.`, routing:`JNB → Kruger / Sabi Sand (${Math.ceil(nights*0.55)}n) → Okavango (${Math.floor(nights*0.45)}n) → JNB`, bestTiming:'June–September: dry season, short grass, animals at water.', cities:[{ city:'Kruger / Sabi Sand', country:'South Africa', nights:Math.ceil(nights*0.55), why:'First destination while fresh.', highlights:['Leopard tracking','Night drive','Sundowner'], estimatedCost:Math.round(budget*0.52), hotelRate:56000, flightCost:7600, transferCost:3800, activityCost:0, arrivalGap:'Land Skukuza 09:30, lodge 11:00', departureGap:'Final morning drive 05:30–09:30' },{ city:'Okavango Delta', country:'Botswana', nights:Math.floor(nights*0.45), why:'Contrast — water, mokoro, birds after dry Lowveld.', highlights:['Mokoro','Walking safari','Helicopter'], estimatedCost:Math.round(budget*0.42), hotelRate:62000, flightCost:9200, transferCost:2400, activityCost:1800, arrivalGap:'Land 12:00, evening drive', departureGap:'Final mokoro 07:00–10:00' }], totalEstimate:Math.round(budget*0.94), aiInsights:['Federal Air JNB→Skukuza saves R8,000 vs road','Our Singita rate is 27% below Booking.com'], warnings:budget<100000?['Budget tight for premium lodges — consider single destination']:[], inputMode:mode };
+
+  // Single destination
+  if (validSlugs.length === 1) {
+    const dest = destMap[validSlugs[0]];
+    return { title:`${nights}-Night ${dest.label}`, summary:`A focused ${nights}-night journey in ${dest.label}.`, routing:`JNB → ${dest.label} (${nights}n) → JNB`, bestTiming:'June–September: dry season.', cities:[{ city:dest.label, country:dest.country, nights, why:dest.why, highlights:dest.highlights, estimatedCost:Math.round(budget*0.92), hotelRate:45000, flightCost:7600, transferCost:3800, activityCost:0, arrivalGap:'Arrive midday, first drive at 16:00', departureGap:'Final morning drive before departure' }], totalEstimate:Math.round(budget*0.92), aiInsights:['Our rates are 20–27% below booking direct'], warnings:[], inputMode:mode };
+  }
+
+  // 2+ destinations — distribute nights proportionally, minimum 2 per city
+  const rawSplit = validSlugs.map((_, i) => {
+    const share = i === 0 ? 0.45 : i === validSlugs.length - 1 ? 0.25 : 0.30 / Math.max(1, validSlugs.length - 2);
+    return Math.max(2, Math.round(nights * share));
+  });
+  const splitTotal = rawSplit.reduce((a, b) => a + b, 0);
+  rawSplit[0] += (nights - splitTotal); // fix rounding on first city
+
+  const cities = validSlugs.map((slug, i) => {
+    const dest = destMap[slug];
+    return { city:dest.label, country:dest.country, nights:rawSplit[i], why:dest.why, highlights:dest.highlights, estimatedCost:Math.round(budget*(rawSplit[i]/nights)), hotelRate:48000, flightCost:8000, transferCost:3500, activityCost:0, arrivalGap:'Arrive midday, first activity at 16:00', departureGap:'Final morning activity before departure' };
+  });
+
+  const isGrand = validSlugs.length >= 3;
+  const routeLabels = validSlugs.map(s => destMap[s].label);
+  return {
+    title: isGrand ? `${nights}-Night Grand Safari` : `${nights}-Night ${routeLabels[0]} & ${routeLabels[1]}`,
+    summary: `A ${nights}-night journey across ${validSlugs.length} of Africa's finest wilderness areas.`,
+    routing: `JNB → ${routeLabels.join(' → ')} → JNB`,
+    bestTiming: 'June–September: dry season, short grass, animals at water.',
+    cities,
+    totalEstimate: Math.round(budget * 0.92),
+    aiInsights: ['Our rates are 20–27% below booking direct'],
+    warnings: [],
+    inputMode: mode,
+  };
 }
 
 type ValidationIssue = { severity:'hard'|'warning'; code:string; message:string; };
@@ -1696,7 +1730,8 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     if (id==='inspire-me') { setSelectedRegions([]); return; }
     setSelectedRegions(prev => prev.includes(id) ? prev.filter(r=>r!==id) : [...prev.filter(r=>r!=='inspire-me'), id]);
   };
-
+         
+const [selectedTheme, setSelectedTheme] = useState<string>('');
   const [budget,      setBudget]      = useState(120000);
   const [origin,      setOrigin]      = useState('JNB');
   const [intlOrigin,  setIntlOrigin]  = useState('LHR');
@@ -1750,7 +1785,7 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [hotels,          setHotels]          = useState<Hotel[]>(HOTELS_FALLBACK);
   const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
-  const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => b.marginScore-a.marginScore), [hotels]);
+  const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => ((b.displayRate||0)-(b.netRate||0)) - ((a.displayRate||0)-(a.netRate||0))), [hotels]);
 
   const [chatOpen,    setChatOpen]    = useState(false);
   const [chatMsgs,    setChatMsgs]    = useState<ChatMessage[]>([{ role:'assistant', text:`Welcome to ${edition.name}. How can our team help?` }]);
@@ -1939,53 +1974,87 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     }).sort((a:any,b:any)=>b._score-a._score);
   }, [curTheme,curRegion,curNights]);
 
-  const runEngine = async (promptBody: string, mode: InputMode) => {
+const runEngine = async (request: any, mode: InputMode) => {
     setInputMode(mode); setScreen('inspire-research'); setResearchStep(0);
     window.scrollTo({ top:0, behavior:'instant' });
-    const kbCtx = buildKBContext(kbEntries, kbEntries.map(k=>k.id), edition.id);
-    const aiPromise = runPlannerEngine({ kbContext:kbCtx, promptBody, ai:edition.ai }).catch(()=>null);
-    let spinStep=0;
-    const spinInterval = setInterval(()=>{ spinStep=Math.min(spinStep+1,RESEARCH_STEPS.length-1); setResearchStep(spinStep); },600);
     track('itinerary_viewed', edition.id, { mode, nights, adults, budget });
-    const result = await aiPromise;
-    clearInterval(spinInterval);
-    const validResult = result && Array.isArray(result.cities) && result.cities.length>0 && result.cities.every((c:any)=>c?.city&&c?.country);
-    let finalItinerary: Itinerary;
-    if (validResult) { result.inputMode=mode; finalItinerary=result; }
-    else { const slugs=selectedRegions.map(id=>REGIONS.find(r=>r.id===id)?.slug??'').filter(Boolean); finalItinerary=buildFallbackItinerary(nights,budget,mode,slugs); }
-    setItinerary(finalItinerary);
-    const newStays = finalItinerary.cities.map((city) => {
-      const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()]??'';
-      const pool = slug ? hotelsByMargin.filter(h=>h.subRegion===slug) : hotelsByMargin;
-      const best = pool[0] ?? hotelsByMargin[0];
-      return { hotelId:best?.id??0, nights:city.nights, prefs:{ rooms:0, basis:0, flexibility:0 } };
-    });
-    setCityStays(newStays);
-    setAdjustMsgs([{ role:'assistant', text:`Your ${finalItinerary.title} is ready. Tap any lodge to browse options, or ask me to adjust anything below.` }]);
+
+    const slugs = selectedRegions.map(id => REGIONS.find(r=>r.id===id)?.slug??'').filter(Boolean);
+
+    try {
+      const res = await fetch('/api/build-itinerary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      const data = await res.json();
+
+      if (data.success && Array.isArray(data.itinerary?.cities) && data.itinerary.cities.length > 0) {
+        data.itinerary.inputMode = mode;
+        setItinerary(data.itinerary);
+        // Map server hotel IDs back to local hotel objects for the builder UI
+        const mappedStays = (data.itinerary.cities as any[]).map((city: any, i: number) => {
+          const slug = CITY_TO_SLUG[city.city?.toLowerCase().trim() ?? ''] ?? '';
+          const pool = slug ? hotelsByMargin.filter(h => h.subRegion === slug) : hotelsByMargin;
+          const serverHotelId = data.cityStays?.[i]?.hotelId;
+          const match = pool.find(h => String(h.id) === String(serverHotelId)) ?? pool[0] ?? hotelsByMargin[0];
+          return { hotelId: match?.id ?? 0, nights: city.nights, prefs: { rooms:0, basis:0, flexibility:0 } };
+        });
+        setCityStays(mappedStays);
+      } else {
+        throw new Error(data.error || 'Empty response');
+      }
+    } catch (e) {
+      // Graceful fallback — client-side engine
+      const fallback = buildFallbackItinerary(nights, budget, mode, slugs);
+      fallback.inputMode = mode;
+      setItinerary(fallback);
+      const fallbackStays = fallback.cities.map((city) => {
+        const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
+        const pool = slug ? hotelsByMargin.filter(h => h.subRegion === slug) : hotelsByMargin;
+        return { hotelId: pool[0]?.id ?? 0, nights: city.nights, prefs: { rooms:0, basis:0, flexibility:0 } };
+      });
+      setCityStays(fallbackStays);
+    }
+
+    setAdjustMsgs([{ role:'assistant', text:`Your journey is ready. Tap any lodge to browse options, or ask me to adjust anything below.` }]);
     if (needsIntlFlight) { setIncludeIntlFlight(true); setBuilderIntlOrigin(intlOrigin); }
     window.scrollTo({ top:0, behavior:'instant' });
   };
 
-  const runSocraticPlanner = () => {
-    const selectedRegionObjs = REGIONS.filter(r=>selectedRegions.includes(r.id));
-    const selectedSlugs = selectedRegionObjs.map(r=>r.slug).filter(Boolean) as string[];
-    const regionLabels = selectedRegionObjs.map(r=>r.label);
-    const intlNote = needsIntlFlight ? `Guest flying from ${intlOrigin} — include international flight.` : 'Guest handling own international flights.';
-    const regionSuppliers = selectedSlugs.length>0 ? hotels.filter(h=>selectedSlugs.includes(h.subRegion)).map(h=>`- ${h.name} (${h.destination}, ${h.country})`) : hotels.map(h=>`- ${h.name} (${h.destination}, ${h.country})`);
-    let regionConstraint = selectedSlugs.length===0 ? 'Choose the best 1–2 destinations from the supplier list.' : selectedSlugs.length===1 ? `SINGLE DESTINATION ONLY: "${regionLabels[0]}". All ${nights} nights must be there.` : `Use ONLY these destinations: ${regionLabels.join(' and ')}.`;
-    const infantNote = infants>0 ? `\nIMPORTANT: ${infants} infant(s). Flag lodge age restrictions.` : '';
-    const promptBody = `You are a luxury safari journey designer at ${edition.name}.\n\nGUEST INPUTS:\n- Origin: ${origin}\n- ${intlNote}\n- Budget: R${budget.toLocaleString()}\n- Trip: exactly ${nights} nights total\n- Travellers: ${adults} adults${children>0?`, ${children} children`:''}${infants>0?`, ${infants} infants`:''}\n${infantNote}\n\nREGION CONSTRAINT: ${regionConstraint}\n\nAVAILABLE SUPPLIERS:\n${regionSuppliers.join('\n')}\n\nHARD RULES:\n1. Total nights across ALL cities must equal exactly ${nights}.\n2. Use only property names from the supplier list.\n3. Respond ONLY with valid JSON matching the Itinerary type. No preamble.`;
-    runEngine(promptBody, 'socratic');
+const runSocraticPlanner = () => {
+    const selectedSlugs = selectedRegions
+      .map(id => REGIONS.find(r => r.id === id)?.slug ?? '')
+      .filter(Boolean);
+    runEngine({
+      mode: 'socratic',
+      budget,
+      nights,
+      adults,
+      children,
+      infants,
+      regions: selectedSlugs,
+      origin: needsIntlFlight ? intlOrigin : origin,
+      flightIntent: flightIntent || 'flexible',
+      checkinDate: checkinDate || undefined,
+      theme: selectedTheme || undefined,
+    }, 'socratic');
   };
 
-  const runBriefPlanner = (briefText: string) => {
-    const nightsMatch = briefText.match(/(\d+)\s*night/i);
-    const extractedNights = nightsMatch ? parseInt(nightsMatch[1]) : nights;
-    const supplierContext = hotels.filter(h=>h.name&&h.destination).map(h=>`- ${h.name} (${h.destination}, ${h.country}) — trust ${h.trustScore}/100`).join('\n');
-    const infantNote = infants>0 ? `\nIMPORTANT: ${infants} infant(s). Flag lodge age restrictions.` : '';
-    const promptBody = `You are a luxury safari journey designer at ${edition.name}.\nTRAVELLER BRIEF: "${briefText}"\n\nAVAILABLE SUPPLIERS:\n${supplierContext}\n\nHARD CONSTRAINTS:\n1. TOTAL NIGHTS: exactly ${extractedNights} nights.\n2. Use only properties from the supplier list.\n3. TRAVELLERS: ${adults} adults${children>0?`, ${children} children`:''}${infants>0?`, ${infants} infants`:''}.\n${infantNote}\nRespond ONLY with valid JSON matching the Itinerary type. No preamble.`;
-    if (extractedNights!==nights) setNights(extractedNights);
-    runEngine(promptBody, 'brief');
+const runBriefPlanner = (briefText: string) => {
+    runEngine({
+      mode: 'brief',
+      budget,
+      nights,
+      adults,
+      children,
+      infants,
+      regions: [],
+      origin: needsIntlFlight ? intlOrigin : origin,
+      flightIntent: flightIntent || 'flexible',
+      checkinDate: checkinDate || undefined,
+      briefText,
+    }, 'brief');
   };
 
   const sendChat = async () => {
@@ -2216,7 +2285,30 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
               </div>
               {selectedRegions.length>1&&<div style={{ marginTop:8, fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'6px 12px' }}>✦ {selectedRegions.length} regions selected — multi-destination journey</div>}
             </div>
-
+{/* JOURNEY THEME */}
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const, marginBottom:4 }}>Journey theme <span style={{ fontWeight:400, textTransform:'none' as const, letterSpacing:0, fontSize:11 }}>(optional)</span></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
+                {([
+                  { id:'honeymoon',   label:'Honeymoon',   icon:'💍' },
+                  { id:'anniversary', label:'Anniversary', icon:'✨' },
+                  { id:'family',      label:'Family',      icon:'👨‍👩‍👧' },
+                  { id:'adventure',   label:'Adventure',   icon:'🧗' },
+                  { id:'bucket-list', label:'Bucket list', icon:'🌍' },
+                  { id:'returning',   label:'Been before', icon:'🔄' },
+                ] as {id:string;label:string;icon:string}[]).map(t => {
+                  const active = selectedTheme === t.id;
+                  return (
+                    <button key={t.id} onClick={() => setSelectedTheme(active ? '' : t.id)}
+                      style={{ padding:'10px 8px', borderRadius:10, border:`1.5px solid ${active ? T.gold : T.border}`, background:active ? T.goldDim : T.surface, color:active ? T.gold : T.textMid, fontSize:12, fontWeight:active ? 600 : 400, cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:4, fontFamily:'inherit' }}>
+                      <span style={{ fontSize:18 }}>{t.icon}</span>
+                      <span>{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+                   
             <div style={{ marginBottom:16 }}>
               <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontSize:11, color:T.textDim, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' as const }}>Total budget</div>
