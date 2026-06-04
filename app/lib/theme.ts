@@ -80,6 +80,27 @@ select option { background:#1a1a1a; }
 @keyframes glow    { 0%,100%{box-shadow:0 0 0 rgba(212,175,55,0)} 50%{box-shadow:0 0 24px rgba(212,175,55,0.5)} }
 
 .fade-up { animation:fadeUp 0.45s ease forwards; }
+/* Inspire-input split layout */
+.inspire-split {
+  display:grid;
+  grid-template-columns:1fr 42%;
+  min-height:calc(100vh - 58px);
+  align-items:start;
+}
+.inspire-form {
+  padding:32px clamp(20px,5vw,52px) 110px;
+  max-width:680px;
+}
+.inspire-panel {
+  position:sticky;
+  top:58px;
+  height:calc(100vh - 58px);
+  overflow:hidden;
+}
+@media(max-width:860px){
+  .inspire-split { grid-template-columns:1fr !important; }
+  .inspire-panel { display:none !important; }
+}
 
 /* Loading spinner */
 .spinner {
