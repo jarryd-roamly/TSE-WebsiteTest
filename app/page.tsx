@@ -194,7 +194,49 @@ const CHAT_QUICK_ACTIONS = [
   { id:'dates',    label:'Flexible on dates?',    icon:'◎',  desc:'Show savings if you shift ±7 days' },
   { id:'fewer',    label:'Fewer destinations',    icon:'–',  desc:'Simplify — remove the lowest-value stop' },
 ];
+function getCuratedAssumptions(j: any) {
+  const cities: any[] = j.cities || [];
+  const themes: string[] = j.themes || [];
+  const nights = j.nights || cities.reduce((s: number, c: any) => s + (c.nights || 0), 0);
+  const pax = j.pax || 2;
 
+  // Who it's priced for
+  const isFamily    = themes.includes('family');
+  const isHoneymoon = themes.includes('honeymoon') || themes.includes('romance') || themes.includes('anniversary');
+  const paxLabel    = isFamily ? '2 adults + 2 children' : isHoneymoon ? 'per couple' : `${pax} adults`;
+
+  // Region flags
+  const slugs          = cities.map((c: any) => c.regionSlug || '');
+  const hasCharter     = slugs.some(s => ['okavango-delta','masai-mara'].includes(s));
+  const isMalariaFree  = slugs.length > 0 && slugs.every(s => ['madikwe','cape-town'].includes(s));
+  const isMultiDest    = cities.length > 1;
+  const hasVicFalls    = slugs.includes('chobe-vic-falls');
+  const hasCT          = slugs.includes('cape-town');
+
+  // Key inclusions
+  const inclusions: string[] = [];
+  if (isMultiDest && hasCharter) inclusions.push('All charter flights & bush transfers');
+  else if (isMultiDest)           inclusions.push('All internal flights & transfers');
+  else                            inclusions.push('All road & airstrip transfers');
+  inclusions.push('Full board · All meals included');
+  inclusions.push('All game drives & guided activities');
+  if (isMalariaFree) inclusions.push('Malaria-free · No prophylactics');
+
+  // Important notes
+  const notes: string[] = [];
+  if (hasCharter)  notes.push('20kg soft bag limit on light aircraft · No hard cases');
+  if (hasVicFalls) notes.push('Visa on arrival for most nationalities');
+  if (hasCT)       notes.push('Malaria-free Cape Town extension');
+
+  return {
+    paxLabel,
+    nights,
+    priceNote: `Based on ${paxLabel} · ${nights} nights`,
+    inclusions,
+    notes,
+    alwaysExcluded: 'International flights',
+  };
+}
 const CURATED_JOURNEYS = [
   { id:'sabi-classic',  name:'The Sabi Sand Classic',       tagline:"South Africa's finest leopard territory",  nights:5,  pax:2, image:'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', badge:'Most popular', badgeColor:T.gold,    includes:['Return Federal Air charter','5n Singita Sabi Sand','All-inclusive','All game drives & walks'], priceFrom:142000, otaEquivalent:192000, themes:['safari','luxury'],   region:'southern-africa', nightsRange:'short'  },
   { id:'grand-circuit', name:'The Grand Safari Circuit',    tagline:'Two countries. Three ecosystems.',         nights:9,  pax:2, image:'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', badge:'Signature',    badgeColor:'#a78bfa', includes:['All charter flights','3n Sabi Sand','3n Ngorongoro','3n Masai Mara','All-inclusive'], priceFrom:298000, otaEquivalent:412000, themes:['safari'],             region:'both',           nightsRange:'medium' },
@@ -1810,6 +1852,8 @@ const [selectedTheme, setSelectedTheme] = useState<string>('');
   const [curTheme,  setCurTheme]  = useState('all');
   const [curRegion, setCurRegion] = useState('all');
   const [curNights, setCurNights] = useState('all');
+         const [dbCuratedJourneys,    setDbCuratedJourneys]    = useState<any[]>([]);
+  const [selectedCuratedJourney, setSelectedCuratedJourney] = useState<any>(null);
 
   const [kbEntries,       setKbEntries]       = useState<KBEntry[]>(DEFAULT_KB);
   const [hotels,          setHotels]          = useState<Hotel[]>(HOTELS_FALLBACK);
@@ -1881,7 +1925,17 @@ useEffect(() => {
       })
       .catch(() => setSuppliersLoaded(true));
   }, [edition.id]);
-
+// Load curated journeys from Supabase
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    fetch(`${url}/rest/v1/curated_journeys?select=*&status=eq.published&edition_id=eq.safari&order=sort_order.asc&limit=12`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    }).then(r => r.json()).then((rows: any[]) => {
+      if (rows?.length > 0) setDbCuratedJourneys(rows);
+    }).catch(() => {});
+  }, [edition.id]);
   // [Activities] Load activities from Supabase (mirrors supplier fetch).
   // USD-priced rows are converted to ZAR using the USD display rate (XE snapshot
   // today; swap to live XE later). Falls back silently to empty on any error.
@@ -2027,17 +2081,40 @@ useEffect(() => {
     return { saving, reversed_city_order: rev.map(c => c.city), is_cheaper: true };
   }, [itinerary?.cities, currency.rate]);
 
-  const rankedCurated = useMemo(() => {
-    return [...CURATED_JOURNEYS].map(j => {
+const rankedCurated = useMemo(() => {
+    // Use DB data when available, fall back to hardcoded
+    const source: any[] = dbCuratedJourneys.length > 0
+      ? dbCuratedJourneys.map((j: any) => {
+          const cities: any[] = j.cities || [];
+          const slugs = cities.map((c: any) => c.regionSlug || '');
+          const region = slugs.some(s => ['masai-mara','bwindi'].includes(s)) ? 'east-africa'
+                       : slugs.length > 1 ? 'both' : 'southern-africa';
+          const nights = j.nights || cities.reduce((s: number, c: any) => s + (c.nights || 0), 0);
+          return {
+            ...j,
+            badgeColor:    j.badge_color ?? '#d4af37',
+            image:         j.hero_image || 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80',
+            priceFrom:     j.price_from_zar,
+            otaEquivalent: j.ota_price_zar,
+            pax:           (j.themes || []).includes('family') ? 4 : 2,
+            region,
+            nights,
+            nightsRange:   nights <= 6 ? 'short' : nights <= 10 ? 'medium' : 'long',
+            includes:      cities.map((c: any) => `${c.nights}n ${c.city}`),
+          };
+        })
+      : CURATED_JOURNEYS;
+
+    return [...source].map(j => {
       let score = 0;
-      if (curTheme!=='all' && j.themes.includes(curTheme)) score+=3;
-      if (curRegion!=='all' && (j.region===curRegion||j.region==='both')) score+=2;
-      if (curNights==='short'&&j.nights<=6) score+=1;
-      if (curNights==='medium'&&j.nights>=7&&j.nights<=10) score+=1;
-      if (curNights==='long'&&j.nights>=11) score+=1;
-      return { ...j, _score:score };
-    }).sort((a:any,b:any)=>b._score-a._score);
-  }, [curTheme,curRegion,curNights]);
+      if (curTheme !== 'all' && (j.themes || []).includes(curTheme))              score += 3;
+      if (curRegion !== 'all' && (j.region === curRegion || j.region === 'both')) score += 2;
+      if (curNights === 'short'  && j.nights <= 6)                                score += 1;
+      if (curNights === 'medium' && j.nights >= 7 && j.nights <= 10)              score += 1;
+      if (curNights === 'long'   && j.nights >= 11)                               score += 1;
+      return { ...j, _score: score };
+    }).sort((a: any, b: any) => b._score - a._score);
+  }, [curTheme, curRegion, curNights, dbCuratedJourneys]);
 
 const runEngine = async (request: any, mode: InputMode) => {
     setInputMode(mode); setScreen('inspire-research'); setResearchStep(0);
@@ -2086,7 +2163,30 @@ const runEngine = async (request: any, mode: InputMode) => {
     if (needsIntlFlight) { setIncludeIntlFlight(true); setBuilderIntlOrigin(intlOrigin); }
     window.scrollTo({ top:0, behavior:'instant' });
   };
-
+const runCuratedJourney = () => {
+    if (!selectedCuratedJourney) return;
+    const j = selectedCuratedJourney;
+    const cities: any[] = j.cities || [];
+    const regions = cities.map((c: any) => c.regionSlug).filter(Boolean);
+    const totalNights = j.nights || cities.reduce((s: number, c: any) => s + (c.nights || 0), 0);
+    setNights(totalNights);
+    runEngine({
+      mode: 'curated',
+      budget: Math.round((j.price_from_zar || j.priceFrom || 150000) * 1.15),
+      nights: totalNights,
+      adults,
+      children,
+      infants,
+      regions,
+      origin: needsIntlFlight ? intlOrigin : origin,
+      flightIntent: flightIntent || 'flexible',
+      checkinDate: checkinDate || undefined,
+      curatedTitle: j.name,
+      curatedCities: cities,
+      theme: (j.themes || [])[0],
+    }, 'curated');
+  };
+         
 const runSocraticPlanner = () => {
     const selectedSlugs = selectedRegions
       .map(id => REGIONS.find(r => r.id === id)?.slug ?? '')
@@ -2246,7 +2346,7 @@ const runBriefPlanner = (briefText: string) => {
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:18 }}>
               {rankedCurated.map((j:any,rank:number)=>(
-                <div key={j.id} className="card" style={{ cursor:'pointer', position:'relative' as const }} onClick={()=>setScreen('inspire-input')}>
+              <div key={j.id} className="card" style={{ cursor:'pointer', position:'relative' as const }} onClick={()=>{ setSelectedCuratedJourney(j); setScreen('curated-customise'); }}>
                   {rank===0&&(curTheme!=='all'||curRegion!=='all'||curNights!=='all')&&<div style={{ position:'absolute', top:-8, left:12, zIndex:2, background:T.gold, color:'#0a0a0a', fontSize:9, fontWeight:800, padding:'3px 10px', borderRadius:20, textTransform:'uppercase' as const }}>Best match</div>}
                   <div style={{ position:'relative', height:195, overflow:'hidden' }}>
                     <img src={j.image} alt={j.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
@@ -2258,12 +2358,42 @@ const runBriefPlanner = (briefText: string) => {
                     </div>
                   </div>
                   <div style={{ padding:'14px 16px' }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
-                      <div><div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{j.nights}n · {j.pax} pax</div><div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(j.priceFrom)}</div></div>
-                      <div style={{ textAlign:'right' as const }}><div style={{ fontSize:10, color:T.textDim, marginBottom:2 }}>vs direct</div><div style={{ fontSize:13, color:T.green, fontWeight:600 }}>Save {fmt(j.otaEquivalent-j.priceFrom)}</div></div>
-                    </div>
-                    <div style={{ borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>{j.includes.slice(0,3).map((inc:string,i:number)=><div key={i} style={{ fontSize:11, color:T.textMid, display:'flex', gap:6, marginBottom:3 }}><span style={{ color:T.gold, flexShrink:0 }}>✓</span>{inc}</div>)}</div>
-                    <button className="btn-gold" style={{ width:'100%', padding:11, fontSize:13, marginTop:12 }}>View & Customise →</button>
+{(() => {
+                      const a = getCuratedAssumptions(j);
+                      return (
+                        <>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:8 }}>
+                            <div>
+                              <div style={{ fontSize:10, color:T.textDim, marginBottom:3 }}>{a.priceNote}</div>
+                              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, fontWeight:300, color:T.gold }}>{fmt(j.priceFrom)}</div>
+                            </div>
+                            <div style={{ textAlign:'right' as const }}>
+                              <div style={{ fontSize:9, color:T.textDim, marginBottom:2 }}>vs direct</div>
+                              <div style={{ fontSize:12, color:T.green, fontWeight:600 }}>Save {fmt(j.otaEquivalent - j.priceFrom)}</div>
+                            </div>
+                          </div>
+                          {/* Smart inclusions */}
+                          <div style={{ borderTop:`0.5px solid ${T.border}`, paddingTop:9, marginBottom:8 }}>
+                            {a.inclusions.slice(0,2).map((inc: string, i: number) => (
+                              <div key={i} style={{ fontSize:10, color:T.textMid, display:'flex', gap:5, marginBottom:3 }}>
+                                <span style={{ color:T.green, flexShrink:0 }}>✓</span>{inc}
+                              </div>
+                            ))}
+                            <div style={{ fontSize:10, color:'rgba(251,146,60,0.8)', display:'flex', gap:5, marginTop:4 }}>
+                              <span style={{ flexShrink:0 }}>✗</span>{a.alwaysExcluded}
+                            </div>
+                            {a.notes[0] && (
+                              <div style={{ fontSize:10, color:T.amber, display:'flex', gap:5, marginTop:3 }}>
+                                <span style={{ flexShrink:0 }}>⚠</span>{a.notes[0]}
+                              </div>
+                            )}
+                          </div>
+                          <button className="btn-gold" style={{ width:'100%', padding:11, fontSize:12, letterSpacing:'0.04em' }}>
+                            View & Customise →
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
@@ -2271,7 +2401,152 @@ const runBriefPlanner = (briefText: string) => {
           </div>
         </div>
       )}
+{/* CURATED CUSTOMISE */}
+      {screen==='curated-customise' && selectedCuratedJourney && (() => {
+        const j = selectedCuratedJourney;
+        const a = getCuratedAssumptions(j);
+        const cities: any[] = j.cities || [];
+        return (
+          <div style={{ minHeight:'100vh', background:T.bg }}>
+            <Nav {...navProps} />
 
+            {/* Hero image header */}
+            <div style={{ position:'relative', height:260, overflow:'hidden' }}>
+              <img src={j.image || j.hero_image} alt={j.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+              <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(10,10,10,1) 0%,rgba(10,10,10,0.5) 50%,transparent 100%)' }} />
+              <button onClick={()=>setScreen('curated')} style={{ position:'absolute', top:16, left:16, background:'rgba(0,0,0,0.5)', border:`0.5px solid rgba(255,255,255,0.2)`, color:'#fff', borderRadius:7, padding:'6px 14px', fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>← Back</button>
+              <div style={{ position:'absolute', bottom:24, left:24, right:24 }}>
+                <div style={{ fontSize:9, color:T.gold, letterSpacing:'0.28em', textTransform:'uppercase' as const, marginBottom:8 }}>✦ Customise</div>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(26px,4vw,40px)', fontWeight:300, color:'#fff', lineHeight:1.1 }}>{j.name}</div>
+                <div style={{ fontSize:13, color:'rgba(255,255,255,0.55)', marginTop:6 }}>{j.tagline}</div>
+              </div>
+            </div>
+
+            <div style={{ maxWidth:620, margin:'0 auto', padding:'28px 20px 110px' }}>
+
+              {/* Journey breakdown */}
+              <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'14px 16px', marginBottom:20 }}>
+                <div style={{ fontSize:10, color:T.gold, letterSpacing:'0.18em', textTransform:'uppercase' as const, marginBottom:12 }}>Journey breakdown</div>
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:8 }}>
+                  {cities.map((city: any, i: number) => (
+                    <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 12px', background:T.bg3, borderRadius:8 }}>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{city.city}</div>
+                        <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{city.country}{city.why ? ` · ${city.why.split('.')[0]}` : ''}</div>
+                      </div>
+                      <div style={{ fontSize:13, fontWeight:600, color:T.gold, flexShrink:0, marginLeft:12 }}>{city.nights}n</div>
+                    </div>
+                  ))}
+                </div>
+                {/* What's included */}
+                <div style={{ marginTop:14, paddingTop:12, borderTop:`0.5px solid ${T.border}` }}>
+                  {a.inclusions.map((inc: string, i: number) => (
+                    <div key={i} style={{ fontSize:12, color:T.textMid, display:'flex', gap:7, marginBottom:5 }}>
+                      <span style={{ color:T.green, flexShrink:0 }}>✓</span>{inc}
+                    </div>
+                  ))}
+                  <div style={{ fontSize:12, color:'rgba(251,146,60,0.8)', display:'flex', gap:7, marginTop:6 }}>
+                    <span style={{ flexShrink:0 }}>✗</span>International flights not included
+                  </div>
+                  {a.notes.map((note: string, i: number) => (
+                    <div key={i} style={{ fontSize:11, color:T.amber, display:'flex', gap:7, marginTop:4 }}>
+                      <span style={{ flexShrink:0 }}>⚠</span>{note}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* When are you travelling? */}
+              <div style={{ marginBottom:20 }}>
+                <div style={{ fontSize:10, color:T.textDim, letterSpacing:'0.16em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:10 }}>When are you travelling?</div>
+                <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={j.nights} />
+              </div>
+
+              {/* Who's travelling */}
+              <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'14px 16px', marginBottom:20 }}>
+                <div style={{ fontSize:10, color:T.textDim, letterSpacing:'0.16em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:4 }}>Who's travelling?</div>
+                <div style={{ fontSize:11, color:T.textDim, marginBottom:12 }}>
+                  {a.priceNote} — adjust if different
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
+                  {[
+                    { label:'Adults', value:adults, set:setAdults, min:1 },
+                    { label:'Children', value:children, set:setChildren, min:0 },
+                    { label:'Infants', value:infants, set:setInfants, min:0 },
+                  ].map(p => (
+                    <div key={p.label}>
+                      <div style={{ fontSize:9, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:6 }}>{p.label}</div>
+                      <div style={{ display:'flex', alignItems:'center', background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:8, overflow:'hidden', height:36 }}>
+                        <button onClick={()=>p.set(Math.max(p.min,p.value-1))} style={{ width:36,height:36,border:'none',background:'transparent',color:p.value>p.min?T.text:T.textDim,fontSize:18,cursor:p.value>p.min?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit' }}>−</button>
+                        <div style={{ flex:1,textAlign:'center' as const,fontSize:15,fontWeight:500,color:T.text }}>{p.value}</div>
+                        <button onClick={()=>p.set(p.value+1)} style={{ width:36,height:36,border:'none',background:'transparent',color:T.text,fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit' }}>+</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* International flights */}
+              <div style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'14px 16px', marginBottom:20 }}>
+                <div style={{ fontSize:10, color:T.textDim, letterSpacing:'0.16em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:12 }}>International flights</div>
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:7 }}>
+                  {[
+                    { val:'flexible' as const, title:'Source for me later', sub:'Your Journey Specialist finds the best fares once dates are confirmed' },
+                    { val:'include'  as const, title:'Find & include now',  sub:"We'll search and add international flights to your package" },
+                    { val:'own'      as const, title:"I've already booked", sub:'Share your arrival details so we can plan around your flights' },
+                  ].map(opt => {
+                    const isSel = flightIntent===opt.val;
+                    return (
+                      <button key={opt.val} onClick={()=>{ setFlightIntent(opt.val); setNeedsIntlFlight(opt.val==='include'); setIncludeIntlFlight(opt.val==='include'); }}
+                        style={{ padding:'11px 14px', borderRadius:9, textAlign:'left' as const, border:`1px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:'transparent', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'flex-start', gap:10 }}>
+                        <div style={{ width:14,height:14,borderRadius:'50%',border:`1.5px solid ${isSel?T.gold:'rgba(255,255,255,0.2)'}`,flexShrink:0,marginTop:3,display:'flex',alignItems:'center',justifyContent:'center' }}>
+                          {isSel && <div style={{ width:5,height:5,borderRadius:'50%',background:T.gold }} />}
+                        </div>
+                        <div>
+                          <div style={{ fontSize:12,fontWeight:600,color:isSel?T.gold:T.text,marginBottom:2 }}>{opt.title}</div>
+                          <div style={{ fontSize:10,color:T.textDim,lineHeight:1.5 }}>{opt.sub}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {flightIntent==='include' && (
+                  <div style={{ marginTop:12,paddingTop:12,borderTop:`0.5px solid ${T.border}` }}>
+                    <div style={{ fontSize:10,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.1em',fontWeight:600,marginBottom:8 }}>Flying from</div>
+                    <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%',background:'rgba(255,255,255,0.04)',border:`0.5px solid ${T.border}`,color:T.text,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',fontFamily:'inherit' }}>
+                      {INTERNATIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Disclaimer */}
+              <div style={{ background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'14px 16px', marginBottom:28 }}>
+                <div style={{ fontSize:10, color:T.gold, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase' as const, marginBottom:8 }}>✦ Before you build</div>
+                <div style={{ fontSize:12, color:T.textDim, lineHeight:1.7 }}>
+                  Pricing shown is indicative and based on {a.priceNote}. <strong style={{ color:T.textMid }}>International flights are not included.</strong> All itineraries are subject to availability — your Journey Specialist confirms within 2 hours. Room upgrades, additional activities and international flights can all be added during customisation.
+                </div>
+                {a.notes.length > 0 && (
+                  <div style={{ marginTop:8, display:'flex', flexDirection:'column' as const, gap:4 }}>
+                    {a.notes.map((note: string, i: number) => (
+                      <div key={i} style={{ fontSize:11, color:T.amber }}>⚠ {note}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* CTA */}
+              <button className="btn-gold" style={{ width:'100%', padding:'17px 24px', fontSize:14, letterSpacing:'0.06em' }} onClick={runCuratedJourney}>
+                ✦ Build &amp; Customise My Journey
+              </button>
+              <p style={{ textAlign:'center' as const, fontSize:11, color:T.textDim, marginTop:10 }}>
+                Same pricing engine · Fully customisable · Journey Specialist assigned
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+             
       {/* INSPIRE INPUT */}
 {screen==='inspire-input' && (
         <div style={{ minHeight:'100vh', background:T.bg }}>
