@@ -48,7 +48,7 @@ export const T = {
 // Fonts are pre-loaded by layout.tsx so @import here is a belt-and-suspenders
 // fallback only (loads from cache if already fetched by layout).
 export const GLOBAL_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@200;300;400;500;600&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&display=swap');
 
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
 
