@@ -66,7 +66,7 @@ function SectionHeader({ title, sub, action }: { title: string; sub?: string; ac
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
       <div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: T.text, fontFamily: "'Playfair Display',serif" }}>{title}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: T.text, fontFamily: "'Cormorant Garamond',serif" }}>{title}</div>
         {sub && <div style={{ fontSize: 12, color: T.textDim, marginTop: 3 }}>{sub}</div>}
       </div>
       {action}
@@ -91,7 +91,7 @@ function StatTile({ label, value, sub, color }: { label: string; value: string; 
   return (
     <div style={{ background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 12, padding: '16px 18px' }}>
       <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: color || T.gold, fontFamily: "'Playfair Display',serif" }}>{value}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: color || T.gold, fontFamily: "'Cormorant Garamond',serif" }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: T.textDim, marginTop: 3 }}>{sub}</div>}
     </div>
   )
@@ -223,7 +223,7 @@ function Dashboard({ supplier, bookings, role, setActiveTab, supplierId }: any) 
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: T.text, fontFamily: "'Playfair Display',serif" }}>Welcome back, {supplier.name}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: T.text, fontFamily: "'Cormorant Garamond',serif" }}>Welcome back, {supplier.name}</div>
           <div style={{ fontSize: 12, color: T.textDim, marginTop: 3 }}>{supplier.destination}, {supplier.country}</div>
         </div>
         {primaryImage && (
@@ -236,12 +236,12 @@ function Dashboard({ supplier, bookings, role, setActiveTab, supplierId }: any) 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 24 }}>
         <div onClick={() => setShowScoreTip('trust')} style={{ background: T.surface, border: `0.5px solid rgba(74,222,128,0.3)`, borderRadius: 12, padding: '16px 18px', cursor: 'pointer' }}>
           <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>Trust Score</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: T.green, fontFamily: "'Playfair Display',serif" }}>{ts}/100</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: T.green, fontFamily: "'Cormorant Garamond',serif" }}>{ts}/100</div>
           <div style={{ fontSize: 10, color: T.green, marginTop: 4 }}>Tap for tips →</div>
         </div>
         <div onClick={() => setShowScoreTip('content')} style={{ background: T.surface, border: `0.5px solid rgba(251,191,36,0.3)`, borderRadius: 12, padding: '16px 18px', cursor: 'pointer' }}>
           <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>Content Score</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: T.amber, fontFamily: "'Playfair Display',serif" }}>{cs}/100</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: T.amber, fontFamily: "'Cormorant Garamond',serif" }}>{cs}/100</div>
           <div style={{ fontSize: 10, color: T.amber, marginTop: 4 }}>{images.filter((i: any) => i.status === 'approved').length < 12 ? `${12 - images.filter((i: any) => i.status === 'approved').length} images needed` : 'Tap for tips →'}</div>
         </div>
         <div style={{ background: T.surface, border: `0.5px solid ${listing.color}40`, borderRadius: 12, padding: '16px 18px' }}>
@@ -251,7 +251,7 @@ function Dashboard({ supplier, bookings, role, setActiveTab, supplierId }: any) 
         </div>
         <div onClick={() => setActiveTab('bookings')} style={{ background: T.surface, border: `0.5px solid ${T.borderGold}`, borderRadius: 12, padding: '16px 18px', cursor: 'pointer' }}>
           <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>Future bookings</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: T.gold, fontFamily: "'Playfair Display',serif" }}>{futureBookings.length}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: T.gold, fontFamily: "'Cormorant Garamond',serif" }}>{futureBookings.length}</div>
           <div style={{ fontSize: 10, color: T.gold, marginTop: 4 }}>View all →</div>
         </div>
         <StatTile label="YTD Nights" value={String(totalNights)} sub={`of ${THRESHOLD_NIGHTS} threshold`} />
@@ -458,7 +458,7 @@ function RatesContracts({ supplier, supplierId }: any) {
           ].map((s, i) => (
             <div key={i} style={{ background: T.bg, borderRadius: 10, padding: '14px 16px' }}>
               <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 6 }}>{s.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: s.color, fontFamily: "'Playfair Display',serif" }}>{s.value}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: s.color, fontFamily: "'Cormorant Garamond',serif" }}>{s.value}</div>
               <div style={{ fontSize: 10, color: T.textDim, marginTop: 3 }}>{s.sub}</div>
             </div>
           ))}
@@ -691,7 +691,7 @@ function Payments({ bookings }: any) {
           ].map((p, i) => (
             <div key={i} style={{ background: T.bg, borderRadius: 9, padding: '12px 14px' }}>
               <div style={{ fontSize: 10, color: T.textDim, marginBottom: 4 }}>{p.pillar}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: p.color, fontFamily: "'Playfair Display',serif" }}>{p.margin}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: p.color, fontFamily: "'Cormorant Garamond',serif" }}>{p.margin}</div>
               <div style={{ fontSize: 10, color: T.textDim, marginTop: 2 }}>{p.note}</div>
             </div>
           ))}
@@ -1040,9 +1040,9 @@ export default function SupplierPortal() {
 
   if (noSession) return (
     <div style={{ minHeight: '100vh', background: '#07080f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial,sans-serif' }}>
-      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
+    
       <div style={{ textAlign: 'center' as const, maxWidth: 380, padding: 24 }}>
-        <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, color: '#d4af37', marginBottom: 12 }}>✦ Supplier Portal</div>
+        <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, color: '#d4af37', marginBottom: 12 }}>✦ Supplier Portal</div>
         <div style={{ fontSize: 14, color: 'rgba(240,237,230,0.6)', marginBottom: 24, lineHeight: 1.7 }}>Please sign in through the Edition portal to access your supplier account.</div>
         <a href="/admin" style={{ display: 'inline-block', padding: '12px 28px', background: 'linear-gradient(135deg,#d4af37,#f0c040)', borderRadius: 9, color: '#0a0a0a', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>Sign In →</a>
       </div>
@@ -1095,13 +1095,13 @@ export default function SupplierPortal() {
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', fontFamily: 'Arial,sans-serif', color: T.text }}>
-      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet" />
+    
       <style>{`*{box-sizing:border-box} ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-thumb{background:rgba(212,175,55,0.3);border-radius:10px}`}</style>
 
       {/* Sidebar */}
       <div style={{ width: 230, background: T.bg2, borderRight: `0.5px solid ${T.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
         <div style={{ padding: '20px 16px 16px', borderBottom: `0.5px solid ${T.border}` }}>
-          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 14, color: T.gold, fontWeight: 700, letterSpacing: '0.06em' }}>✦ Supplier Portal</div>
+          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 14, color: T.gold, fontWeight: 700, letterSpacing: '0.06em' }}>✦ Supplier Portal</div>
           <div style={{ fontSize: 10, color: T.textDim, marginTop: 2, letterSpacing: '0.1em', textTransform: 'uppercase' }}>The Safari Edition</div>
         </div>
 
