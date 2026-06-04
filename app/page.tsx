@@ -2476,9 +2476,7 @@ const runBriefPlanner = (briefText: string) => {
 
               {/* Image layer(s) — single or multi-split */}
               <div style={{ position:'absolute', inset:0, opacity:panelFade?1:0, transition:'opacity 0.35s ease' }}>
-                {selectedRegions.length <= 1 ? (
-                  // Single region or default: full-panel image
-{(() => {
+{selectedRegions.length <= 1 ? (() => {
                     const slug = selectedRegions.length === 1
                       ? (REGIONS.find(r=>r.id===selectedRegions[0])?.slug ?? '')
                       : '';
@@ -2490,8 +2488,7 @@ const runBriefPlanner = (briefText: string) => {
                     ) : (
                       <div style={{ position:'absolute', inset:0, backgroundImage:`url(${imgSrc})`, backgroundSize:'cover', backgroundPosition:'center' }} />
                     );
-                  })()}
-                ) : (
+})() : (
                   // Multiple regions: vertical split — each region gets equal height band
                   selectedRegions.map((id, idx) => {
                     const slug = REGIONS.find(r=>r.id===id)?.slug ?? '';
