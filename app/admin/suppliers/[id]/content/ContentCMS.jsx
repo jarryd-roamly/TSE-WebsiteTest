@@ -82,11 +82,11 @@ function createSupabase() {
       });
       if (!res.ok) throw new Error(`${table} PATCH ${res.status}`);
     },
-    async uploadFile(supplierId, file, isAdmin) {
+async uploadFile(supplierId, file, isAdmin, mediaType = 'images') {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('supplier_id', supplierId);
-      fd.append('media_type', 'images');
+      fd.append('media_type', mediaType);
       fd.append('caption', file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80));
       fd.append('uploaded_by', isAdmin ? 'admin' : 'supplier');
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
@@ -643,52 +643,177 @@ function TabGallery({ supplierId, isAdmin, images, setImages, locked }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TAB: REELS  (property-level YouTube clips)
+// TAB: REELS  (property-level — YouTube clips + direct MP4 upload)
 // ═══════════════════════════════════════════════════════════════════════════════
-function TabReels({ reels, setReels }) {
-  const [showPopup, setShowPopup] = useState(false);
-  const [editing, setEditing] = useState(null);
+function TabReels({ reels, setReels, supplierId, isAdmin }) {
+  const db = useMemo(() => createSupabase(), []);
+  const [showYouTube, setShowYouTube] = useState(false);
+  const [editing,     setEditing]     = useState(null);
+  const [uploads,     setUploads]     = useState([]);
+  const [dragOver,    setDragOver]    = useState(false);
+  const [preview,     setPreview]     = useState(null); // url to preview
+
+  const uploadMp4 = async (file) => {
+    if (!file) return;
+    const validTypes = ['video/mp4', 'video/quicktime', 'video/mov'];
+    if (!validTypes.includes(file.type)) { alert('Only MP4 files are supported.'); return; }
+    if (file.size > 500 * 1024 * 1024) { alert('File too large. Max 500MB.'); return; }
+
+    const id = `up-${Date.now()}`;
+    const sizeMb = (file.size / (1024*1024)).toFixed(1);
+    setUploads(u => [...u, { id, name: file.name, sizeMb, status: 'uploading', pct: 0 }]);
+
+    try {
+      const result = await db.uploadFile(supplierId, file, isAdmin, 'reels');
+      const newReel = {
+        source:   'mp4',
+        id:       result.image_id || `reel_${Date.now()}`,
+        url:      result.url,
+        path:     result.path,
+        caption:  file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80),
+        status:   result.status || 'pending',
+        sizeMb,
+        uploaded_at: new Date().toISOString(),
+      };
+      setReels(p => [...p, newReel]);
+      setUploads(u => u.map(x => x.id === id ? { ...x, status: 'done' } : x));
+      setTimeout(() => setUploads(u => u.filter(x => x.id !== id)), 4000);
+    } catch(e) {
+      setUploads(u => u.map(x => x.id === id ? { ...x, status: 'error', error: e.message } : x));
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const file = Array.from(e.dataTransfer.files).find(f => f.type.startsWith('video/'));
+    if (file) uploadMp4(file);
+  };
 
   return (
     <div className="fade-in">
+
+      {/* ── MP4 UPLOAD ──────────────────────────────────────────────── */}
+      <Card>
+        <Label>Upload MP4 directly</Label>
+        <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
+          Upload an MP4 recorded on any device. Max 500MB. Goes to Supabase Storage and plays directly in the property carousel.
+        </div>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+          onDragLeave={()=>setDragOver(false)}
+          onDrop={handleDrop}
+          style={{ border:`1.5px dashed ${dragOver?T.gold:T.border}`, borderRadius:10, padding:'28px 20px', textAlign:'center', background:dragOver?T.goldDim:'rgba(255,255,255,0.02)', transition:'all 0.15s', marginBottom:12 }}>
+          <div style={{ fontSize:28, marginBottom:8 }}>🎥</div>
+          <div style={{ fontSize:13, color:T.textMid, marginBottom:6 }}>Drag & drop an MP4 here</div>
+          <div style={{ fontSize:11, color:T.textDim, marginBottom:12 }}>Or click to browse</div>
+          <label style={{ background:`linear-gradient(135deg,${T.gold},${T.goldLight})`, color:'#0a0a0a', borderRadius:8, padding:'8px 20px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+            Choose file
+            <input type="file" accept="video/mp4,video/quicktime,video/mov" style={{ display:'none' }} onChange={e => { const f = e.target.files?.[0]; if(f) uploadMp4(f); e.target.value=''; }} />
+          </label>
+        </div>
+
+        {/* Upload progress */}
+        {uploads.length > 0 && (
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {uploads.map(u => (
+              <div key={u.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:T.bg3, border:`0.5px solid ${u.status==='error'?'rgba(248,113,113,0.3)':u.status==='done'?'rgba(74,222,128,0.3)':T.borderGold}`, borderRadius:8 }}>
+                <div style={{ fontSize:14 }}>{u.status==='uploading'?'⏳':u.status==='done'?'✓':'⚠'}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.name}</div>
+                  <div style={{ fontSize:10, color:u.status==='error'?T.red:u.status==='done'?T.green:T.amber, marginTop:1 }}>
+                    {u.status==='uploading' && `Uploading ${u.sizeMb}MB…`}
+                    {u.status==='done'      && `✓ Uploaded — ${u.sizeMb}MB`}
+                    {u.status==='error'     && (u.error || 'Upload failed')}
+                  </div>
+                </div>
+                {u.status==='error' && <Btn onClick={() => setUploads(p=>p.filter(x=>x.id!==u.id))} style={{padding:'2px 8px',fontSize:11}}>×</Btn>}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ── YOUTUBE REELS ───────────────────────────────────────────── */}
       <Card>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-          <Label>Property reels</Label>
-          <Btn variant="gold" onClick={()=>{setEditing(null);setShowPopup(true);}}>+ Add reel</Btn>
+          <Label>YouTube reels</Label>
+          <Btn variant="gold" onClick={()=>{setEditing(null);setShowYouTube(true);}}>+ Add YouTube reel</Btn>
         </div>
         <div style={{ fontSize:12, color:T.textDim, marginBottom:14, lineHeight:1.55 }}>
-          Paste a YouTube URL, trim to 5–15 seconds, set playback speed. These reels appear in the property carousel and can be set as the hero tile from the Overview tab.
+          Paste a YouTube URL, trim to 8–20 seconds, set playback speed. Used as the hero tile in the property carousel.
         </div>
+
+        {/* ── REEL LIST (both MP4 + YouTube) ── */}
         {reels.length === 0
-          ? <EmptyState icon="🎬" title="No reels yet" sub="Add a YouTube clip to bring this property to life" />
-          : reels.map((reel,i) => (
-            <div key={i} style={{ display:'flex', gap:12, alignItems:'center', padding:'10px 12px', background:T.bg3, border:`0.5px solid ${T.border}`, borderRadius:10, marginBottom:8 }}>
-              <div style={{ width:80, height:50, borderRadius:6, overflow:'hidden', flexShrink:0, background:'#111' }}>
-                {reel.thumbnail ? <img src={reel.thumbnail} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>▶</div>}
+          ? <EmptyState icon="🎬" title="No reels yet" sub="Upload an MP4 above or add a YouTube clip" />
+          : reels.map((reel, i) => {
+            const isMp4 = reel.source === 'mp4' || !!reel.url;
+            return (
+              <div key={i} style={{ display:'flex', gap:12, alignItems:'center', padding:'10px 12px', background:T.bg3, border:`0.5px solid ${T.border}`, borderRadius:10, marginBottom:8 }}>
+
+                {/* Thumbnail / preview */}
+                <div style={{ width:80, height:50, borderRadius:6, overflow:'hidden', flexShrink:0, background:'#111', position:'relative', cursor:isMp4?'pointer':'default' }}
+                  onClick={() => isMp4 && setPreview(reel.url)}>
+                  {!isMp4 && reel.thumbnail && <img src={reel.thumbnail} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />}
+                  {isMp4 && (
+                    <video src={reel.url} style={{ width:'100%', height:'100%', objectFit:'cover' }} muted playsInline preload="metadata" />
+                  )}
+                  <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.3)' }}>
+                    <span style={{ fontSize:18 }}>▶</span>
+                  </div>
+                  {isMp4 && <div style={{ position:'absolute', top:3, right:3, background:'rgba(0,0,0,0.7)', borderRadius:3, padding:'1px 5px', fontSize:8, color:'#fff', fontWeight:700 }}>MP4</div>}
+                </div>
+
+                {/* Info */}
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {reel.caption || reel.video_id || 'Untitled'}
+                  </div>
+                  <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>
+                    {isMp4
+                      ? `Direct upload · ${reel.sizeMb ? reel.sizeMb + 'MB · ' : ''}${reel.status === 'pending' ? '⏳ Pending review' : '✓ Live'}`
+                      : `YouTube · ${Math.round(reel.start||0)}s → ${Math.round(reel.end||0)}s · ${reel.speed||1}× · ${Math.round((reel.end||0)-(reel.start||0))}s clip`
+                    }
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                  {isMp4 && <Btn variant="blue" onClick={() => setPreview(reel.url)}>Preview</Btn>}
+                  {!isMp4 && <Btn onClick={() => { setEditing(reel); setShowYouTube(true); }}>Edit</Btn>}
+                  <Btn variant="danger" onClick={() => setReels(p => p.filter((_,idx) => idx !== i))}>Remove</Btn>
+                </div>
               </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:12, fontWeight:600, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{reel.caption||reel.video_id}</div>
-                <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{Math.round(reel.start)}s → {Math.round(reel.end)}s · {reel.speed}× · {Math.round(reel.end-reel.start)}s clip</div>
-              </div>
-              <div style={{ display:'flex', gap:6 }}>
-                <Btn onClick={()=>{setEditing(reel);setShowPopup(true);}}>Edit</Btn>
-                <Btn variant="danger" onClick={()=>setReels(p=>p.filter((_,idx)=>idx!==i))}>Remove</Btn>
-              </div>
-            </div>
-          ))
+            );
+          })
         }
       </Card>
 
-      {showPopup && (
+      {/* YouTube popup */}
+      {showYouTube && (
         <YouTubePopup
           existing={editing}
-          onClose={()=>{setShowPopup(false);setEditing(null);}}
+          onClose={() => { setShowYouTube(false); setEditing(null); }}
           onSave={reel => {
-            if (editing) setReels(p => p.map(r => r===editing ? reel : r));
+            if (editing) setReels(p => p.map(r => r === editing ? reel : r));
             else setReels(p => [...p, reel]);
-            setShowPopup(false); setEditing(null);
+            setShowYouTube(false); setEditing(null);
           }}
         />
+      )}
+
+      {/* MP4 preview lightbox */}
+      {preview && (
+        <div onClick={() => setPreview(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+          <div onClick={e => e.stopPropagation()} style={{ position:'relative', maxWidth:'85vw', maxHeight:'85vh' }}>
+            <video src={preview} controls autoPlay style={{ maxWidth:'85vw', maxHeight:'80vh', borderRadius:10 }} />
+            <button onClick={() => setPreview(null)}
+              style={{ position:'absolute', top:-12, right:-12, width:28, height:28, borderRadius:'50%', background:T.surface, border:`0.5px solid ${T.border}`, color:T.text, cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1292,7 +1417,7 @@ export default function ContentCMS({ supplierId, isAdmin = false }) {
               <div>
                 {tab==='overview' && <TabOverview supplier={supplier} images={images} reels={reels} heroType={heroType} setHeroType={setHeroType} locked={locked} setLocked={setLocked} isAdmin={isAdmin} slides={slides} previewSlide={previewSlide} setPreviewSlide={setPreviewSlide} />}
                 {tab==='gallery'  && <TabGallery  supplierId={supplierId} isAdmin={isAdmin} images={images} setImages={setImages} locked={locked} />}
-                {tab==='reels'    && <TabReels    reels={reels} setReels={setReels} />}
+                {tab==='reels'    && <TabReels    reels={reels} setReels={setReels} supplierId={supplierId} isAdmin={isAdmin} />}
                 {tab==='rooms'    && <TabRooms    supplierId={supplierId} isAdmin={isAdmin} />}
                 {tab==='activities' && <TabActivities supplierId={supplierId} supplier={supplier} isAdmin={isAdmin} />}
               </div>
