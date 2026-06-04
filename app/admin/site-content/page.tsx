@@ -59,7 +59,7 @@ const T = {
   green:      '#4ade80',
   amber:      '#fbbf24',
   red:        '#f87171',
-  fontSerif:  "'Playfair Display', serif",
+  fontSerif:  "'Cormorant Garamond', serif",
   fontSans:   "'DM Sans', sans-serif",
 };
 
