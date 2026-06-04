@@ -208,24 +208,85 @@ Return:
   } catch { return null; }
 }
 
-// ── Distribute nights proportionally across N regions ─────────────────────────
-function distributeNights(nightsTotal: number, regionCount: number): number[] {
-  // Default split rules — first region gets slightly more, equal otherwise
-  if (regionCount === 1) return [nightsTotal];
-  if (regionCount === 2) {
-    const a = Math.ceil(nightsTotal * 0.57); return [a, nightsTotal - a];
+// ── Smart night distribution ───────────────────────────────────────────────────
+// Algorithm:
+//   1. Assign minimum nights per region (non-negotiable rules)
+//   2. Score remaining nights by: avgGPperNight × seasonMultiplier × regionType
+//   3. Greedy allocation with 0.75 decay — prevents any single region dominating
+//
+// Example: Kruger + Okavango + Madikwe, 10 nights, July
+//   Minimums: 3+3+2 = 8. Remaining: 2.
+//   GP×Season scores: Okavango ~14,400 | Kruger ~10,080 | Madikwe ~6,000
+//   Night 1 → Okavango (scores: Okavango 10,800 | Kruger 10,080 | Madikwe 6,000)
+//   Night 2 → Kruger (scores: Okavango 10,800 | Kruger 7,560 | Madikwe 6,000)
+//   Result: Kruger 4 | Okavango 4 | Madikwe 2  ← earned by maths, not assumption
+
+const REGION_MINIMUMS: Record<string, number> = {
+  'kruger-sabi-sand': 3, 'okavango-delta': 3, 'cape-town': 3,
+  'madikwe': 2, 'chobe-vic-falls': 2, 'masai-mara': 3,
+  'bwindi': 2, 'phinda': 2, 'mozambique': 3,
+};
+
+const SEASON_PEAKS: Record<string, { peak: number[]; shoulder: number[] }> = {
+  'kruger-sabi-sand': { peak:[6,7,8,9],     shoulder:[4,5,10,11] },
+  'okavango-delta':   { peak:[7,8,9,10],    shoulder:[5,6,11]    },
+  'cape-town':        { peak:[11,12,1,2,3], shoulder:[10,4,9]    },
+  'madikwe':          { peak:[6,7,8,9],     shoulder:[4,5,10,11] },
+  'chobe-vic-falls':  { peak:[8,9,10],      shoulder:[6,7,11]    },
+  'masai-mara':       { peak:[7,8,9,10],    shoulder:[6,11]      },
+  'bwindi':           { peak:[6,7,12,1],    shoulder:[2,3,8,9]   },
+};
+
+// City regions: lower wildlife GP — penalise extra nights
+const REGION_TYPE_MULT: Record<string, number> = { 'cape-town': 0.55 };
+
+function distributeNights(
+  regions:      string[],
+  totalNights:  number,
+  suppliers:    any[],
+  checkinDate?: string,
+  marginHotels: number = 1.15,
+): number[] {
+  if (regions.length === 0) return [];
+  if (regions.length === 1) return [totalNights];
+
+  // Assign minimums
+  const minimums  = regions.map(r => REGION_MINIMUMS[r] ?? 2);
+  const minTotal  = minimums.reduce((a, b) => a + b, 0);
+  if (minTotal >= totalNights) return minimums;
+
+  const nights    = [...minimums];
+  let remaining   = totalNights - minTotal;
+
+  // Score each region using actual supplier data
+  const month = checkinDate ? new Date(checkinDate).getMonth() + 1 : 0;
+  const scores = regions.map(slug => {
+    const pool    = suppliers.filter((s: any) => s.region_slug === slug && s.is_active !== false);
+    const avgNet  = pool.length > 0
+      ? pool.reduce((s: number, p: any) => s + (Number(p.net_rate_per_night)    || 25000), 0) / pool.length
+      : 25000;
+    const avgDisp = pool.length > 0
+      ? pool.reduce((s: number, p: any) => s + (Number(p.display_rate_per_night) || Math.round(avgNet * marginHotels)), 0) / pool.length
+      : Math.round(avgNet * marginHotels);
+    const gpPerNight  = avgDisp - avgNet;
+    const sp          = SEASON_PEAKS[slug];
+    const seasonMult  = !month ? 1.0
+      : sp?.peak.includes(month)     ? 1.25
+      : sp?.shoulder.includes(month) ? 1.0
+      : 0.75;
+    const typeMult = REGION_TYPE_MULT[slug] ?? 1.0;
+    return gpPerNight * seasonMult * typeMult;
+  });
+
+  // Greedy allocation with diminishing returns
+  const decayScores = [...scores];
+  for (let i = 0; i < remaining; i++) {
+    const maxIdx = decayScores.indexOf(Math.max(...decayScores));
+    nights[maxIdx]++;
+    decayScores[maxIdx] *= 0.75;
   }
-  if (regionCount === 3) {
-    const a = Math.ceil(nightsTotal * 0.40);
-    const b = Math.ceil((nightsTotal - a) * 0.55);
-    return [a, b, nightsTotal - a - b];
-  }
-  // 4+: distribute evenly with remainder to first
-  const base = Math.floor(nightsTotal / regionCount);
-  const remainder = nightsTotal - (base * regionCount);
-  const arr = Array(regionCount).fill(base);
-  for (let i = 0; i < remainder; i++) arr[i]++;
-  return arr;
+
+  return nights;
 }
 
 // ── Order regions geographically (rough) for sensible routing ─────────────────
@@ -319,7 +380,7 @@ export async function POST(req: NextRequest) {
 
     if (effectiveRegions.length > 0) {
       // User explicitly chose regions — honour them, do NOT drop any
-      const nightSplit = distributeNights(effectiveNights, effectiveRegions.length);
+      const nightSplit = distributeNights(effectiveRegions, effectiveNights, suppliers, checkinDate, M.hotels);
       cities = effectiveRegions.map((slug: string, i: number) => defaultCityForRegion(slug, nightSplit[i]));
 
       // Verify city count matches region count — non-negotiable
