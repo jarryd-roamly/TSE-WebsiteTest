@@ -216,7 +216,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
     addTimer(addThought, 300);
   }, [thoughts, addTimer]);
 
-  useEffect(() => {
+useEffect(() => {
     if (!videosReady) return;
     loadClip(0, 'A');
     addTimer(() => setTitleVisible(false), 3200);
@@ -226,6 +226,20 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
         crossFadeTo(1);
         addTimer(() => setTitleVisible(false), 3200);
       }, CLIP_DURATION);
+    }
+    if (clips.length > 2) {
+      addTimer(() => {
+        setTitleVisible(true);
+        crossFadeTo(2);
+        addTimer(() => setTitleVisible(false), 3200);
+      }, CLIP_DURATION * 2);
+    }
+    if (clips.length > 3) {
+      addTimer(() => {
+        setTitleVisible(true);
+        crossFadeTo(3);
+        addTimer(() => setTitleVisible(false), 3200);
+      }, CLIP_DURATION * 3);
     }
     addTimer(() => { setCinematicDone(true); startThinking(); }, MIN_TOTAL);
   // eslint-disable-next-line react-hooks/exhaustive-deps
