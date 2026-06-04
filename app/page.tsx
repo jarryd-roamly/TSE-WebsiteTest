@@ -325,7 +325,7 @@ function getSlideKB(hotel: Hotel, slide: Slide, kbEntries: KBEntry[]): string | 
   return null;
 }
 
-function mapSupplierRow(s: any): Hotel {
+function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
   const netRate = Number(s.net_rate_per_night) || 25000;
   const displayRate = Number(s.display_rate_per_night) || Math.round(netRate * 1.15);
   let imageUrl = 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80';
@@ -359,7 +359,13 @@ function mapSupplierRow(s: any): Hotel {
     _images:extraSlides,
     _reels:(() => { try { return Array.isArray(s.reels) ? s.reels : (s.reels ? JSON.parse(s.reels) : []); } catch { return []; } })(),
     upgrades:{
-      rooms:[{label:'Standard Suite',extra:0,tier:0},{label:'Premium Suite',extra:Math.round(netRate*0.4),tier:1}],
+      rooms: roomTypes.length > 0
+        ? roomTypes.map((rt: any, i: number) => ({
+            label: rt.name,
+            extra: Math.max(0, Math.round((Number(rt.display_rate_per_night) || displayRate) - displayRate)),
+            tier:  i,
+          }))
+        : [{label:'Standard Suite',extra:0,tier:0},{label:'Premium Suite',extra:Math.round(netRate*0.4),tier:1}],
       basis:[{label:'All-inclusive',extra:0,tier:0}],
       flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:Math.round(netRate*0.08),tier:1}],
     },
@@ -1854,17 +1860,23 @@ const [selectedTheme, setSelectedTheme] = useState<string>('');
 
   const FACTUAL = /visa|weather|pack|when|best time|malaria|safe|flight time|how long|currency|season/i;
 
-  useEffect(() => {
+useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url||!key) { setSuppliersLoaded(true); return; }
-    const query = `${url}/rest/v1/suppliers?select=*&is_active=eq.true&region_slug=not.is.null&order=trust_score.desc&limit=100`;
-    fetch(query, { headers:{ apikey:key, Authorization:`Bearer ${key}` } })
-      .then(r => { if (!r.ok) throw new Error(`Supabase ${r.status}`); return r.json(); })
-      .then((rows: any[]) => {
+    const h = { apikey:key, Authorization:`Bearer ${key}` };
+    const suppliersQ  = `${url}/rest/v1/suppliers?select=*&is_active=eq.true&region_slug=not.is.null&order=trust_score.desc&limit=100`;
+    const roomTypesQ  = `${url}/rest/v1/room_types?select=id,supplier_id,name,display_rate_per_night,category,max_occupancy,bed_type,view&order=name.asc`;
+    Promise.all([
+      fetch(suppliersQ,  { headers:h }).then(r => r.ok ? r.json() : []),
+      fetch(roomTypesQ,  { headers:h }).then(r => r.ok ? r.json() : []),
+    ])
+      .then(([supplierRows, roomTypeRows]: [any[], any[]]) => {
         const OPERATOR_NAMES = ['Federal Air','Fastjet South Africa','Mack Air Botswana','Wilderness Air Botswana','Cape Town Airport Transfers'];
-        const lodges = rows.filter(r => r.country && r.name && r.supplier_type!=='operator' && !OPERATOR_NAMES.includes(r.name));
-        if (lodges.length>0) setHotels(lodges.map(mapSupplierRow));
+        const lodges = supplierRows.filter(r => r.country && r.name && r.supplier_type!=='operator' && !OPERATOR_NAMES.includes(r.name));
+        if (lodges.length > 0) {
+          setHotels(lodges.map(s => mapSupplierRow(s, roomTypeRows.filter((rt: any) => rt.supplier_id === s.id))));
+        }
         setSuppliersLoaded(true);
       })
       .catch(() => setSuppliersLoaded(true));
