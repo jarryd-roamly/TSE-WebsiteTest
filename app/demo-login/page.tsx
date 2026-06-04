@@ -34,7 +34,7 @@ export default function DemoLogin() {
       background: '#0a0a0a',
       fontFamily: "'DM Sans', sans-serif",
     }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600&family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
+      <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600;700&family=Jost:wght@300;400;500&display=swap" rel="stylesheet"/>
       <div style={{ textAlign: 'center', width: 320 }}>
         <div style={{
           width: 48, height: 48, borderRadius: 12,
@@ -45,7 +45,7 @@ export default function DemoLogin() {
         }}>✦</div>
 
         <p style={{
-          fontFamily: "'Playfair Display', serif",
+          fontFamily: "'Cormorant Garamond', serif",
           fontSize: 22, color: '#d4af37',
           marginBottom: 6, fontWeight: 700,
         }}>The Safari Edition</p>
