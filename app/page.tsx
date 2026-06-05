@@ -565,21 +565,22 @@ function ImageMiniChat({ hotel, slide, edition, onEscalate, onClose }: { hotel:H
 }
 function SectionLabel({ text, sub, noMargin }: { text:string; sub?:string; noMargin?:boolean }) {
   return (
-    <div style={{ marginBottom: noMargin ? 0 : 18 }}>
+    <div style={{ marginBottom: noMargin ? 0 : 20 }}>
       <div style={{
-        fontSize: 10,
-        color: 'rgba(245,240,232,0.55)',
-        letterSpacing: '0.26em',
-        textTransform: 'uppercase' as const,
+        fontFamily: "'Cormorant Garamond',serif",
+        fontSize: 20,
         fontWeight: 300,
+        color: 'rgba(245,240,232,0.85)',
+        letterSpacing: '0.01em',
+        lineHeight: 1.2,
       }}>{text}</div>
       {sub && (
         <div style={{
-          fontSize: 11,
-          color: 'rgba(245,240,232,0.26)',
-          marginTop: 5,
+          fontSize: 12,
+          color: 'rgba(245,240,232,0.35)',
+          marginTop: 6,
           fontWeight: 200,
-          letterSpacing: '0.04em',
+          letterSpacing: '0.03em',
         }}>{sub}</div>
       )}
     </div>
@@ -1815,7 +1816,9 @@ const toggleRegion = (id: string) => {
     setSelectedRegions(prev => prev.includes(id) ? prev.filter(r=>r!==id) : [...prev.filter(r=>r!=='inspire-me'), id]);
   };
          
-const [selectedTheme, setSelectedTheme] = useState<string>('');
+const [selectedThemes, setSelectedThemes] = useState<string[]>([]);
+const toggleTheme = (id: string) =>
+  setSelectedThemes(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
          const [panelFade, setPanelFade] = useState(true);
   const [budget, setBudget] = useState(230000);
 
@@ -2229,7 +2232,8 @@ const runSocraticPlanner = () => {
       origin: needsIntlFlight ? intlOrigin : origin,
       flightIntent: flightIntent || 'flexible',
       checkinDate: checkinDate || undefined,
-      theme: selectedTheme || undefined,
+      theme: selectedThemes[0] || undefined,
+      themes: selectedThemes,
     }, 'socratic');
   };
 
@@ -2342,7 +2346,24 @@ const runBriefPlanner = (briefText: string) => {
      {/* LANDING */}
 {screen === 'landing' && (
         <LandingHero
-          onPlanJourney={() => setScreen('inspire-input')}
+          onPlanJourney={() => {
+            // Reset all form state so every journey starts fresh
+            setSelectedRegions([]);
+            setSelectedThemes([]);
+            setNights(7);
+            setBudget(230000);
+            setAdults(2);
+            setChildren(0);
+            setInfants(0);
+            setFlightIntent(null);
+            setGatewayPreference('open_jaw');
+            setCheckinDate('');
+            setDateMode('specific');
+            setFlexMonth('');
+            setIntlOrigin('LHR');
+            setOrigin('JNB');
+            setScreen('inspire-input');
+          }}
           onCuratedJourneys={() => setScreen('curated')}
           onSendBrief={() => setScreen('my-brief')}
           currency={currency}
@@ -2580,93 +2601,53 @@ const runBriefPlanner = (briefText: string) => {
     <Nav {...navProps} />
     <div className="inspire-split">
 
-      {/* ── LEFT — FORM ──────────────────────────────────────────────────── */}
-      <div
-        className="fade-up inspire-form"
-        style={{ padding: 'clamp(40px,6vh,72px) clamp(24px,5vw,60px) 120px' }}
-      >
+      {/* ── LEFT FORM ────────────────────────────────────────────────── */}
+      <div className="fade-up inspire-form" style={{ padding:'clamp(40px,6vh,72px) clamp(24px,5vw,60px) 120px' }}>
 
-        {/* Back */}
+        {/* Back to home — resets state */}
         <button
-          onClick={() => setScreen('landing')}
-          style={{
-            background: 'transparent', border: 'none',
-            color: 'rgba(245,240,232,0.28)', fontSize: 11,
-            cursor: 'pointer', fontFamily: 'inherit',
-            marginBottom: 52, letterSpacing: '0.18em',
-            padding: 0, display: 'flex', alignItems: 'center', gap: 8,
+          onClick={() => {
+            setSelectedRegions([]); setSelectedThemes([]); setNights(7); setBudget(230000);
+            setAdults(2); setChildren(0); setInfants(0); setFlightIntent(null);
+            setCheckinDate(''); setDateMode('specific'); setFlexMonth('');
+            setScreen('landing');
           }}
+          style={{ background:'transparent', border:'none', color:'rgba(245,240,232,0.32)', fontSize:12, cursor:'pointer', fontFamily:'inherit', marginBottom:48, letterSpacing:'0.16em', padding:0, display:'flex', alignItems:'center', gap:8 }}
         >
-          ← &nbsp;Back
+          ← &nbsp;Home
         </button>
 
         {/* Header */}
-        <div style={{ marginBottom: 56 }}>
-          <div style={{
-            fontSize: 9, color: T.gold, letterSpacing: '0.44em',
-            textTransform: 'uppercase' as const, fontWeight: 200,
-            marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14,
-          }}>
-            <span style={{ display: 'inline-block', width: 28, height: '0.5px', background: T.gold, opacity: 0.5, flexShrink: 0 }} />
+        <div style={{ marginBottom:52 }}>
+          <div style={{ fontSize:9, color:T.gold, letterSpacing:'0.44em', textTransform:'uppercase' as const, fontWeight:200, marginBottom:20, display:'flex', alignItems:'center', gap:14 }}>
+            <span style={{ display:'inline-block', width:28, height:'0.5px', background:T.gold, opacity:0.5, flexShrink:0 }} />
             Plan your journey
           </div>
-          <h2 style={{
-            fontFamily: "'Cormorant Garamond',serif",
-            fontSize: 'clamp(40px,5.5vw,60px)',
-            fontWeight: 300, marginBottom: 18,
-            color: T.text, lineHeight: 0.95, letterSpacing: '-0.01em',
-          }}>
+          <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(42px,5.5vw,62px)', fontWeight:300, marginBottom:18, color:T.text, lineHeight:0.95, letterSpacing:'-0.01em' }}>
             Tell us about<br />
-            <em style={{ color: 'rgba(212,175,55,0.88)', fontStyle: 'italic' }}>your dream safari</em>
+            <em style={{ color:'rgba(212,175,55,0.88)', fontStyle:'italic' }}>your dream safari</em>
           </h2>
-          <p style={{
-            fontSize: 13, color: 'rgba(245,240,232,0.36)',
-            lineHeight: 1.9, fontWeight: 200, maxWidth: 400, letterSpacing: '0.025em',
-          }}>
+          <p style={{ fontSize:14, color:'rgba(245,240,232,0.42)', lineHeight:1.9, fontWeight:200, maxWidth:420, letterSpacing:'0.02em' }}>
             Five questions. A fully-priced, bookable itinerary built in minutes.
           </p>
         </div>
 
-        {/* ── 1. DESTINATION ─────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 44 }}>
+        {/* ── 1. DESTINATION ─────────────────────────────────────────── */}
+        <div style={{ marginBottom:44 }}>
           <SectionLabel text="Where would you like to go?" sub="Select one or more — or let us inspire you" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             {REGIONS.map(r => {
-              const isActive = r.id === 'inspire-me'
-                ? selectedRegions.length === 0
-                : selectedRegions.includes(r.id);
+              const isActive = r.id==='inspire-me' ? selectedRegions.length===0 : selectedRegions.includes(r.id);
               return (
-                <button
-                  key={r.id}
-                  onClick={() => toggleRegion(r.id)}
-                  style={{
-                    padding: '16px 20px',
-                    borderRadius: 8,
-                    border: `0.5px solid ${isActive ? T.gold : 'rgba(255,255,255,0.08)'}`,
-                    background: isActive ? T.goldDim : 'transparent',
-                    color: isActive ? T.gold : 'rgba(245,240,232,0.5)',
-                    fontSize: isActive ? 15 : 13,
-                    fontFamily: isActive ? "'Cormorant Garamond',serif" : 'inherit',
-                    fontWeight: isActive ? 400 : 300,
-                    fontStyle: isActive ? 'italic' : 'normal',
-                    cursor: 'pointer',
-                    textAlign: 'left' as const,
-                    letterSpacing: isActive ? '0.02em' : '0.04em',
-                    transition: 'all 0.2s',
-                  }}
-                >
+                <button key={r.id} onClick={()=>toggleRegion(r.id)}
+                  style={{ padding:'17px 20px', borderRadius:8, border:`0.5px solid ${isActive?T.gold:'rgba(255,255,255,0.22)'}`, background:isActive?T.goldDim:'rgba(255,255,255,0.03)', color:isActive?T.gold:'rgba(245,240,232,0.92)', fontSize:isActive?16:14, fontFamily:isActive?"'Cormorant Garamond',serif":'inherit', fontWeight:isActive?400:300, fontStyle:isActive?'italic':'normal', cursor:'pointer', textAlign:'left' as const, letterSpacing:isActive?'0.02em':'0.03em', transition:'all 0.2s' }}>
                   {r.label}
                 </button>
               );
             })}
           </div>
-          {selectedRegions.length > 1 && (
-            <div style={{
-              marginTop: 12, fontSize: 11, color: T.gold,
-              background: T.goldDim, border: `0.5px solid ${T.borderGold}`,
-              borderRadius: 8, padding: '8px 14px', fontWeight: 300,
-              letterSpacing: '0.04em',
-            }}>
+          {selectedRegions.length>1 && (
+            <div style={{ marginTop:12, fontSize:12, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'8px 14px', fontWeight:300, letterSpacing:'0.04em' }}>
               ✦ &nbsp;{selectedRegions.length} regions — multi-destination journey
             </div>
           )}
@@ -2674,101 +2655,62 @@ const runBriefPlanner = (briefText: string) => {
 
         <InputDivider />
 
-        {/* ── 2. INTERNATIONAL FLIGHTS ───────────────────────────────────── */}
-        <div style={{ marginBottom: 44 }}>
+        {/* ── 2. INTERNATIONAL FLIGHTS ───────────────────────────────── */}
+        <div style={{ marginBottom:44 }}>
           <SectionLabel text="International flights" />
-          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+          <div style={{ display:'flex', flexDirection:'column' as const, gap:10 }}>
             {([
-              { val: 'include'  as const, title: 'Find flights for me',  sub: "We'll search and include your international flights in the package" },
-              { val: 'own'      as const, title: "I've already booked",   sub: 'Share your arrival details so we can plan around your schedule' },
-              { val: 'flexible' as const, title: 'Dates still flexible', sub: 'Your Journey Specialist will find the best fares once dates are confirmed' },
+              { val:'include'  as const, title:'Find flights for me',  sub:"We'll search and include your international flights in the package" },
+              { val:'own'      as const, title:"I've already booked",   sub:'Share your arrival details so we can plan around your schedule' },
+              { val:'flexible' as const, title:'Dates still flexible', sub:'Your Journey Specialist will find the best fares once dates are confirmed' },
             ]).map(opt => {
-              const isSel = flightIntent === opt.val;
+              const isSel = flightIntent===opt.val;
               return (
-                <button
-                  key={opt.val}
-                  onClick={() => {
-                    setFlightIntent(opt.val);
-                    setNeedsIntlFlight(opt.val === 'include');
-                    setIncludeIntlFlight(opt.val === 'include');
-                  }}
-                  style={{
-                    padding: '14px 18px', borderRadius: 10,
-                    textAlign: 'left' as const,
-                    border: `0.5px solid ${isSel ? T.gold : 'rgba(255,255,255,0.08)'}`,
-                    background: isSel ? T.goldDim : 'rgba(255,255,255,0.015)',
-                    cursor: 'pointer', fontFamily: 'inherit',
-                    display: 'flex', alignItems: 'flex-start', gap: 14,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <div style={{
-                    width: 16, height: 16, borderRadius: '50%',
-                    border: `1.5px solid ${isSel ? T.gold : 'rgba(255,255,255,0.18)'}`,
-                    flexShrink: 0, marginTop: 2,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'all 0.15s',
-                  }}>
-                    {isSel && <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.gold }} />}
+                <button key={opt.val}
+                  onClick={() => { setFlightIntent(opt.val); setNeedsIntlFlight(opt.val==='include'); setIncludeIntlFlight(opt.val==='include'); }}
+                  style={{ padding:'15px 18px', borderRadius:10, textAlign:'left' as const, border:`0.5px solid ${isSel?T.gold:'rgba(255,255,255,0.15)'}`, background:isSel?T.goldDim:'rgba(255,255,255,0.02)', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'flex-start', gap:14, transition:'all 0.15s' }}>
+                  <div style={{ width:16, height:16, borderRadius:'50%', border:`1.5px solid ${isSel?T.gold:'rgba(255,255,255,0.3)'}`, flexShrink:0, marginTop:2, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s' }}>
+                    {isSel && <div style={{ width:6, height:6, borderRadius:'50%', background:T.gold }} />}
                   </div>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: isSel ? 400 : 300, color: isSel ? T.gold : T.text, marginBottom: 3 }}>{opt.title}</div>
-                    <div style={{ fontSize: 11, color: 'rgba(245,240,232,0.32)', lineHeight: 1.55, fontWeight: 200 }}>{opt.sub}</div>
+                    <div style={{ fontSize:14, fontWeight:isSel?400:300, color:isSel?T.gold:T.text, marginBottom:3 }}>{opt.title}</div>
+                    <div style={{ fontSize:12, color:'rgba(245,240,232,0.38)', lineHeight:1.55, fontWeight:200 }}>{opt.sub}</div>
                   </div>
                 </button>
               );
             })}
           </div>
-
-          {flightIntent === 'include' && (
-            <div style={{ marginTop: 14, paddingTop: 16, borderTop: `0.5px solid rgba(255,255,255,0.06)` }}>
-              <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.18em', fontWeight: 300, marginBottom: 8 }}>Flying from</div>
-              <select
-                value={intlOrigin}
-                onChange={e => setIntlOrigin(e.target.value)}
-                style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: `0.5px solid rgba(255,255,255,0.1)`, color: T.text, borderRadius: 8, padding: '12px 14px', fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 14, cursor: 'pointer' }}
-              >
-                {INTERNATIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
+          {flightIntent==='include' && (
+            <div style={{ marginTop:14, paddingTop:16, borderTop:'0.5px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:8 }}>Flying from</div>
+              <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.12)', color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit', marginBottom:14, cursor:'pointer' }}>
+                {INTERNATIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
               </select>
-              <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.18em', fontWeight: 300, marginBottom: 10 }}>Gateway preference</div>
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:10 }}>Gateway preference</div>
+              <div style={{ display:'flex', flexDirection:'column' as const, gap:8 }}>
                 {([
-                  { val: 'open_jaw' as const, label: 'Cheapest combination', sub: 'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
-                  { val: 'return'   as const, label: 'Same airport in and out', sub: 'e.g. LHR → JNB → LHR' },
+                  { val:'open_jaw' as const, label:'Cheapest combination', sub:'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
+                  { val:'return'   as const, label:'Same airport in and out', sub:'e.g. LHR → JNB → LHR' },
                 ]).map(opt => (
-                  <button
-                    key={opt.val}
-                    onClick={() => setGatewayPreference(opt.val)}
-                    style={{
-                      padding: '11px 14px', borderRadius: 8, textAlign: 'left' as const,
-                      border: `0.5px solid ${gatewayPreference === opt.val ? T.gold : 'rgba(255,255,255,0.08)'}`,
-                      background: gatewayPreference === opt.val ? T.goldDim : 'transparent',
-                      cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-                    }}
-                  >
-                    <div style={{ fontSize: 12, color: gatewayPreference === opt.val ? T.gold : T.text, fontWeight: 400 }}>{opt.label}</div>
-                    <div style={{ fontSize: 10, color: T.textDim, marginTop: 2, fontWeight: 200 }}>{opt.sub}</div>
+                  <button key={opt.val} onClick={()=>setGatewayPreference(opt.val)}
+                    style={{ padding:'12px 14px', borderRadius:8, textAlign:'left' as const, border:`0.5px solid ${gatewayPreference===opt.val?T.gold:'rgba(255,255,255,0.12)'}`, background:gatewayPreference===opt.val?T.goldDim:'transparent', cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
+                    <div style={{ fontSize:13, color:gatewayPreference===opt.val?T.gold:T.text, fontWeight:400 }}>{opt.label}</div>
+                    <div style={{ fontSize:11, color:T.textDim, marginTop:2, fontWeight:200 }}>{opt.sub}</div>
                   </button>
                 ))}
               </div>
             </div>
           )}
-
-          {flightIntent === 'own' && (
-            <div style={{ marginTop: 14, paddingTop: 16, borderTop: `0.5px solid rgba(255,255,255,0.06)` }}>
-              <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.18em', fontWeight: 300, marginBottom: 8 }}>Arriving into</div>
-              <select
-                value={origin}
-                onChange={e => setOrigin(e.target.value)}
-                style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: `0.5px solid rgba(255,255,255,0.1)`, color: T.text, borderRadius: 8, padding: '12px 14px', fontSize: 13, outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}
-              >
-                {REGIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
+          {flightIntent==='own' && (
+            <div style={{ marginTop:14, paddingTop:16, borderTop:'0.5px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:8 }}>Arriving into</div>
+              <select value={origin} onChange={e=>setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.12)', color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
+                {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
               </select>
             </div>
           )}
-
-          {flightIntent === 'flexible' && (
-            <div style={{ marginTop: 12, background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 9, padding: '12px 16px', fontSize: 12, color: T.textDim, lineHeight: 1.7, fontWeight: 200 }}>
+          {flightIntent==='flexible' && (
+            <div style={{ marginTop:12, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:9, padding:'12px 16px', fontSize:13, color:T.textDim, lineHeight:1.7, fontWeight:200 }}>
               Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
             </div>
           )}
@@ -2776,80 +2718,59 @@ const runBriefPlanner = (briefText: string) => {
 
         <InputDivider />
 
-        {/* ── 3. JOURNEY THEME ───────────────────────────────────────────── */}
-        <div style={{ marginBottom: 44 }}>
-          <SectionLabel text="Journey theme" sub="Optional — personalises your recommendations" />
-          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8 }}>
+        {/* ── 3. JOURNEY THEME — multi-select ────────────────────────── */}
+        <div style={{ marginBottom:44 }}>
+          <SectionLabel text="Journey theme" sub="Select all that apply — we'll personalise your recommendations" />
+          <div style={{ display:'flex', flexWrap:'wrap' as const, gap:8 }}>
             {([
-              { id: 'honeymoon',   label: 'Honeymoon'    },
-              { id: 'anniversary', label: 'Anniversary'  },
-              { id: 'family',      label: 'Family'       },
-              { id: 'adventure',   label: 'Adventure'    },
-              { id: 'bucket-list', label: 'Bucket List'  },
-              { id: 'returning',   label: 'Return Visit' },
+              { id:'honeymoon',   label:'Honeymoon'    },
+              { id:'anniversary', label:'Anniversary'  },
+              { id:'family',      label:'Family'       },
+              { id:'adventure',   label:'Adventure'    },
+              { id:'bucket-list', label:'Bucket List'  },
+              { id:'returning',   label:'Return Visit' },
             ] as {id:string;label:string}[]).map(t => {
-              const active = selectedTheme === t.id;
+              const active = selectedThemes.includes(t.id);
               return (
-                <button
-                  key={t.id}
-                  onClick={() => setSelectedTheme(active ? '' : t.id)}
-                  style={{
-                    padding: '10px 20px', borderRadius: 2,
-                    border: `0.5px solid ${active ? T.gold : 'rgba(255,255,255,0.1)'}`,
-                    background: active ? T.goldDim : 'transparent',
-                    color: active ? T.gold : 'rgba(245,240,232,0.4)',
-                    fontSize: 12, fontWeight: 300, cursor: 'pointer',
-                    fontFamily: 'inherit', letterSpacing: '0.1em',
-                    textTransform: 'uppercase' as const,
-                    transition: 'all 0.15s',
-                  }}
-                >
+                <button key={t.id} onClick={()=>toggleTheme(t.id)}
+                  style={{ padding:'10px 20px', borderRadius:2, border:`0.5px solid ${active?T.gold:'rgba(255,255,255,0.18)'}`, background:active?T.goldDim:'transparent', color:active?T.gold:'rgba(245,240,232,0.75)', fontSize:12, fontWeight:300, cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.1em', textTransform:'uppercase' as const, transition:'all 0.15s' }}>
+                  {active && <span style={{ marginRight:5, fontSize:10 }}>✦</span>}
                   {t.label}
                 </button>
               );
             })}
           </div>
+          {selectedThemes.length > 1 && (
+            <div style={{ marginTop:10, fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'6px 12px', fontWeight:300 }}>
+              {selectedThemes.length} themes selected — your itinerary will reflect all of them
+            </div>
+          )}
         </div>
 
         <InputDivider />
 
-        {/* ── 4. TRAVELLERS ──────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 44 }}>
+        {/* ── 4. TRAVELLERS ──────────────────────────────────────────── */}
+        <div style={{ marginBottom:44 }}>
           <SectionLabel text="Who's travelling?" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:14 }}>
             {([
-              { label: 'Adults',   sub: '\u00a0',    value: adults,   set: setAdults,   min: 1 },
-              { label: 'Children', sub: 'Ages 2–17', value: children, set: setChildren, min: 0 },
-              { label: 'Infants',  sub: 'Under 2',   value: infants,  set: setInfants,  min: 0 },
+              { label:'Adults',   sub:'\u00a0',    value:adults,   set:setAdults,   min:1 },
+              { label:'Children', sub:'Ages 2–17', value:children, set:setChildren, min:0 },
+              { label:'Infants',  sub:'Under 2',   value:infants,  set:setInfants,  min:0 },
             ]).map(p => (
               <div key={p.label}>
-                <div style={{ fontSize: 9, fontWeight: 300, letterSpacing: '0.22em', color: 'rgba(245,240,232,0.38)', textTransform: 'uppercase' as const, marginBottom: 2 }}>{p.label}</div>
-                <div style={{ fontSize: 9, color: 'rgba(245,240,232,0.24)', marginBottom: 10, minHeight: 13, fontWeight: 200 }}>{p.sub}</div>
-                <div style={{
-                  display: 'flex', alignItems: 'center',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: `0.5px solid rgba(255,255,255,0.08)`,
-                  borderRadius: 8, overflow: 'hidden', height: 52,
-                }}>
-                  <button
-                    onClick={() => p.set(Math.max(p.min, p.value - 1))}
-                    style={{ width: 44, height: 52, border: 'none', background: 'transparent', color: p.value > p.min ? T.text : 'rgba(255,255,255,0.15)', fontSize: 20, cursor: p.value > p.min ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}
-                  >−</button>
-                  <div style={{
-                    flex: 1, textAlign: 'center' as const,
-                    fontFamily: "'Cormorant Garamond',serif",
-                    fontSize: 26, fontWeight: 300, color: T.text,
-                  }}>{p.value}</div>
-                  <button
-                    onClick={() => p.set(p.value + 1)}
-                    style={{ width: 44, height: 52, border: 'none', background: 'transparent', color: T.text, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}
-                  >+</button>
+                <div style={{ fontSize:10, fontWeight:300, letterSpacing:'0.22em', color:'rgba(245,240,232,0.5)', textTransform:'uppercase' as const, marginBottom:2 }}>{p.label}</div>
+                <div style={{ fontSize:10, color:'rgba(245,240,232,0.3)', marginBottom:10, minHeight:14, fontWeight:200 }}>{p.sub}</div>
+                <div style={{ display:'flex', alignItems:'center', background:'rgba(255,255,255,0.03)', border:'0.5px solid rgba(255,255,255,0.1)', borderRadius:8, overflow:'hidden', height:52 }}>
+                  <button onClick={()=>p.set(Math.max(p.min,p.value-1))} style={{ width:44, height:52, border:'none', background:'transparent', color:p.value>p.min?T.text:'rgba(255,255,255,0.15)', fontSize:20, cursor:p.value>p.min?'pointer':'default', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>−</button>
+                  <div style={{ flex:1, textAlign:'center' as const, fontFamily:"'Cormorant Garamond',serif", fontSize:26, fontWeight:300, color:T.text }}>{p.value}</div>
+                  <button onClick={()=>p.set(p.value+1)} style={{ width:44, height:52, border:'none', background:'transparent', color:T.text, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>+</button>
                 </div>
               </div>
             ))}
           </div>
-          {infants > 0 && (
-            <div style={{ marginTop: 14, background: 'rgba(251,191,36,0.05)', border: '0.5px solid rgba(251,191,36,0.18)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: T.amber, lineHeight: 1.65, fontWeight: 200 }}>
+          {infants>0 && (
+            <div style={{ marginTop:14, background:'rgba(251,191,36,0.05)', border:'0.5px solid rgba(251,191,36,0.18)', borderRadius:8, padding:'10px 14px', fontSize:13, color:T.amber, lineHeight:1.65, fontWeight:200 }}>
               Some camps restrict under-5s on open game drives — we'll flag this and suggest malaria-free alternatives.
             </div>
           )}
@@ -2857,44 +2778,24 @@ const runBriefPlanner = (briefText: string) => {
 
         <InputDivider />
 
-        {/* ── 5. DATES ───────────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 44 }}>
+        {/* ── 5. DATES ───────────────────────────────────────────────── */}
+        <div style={{ marginBottom:44 }}>
           <SectionLabel text="When are you travelling?" />
-          <DateSelector
-            checkinDate={checkinDate} setCheckinDate={setCheckinDate}
-            dateMode={dateMode} setDateMode={setDateMode}
-            flexMonth={flexMonth} setFlexMonth={setFlexMonth}
-            windowStart={windowStart} setWindowStart={setWindowStart}
-            windowEnd={windowEnd} setWindowEnd={setWindowEnd}
-            nights={nights}
-          />
+          <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
         </div>
 
         <InputDivider />
 
-        {/* ── 6. TRIP LENGTH ─────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 44 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
+        {/* ── 6. TRIP LENGTH ─────────────────────────────────────────── */}
+        <div style={{ marginBottom:44 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:18 }}>
             <SectionLabel text="Trip length" noMargin />
-            <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 28, fontWeight: 300, color: T.text }}>
-              {nights} <span style={{ fontSize: 14, color: T.textDim, fontFamily: 'inherit' }}>nights</span>
-            </span>
+            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:30, fontWeight:300, color:T.text }}>{nights} <span style={{ fontSize:15, color:T.textDim }}>nights</span></span>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-            {[5, 7, 10, 12, 14, 21].map(n => (
-              <button
-                key={n}
-                onClick={() => setNights(n)}
-                style={{
-                  padding: '10px 22px', borderRadius: 8,
-                  border: `0.5px solid ${nights === n ? T.gold : 'rgba(255,255,255,0.08)'}`,
-                  background: nights === n ? T.goldDim : 'transparent',
-                  color: nights === n ? T.gold : 'rgba(245,240,232,0.45)',
-                  fontSize: 13, fontWeight: 300, cursor: 'pointer',
-                  fontFamily: 'inherit', letterSpacing: '0.04em',
-                  transition: 'all 0.15s',
-                }}
-              >
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' as const }}>
+            {[5,7,10,12,14,21].map(n => (
+              <button key={n} onClick={()=>setNights(n)}
+                style={{ padding:'11px 24px', borderRadius:8, border:`0.5px solid ${nights===n?T.gold:'rgba(255,255,255,0.18)'}`, background:nights===n?T.goldDim:'transparent', color:nights===n?T.gold:'rgba(245,240,232,0.75)', fontSize:14, fontWeight:300, cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em', transition:'all 0.15s' }}>
                 {n}n
               </button>
             ))}
@@ -2903,134 +2804,101 @@ const runBriefPlanner = (briefText: string) => {
 
         <InputDivider />
 
-        {/* ── 7. BUDGET ──────────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 52 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
+        {/* ── 7. BUDGET ──────────────────────────────────────────────── */}
+        <div style={{ marginBottom:52 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:6 }}>
             <SectionLabel text="Total budget" noMargin />
-            <div style={{ textAlign: 'right' as const }}>
-              <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 36, fontWeight: 300, color: T.gold, lineHeight: 1 }}>
-                {fmt(budget)}
-              </div>
-              {adults > 0 && (
-                <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.28)', marginTop: 3, fontWeight: 200, letterSpacing: '0.06em' }}>
-                  approx {fmt(Math.round(budget / adults))} per person
-                </div>
-              )}
+            <div style={{ textAlign:'right' as const }}>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:38, fontWeight:300, color:T.gold, lineHeight:1 }}>{fmt(budget)}</div>
+              {adults>0 && <div style={{ fontSize:11, color:'rgba(245,240,232,0.28)', marginTop:4, fontWeight:200, letterSpacing:'0.06em' }}>approx {fmt(Math.round(budget/adults))} per person</div>}
             </div>
           </div>
-          <div style={{ paddingTop: 18 }}>
-            <input
-              type="range"
-              className="budget-range"
-              min={20000} max={2000000} step={10000}
-              value={budget}
-              onChange={e => setBudget(+e.target.value)}
-              style={{ width: '100%' }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-              <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.22)', fontWeight: 200 }}>{fmt(20000)}</span>
-              <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.22)', fontWeight: 200 }}>{fmt(2000000)}</span>
+          <div style={{ paddingTop:18 }}>
+            <input type="range" className="budget-range" min={20000} max={2000000} step={10000} value={budget} onChange={e=>setBudget(+e.target.value)} style={{ width:'100%' }} />
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:6 }}>
+              <span style={{ fontSize:11, color:'rgba(245,240,232,0.25)', fontWeight:200 }}>{fmt(20000)}</span>
+              <span style={{ fontSize:11, color:'rgba(245,240,232,0.25)', fontWeight:200 }}>{fmt(2000000)}</span>
             </div>
+          </div>
+          <div style={{ marginTop:14, padding:'10px 14px', background:'rgba(255,255,255,0.03)', border:'0.5px solid rgba(255,255,255,0.08)', borderRadius:8, fontSize:11, color:'rgba(245,240,232,0.32)', lineHeight:1.65, fontWeight:200 }}>
+            * Budget covers lodges, domestic flights, transfers and activities. International flight costs are calculated separately in the next step.
           </div>
         </div>
 
-        {/* ── BUILD BUTTON ───────────────────────────────────────────────── */}
-        <button
-          className="btn-gold"
-          style={{ width: '100%', padding: '18px 24px', fontSize: 14, letterSpacing: '0.1em', borderRadius: 4 }}
-          onClick={runSocraticPlanner}
-        >
+        {/* ── BUILD BUTTON ───────────────────────────────────────────── */}
+        <button className="btn-gold" style={{ width:'100%', padding:'18px 24px', fontSize:15, letterSpacing:'0.1em', borderRadius:4 }} onClick={runSocraticPlanner}>
           ✦ &nbsp; Build My Itinerary
         </button>
-        <p style={{ textAlign: 'center' as const, fontSize: 11, color: 'rgba(245,240,232,0.2)', marginTop: 12, letterSpacing: '0.08em', fontWeight: 200 }}>
+        <p style={{ textAlign:'center' as const, fontSize:12, color:'rgba(245,240,232,0.2)', marginTop:12, letterSpacing:'0.08em', fontWeight:200 }}>
           Itinerary built in minutes · Fully priced · No commitment
         </p>
 
       </div>{/* end inspire-form */}
 
-      {/* ── RIGHT — ATMOSPHERIC PANEL ──────────────────────────────────────── */}
+      {/* ── RIGHT PANEL ──────────────────────────────────────────────── */}
       <div className="inspire-panel">
-        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-
-          <div style={{ position: 'absolute', inset: 0, opacity: panelFade ? 1 : 0, transition: 'opacity 0.4s ease' }}>
-            {selectedRegions.length <= 1 ? (() => {
-              const slug     = selectedRegions.length === 1 ? (REGIONS.find(r => r.id === selectedRegions[0])?.slug ?? '') : '';
+        <div style={{ position:'relative', width:'100%', height:'100%', overflow:'hidden' }}>
+          <div style={{ position:'absolute', inset:0, opacity:panelFade?1:0, transition:'opacity 0.4s ease' }}>
+            {selectedRegions.length<=1 ? (()=>{
+              const slug    = selectedRegions.length===1?(REGIONS.find(r=>r.id===selectedRegions[0])?.slug??''):'';
               const videoSrc = regionVideoMap[slug];
-              const imgSrc   = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
-              return videoSrc ? (
-                <video key={videoSrc} src={videoSrc} autoPlay muted loop playsInline
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${imgSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+              const imgSrc   = regionImageMap[slug]||REGION_DEFAULT_IMAGE;
+              return videoSrc?(
+                <video key={videoSrc} src={videoSrc} autoPlay muted loop playsInline style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} />
+              ):(
+                <div style={{ position:'absolute', inset:0, backgroundImage:`url(${imgSrc})`, backgroundSize:'cover', backgroundPosition:'center' }} />
               );
-            })() : (
-              selectedRegions.map((id, idx) => {
-                const slug = REGIONS.find(r => r.id === id)?.slug ?? '';
-                const img  = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
-                const pct  = 100 / selectedRegions.length;
+            })():(
+              selectedRegions.map((id,idx)=>{
+                const slug = REGIONS.find(r=>r.id===id)?.slug??'';
+                const img  = regionImageMap[slug]||REGION_DEFAULT_IMAGE;
+                const pct  = 100/selectedRegions.length;
                 return (
-                  <div key={id} style={{ position: 'absolute', left: 0, right: 0, top: `${idx * pct}%`, height: `${pct}%`, overflow: 'hidden' }}>
-                    {regionVideoMap[slug] ? (
-                      <video key={regionVideoMap[slug]} src={regionVideoMap[slug]} autoPlay muted loop playsInline
-                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.05)' }} />
-                    ) : (
-                      <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${img})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: 'scale(1.05)' }} />
+                  <div key={id} style={{ position:'absolute', left:0, right:0, top:`${idx*pct}%`, height:`${pct}%`, overflow:'hidden' }}>
+                    {regionVideoMap[slug]?(
+                      <video key={regionVideoMap[slug]} src={regionVideoMap[slug]} autoPlay muted loop playsInline style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', transform:'scale(1.05)' }} />
+                    ):(
+                      <div style={{ position:'absolute', inset:0, backgroundImage:`url(${img})`, backgroundSize:'cover', backgroundPosition:'center', transform:'scale(1.05)' }} />
                     )}
-                    <div style={{ position: 'absolute', top: '50%', left: 24, transform: 'translateY(-50%)', fontSize: 9, fontWeight: 300, letterSpacing: '0.32em', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', textShadow: '0 1px 8px rgba(0,0,0,0.9)', zIndex: 2 }}>
-                      {REGIONS.find(r => r.id === id)?.label}
+                    <div style={{ position:'absolute', top:'50%', left:24, transform:'translateY(-50%)', fontSize:9, fontWeight:300, letterSpacing:'0.32em', color:'rgba(255,255,255,0.5)', textTransform:'uppercase', textShadow:'0 1px 8px rgba(0,0,0,0.9)', zIndex:2 }}>
+                      {REGIONS.find(r=>r.id===id)?.label}
                     </div>
-                    {idx > 0 && (
-                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'rgba(8,8,4,0.9)', zIndex: 3 }} />
-                    )}
+                    {idx>0 && <div style={{ position:'absolute', top:0, left:0, right:0, height:'1px', background:'rgba(8,8,4,0.9)', zIndex:3 }} />}
                   </div>
                 );
               })
             )}
           </div>
-
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(10,10,6,0.45) 0%, transparent 40%)', pointerEvents: 'none' }} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,6,0.95) 0%, rgba(10,10,6,0.1) 40%, transparent 65%)', pointerEvents: 'none' }} />
-
-          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '28px 28px 40px', zIndex: 4 }}>
-            {selectedRegions.length === 0 && (
+          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to right,rgba(10,10,6,0.45) 0%,transparent 40%)', pointerEvents:'none' }} />
+          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(10,10,6,0.95) 0%,rgba(10,10,6,0.1) 40%,transparent 65%)', pointerEvents:'none' }} />
+          <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'28px 28px 40px', zIndex:4 }}>
+            {selectedRegions.length===0 && (
               <>
-                <div style={{ fontSize: 9, color: 'rgba(212,175,55,0.45)', letterSpacing: '0.36em', textTransform: 'uppercase', marginBottom: 12, fontWeight: 200 }}>Southern Africa</div>
-                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 26, fontWeight: 300, fontStyle: 'italic', color: 'rgba(245,240,232,0.55)', lineHeight: 1.2 }}>
-                  Select a destination<br />to begin your journey
-                </div>
+                <div style={{ fontSize:9, color:'rgba(212,175,55,0.45)', letterSpacing:'0.36em', textTransform:'uppercase', marginBottom:12, fontWeight:200 }}>Southern Africa</div>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, fontWeight:300, fontStyle:'italic', color:'rgba(245,240,232,0.55)', lineHeight:1.2 }}>Select a destination<br />to begin your journey</div>
               </>
             )}
-            {selectedRegions.length === 1 && (() => {
-              const slug = REGIONS.find(r => r.id === selectedRegions[0])?.slug ?? '';
-              const reg  = REGIONS.find(r => r.id === selectedRegions[0]);
-              return (
-                <>
-                  <div style={{ fontSize: 9, color: 'rgba(212,175,55,0.55)', letterSpacing: '0.36em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 200 }}>Selected destination</div>
-                  <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 30, fontWeight: 300, color: 'rgba(245,240,232,0.95)', marginBottom: 10, lineHeight: 1.1 }}>{reg?.label}</div>
-                  {REGION_WHY[slug] && (
-                    <div style={{ fontSize: 12, color: 'rgba(245,240,232,0.42)', lineHeight: 1.75, maxWidth: 280, fontWeight: 200 }}>{REGION_WHY[slug]}</div>
-                  )}
-                </>
-              );
+            {selectedRegions.length===1&&(()=>{
+              const slug=REGIONS.find(r=>r.id===selectedRegions[0])?.slug??'';
+              const reg=REGIONS.find(r=>r.id===selectedRegions[0]);
+              return (<>
+                <div style={{ fontSize:9, color:'rgba(212,175,55,0.55)', letterSpacing:'0.36em', textTransform:'uppercase', marginBottom:10, fontWeight:200 }}>Selected destination</div>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:32, fontWeight:300, color:'rgba(245,240,232,0.95)', marginBottom:10, lineHeight:1.1 }}>{reg?.label}</div>
+                {REGION_WHY[slug]&&<div style={{ fontSize:13, color:'rgba(245,240,232,0.42)', lineHeight:1.75, maxWidth:280, fontWeight:200 }}>{REGION_WHY[slug]}</div>}
+              </>);
             })()}
-            {selectedRegions.length > 1 && (
+            {selectedRegions.length>1&&(
               <>
-                <div style={{ fontSize: 9, color: 'rgba(212,175,55,0.55)', letterSpacing: '0.36em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 200 }}>
-                  {selectedRegions.length}-destination journey
+                <div style={{ fontSize:9, color:'rgba(212,175,55,0.55)', letterSpacing:'0.36em', textTransform:'uppercase', marginBottom:10, fontWeight:200 }}>{selectedRegions.length}-destination journey</div>
+                <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:300, color:'rgba(245,240,232,0.88)', marginBottom:10, lineHeight:1.2 }}>
+                  {selectedRegions.map(id=>REGIONS.find(r=>r.id===id)?.label).filter(Boolean).join(' · ')}
                 </div>
-                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, fontWeight: 300, color: 'rgba(245,240,232,0.88)', marginBottom: 10, lineHeight: 1.2 }}>
-                  {selectedRegions.map(id => REGIONS.find(r => r.id === id)?.label).filter(Boolean).join(' · ')}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(245,240,232,0.35)', fontWeight: 200 }}>
-                  {selectedRegions.reduce((sum, id) => {
-                    const slug = REGIONS.find(r => r.id === id)?.slug ?? '';
-                    return sum + (({ 'kruger-sabi-sand': 3, 'okavango-delta': 3, 'cape-town': 3, 'madikwe': 2, 'chobe-vic-falls': 2 } as Record<string,number>)[slug] || 2);
-                  }, 0)}+ recommended nights
+                <div style={{ fontSize:12, color:'rgba(245,240,232,0.35)', fontWeight:200 }}>
+                  {selectedRegions.reduce((sum,id)=>{ const s=REGIONS.find(r=>r.id===id)?.slug??''; return sum+({'kruger-sabi-sand':3,'okavango-delta':3,'cape-town':3,'madikwe':2,'chobe-vic-falls':2} as Record<string,number>)[s]||2; },0)}+ recommended nights
                 </div>
               </>
             )}
           </div>
-
         </div>
       </div>{/* end inspire-panel */}
 
