@@ -2918,7 +2918,7 @@ const runBriefPlanner = (briefText: string) => {
       adults,
       children,
       infants,
-      occasion:     selectedTheme,
+      occasion:     selectedThemes[0] || '',
       origin:       needsIntlFlight ? intlOrigin : origin,
       checkinDate,
       flexMonth,
