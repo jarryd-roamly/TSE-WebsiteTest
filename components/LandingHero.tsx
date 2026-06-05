@@ -15,9 +15,9 @@ import { T } from '@/app/lib/theme';
 const HERO_BG_IMAGE = 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1800&q=85';
 
 const OTHER_EDITIONS = [
-  { id: 'island',    name: 'The Island Edition',    icon: '🏝', desc: 'Maldives · Seychelles · Zanzibar',  color: '#60a5fa' },
-  { id: 'adventure', name: 'The Adventure Edition', icon: '🧗', desc: 'Nepal · Patagonia · Arctic',         color: '#4ade80' },
-  { id: 'ski',       name: 'The Ski Edition',       icon: '⛷', desc: 'Alps · Aspen · Hokkaido',            color: '#a78bfa' },
+  { id: 'island',    name: 'The Island Edition',    icon: '🏝', desc: 'Maldives · Seychelles · Zanzibar',  color: '#60a5fa', href: '/island',  live: true  },
+  { id: 'adventure', name: 'The Adventure Edition', icon: '🧗', desc: 'Nepal · Patagonia · Arctic',         color: '#4ade80', href: null,       live: false },
+  { id: 'ski',       name: 'The Ski Edition',       icon: '⛷', desc: 'Alps · Aspen · Hokkaido',            color: '#a78bfa', href: null,       live: false },
 ];
 
 const TRUST = [
@@ -426,14 +426,33 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
                     <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.35)', marginTop: 2 }}>Sub-Saharan Africa · Active</div>
                   </div>
                   {OTHER_EDITIONS.map(e => (
-                    <div key={e.id} className="lh2-edition-item">
-                      <span style={{ fontSize: 18 }}>{e.icon}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12, color: 'rgba(245,240,232,0.55)', fontWeight: 400 }}>{e.name}</div>
-                        <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.28)' }}>{e.desc}</div>
+                    e.live && e.href ? (
+                      <a
+                        key={e.id}
+                        href={e.href}
+                        className="lh2-edition-item"
+                        style={{ opacity: 1, cursor: 'pointer', textDecoration: 'none', background: 'transparent', transition: 'background 0.15s' }}
+                        onMouseEnter={ev => (ev.currentTarget.style.background = 'rgba(96,165,250,0.07)')}
+                        onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}
+                        onClick={() => setEditionOpen(false)}
+                      >
+                        <span style={{ fontSize: 18 }}>{e.icon}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, color: e.color, fontWeight: 500 }}>{e.name}</div>
+                          <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.38)' }}>{e.desc}</div>
+                        </div>
+                        <span style={{ fontSize: 9, color: '#4ade80', background: 'rgba(74,222,128,0.1)', border: '0.5px solid rgba(74,222,128,0.28)', borderRadius: 20, padding: '2px 7px', marginLeft: 'auto' }}>Preview →</span>
+                      </a>
+                    ) : (
+                      <div key={e.id} className="lh2-edition-item">
+                        <span style={{ fontSize: 18 }}>{e.icon}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, color: 'rgba(245,240,232,0.55)', fontWeight: 400 }}>{e.name}</div>
+                          <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.28)' }}>{e.desc}</div>
+                        </div>
+                        <span className="lh2-edition-badge">Soon</span>
                       </div>
-                      <span className="lh2-edition-badge">Soon</span>
-                    </div>
+                    )
                   ))}
                 </div>
               )}
