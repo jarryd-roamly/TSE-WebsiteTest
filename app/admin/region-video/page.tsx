@@ -1,10 +1,8 @@
 'use client';
 // app/admin/region-video/page.tsx
-// Two separate video sets:
-//   Section 1 — Plan My Journey (right panel)   → slugs: kruger-sabi-sand, okavango-delta, etc.
-//   Section 2 — Cinematic Planner (full screen) → slugs: kruger-sabi-sand-journey, etc.
-// Both upload directly to R2 (no Vercel size limit)
-// Both have ½× speed toggle
+// Fixed: two-button speed toggle (1× | ½×), consistent speed application
+// Added: Save button for manual URL entry
+// Fixed: Cinematic Planner now reads -journey slugs (separate from Plan My Journey)
 
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
@@ -75,7 +73,7 @@ async function uploadToR2(file: File, key: string): Promise<string> {
   return `${R2_PUBLIC_BASE}/${key}`;
 }
 
-// ── Regions ───────────────────────────────────────────────────────────────────
+// ── Region config ─────────────────────────────────────────────────────────────
 const REGIONS = [
   { slug: 'kruger-sabi-sand', label: 'Kruger / Sabi Sand',    country: 'South Africa', accent: '#C8A96E', tagline: 'Where leopards walk at noon'          },
   { slug: 'okavango-delta',   label: 'Okavango Delta',         country: 'Botswana',     accent: '#7EB8A0', tagline: 'A river that flows into the sky'       },
@@ -83,69 +81,162 @@ const REGIONS = [
   { slug: 'cape-town',        label: 'Cape Town',              country: 'South Africa', accent: '#B8C4A0', tagline: 'Where two oceans meet the mountain'    },
   { slug: 'madikwe',          label: 'Madikwe',                country: 'South Africa', accent: '#C8A96E', tagline: 'Big Five. Malaria-free. Unforgettable' },
 ];
-
 const toJourneySlug = (slug: string) => `${slug}-journey`;
 
+// ── Save URL to DB ─────────────────────────────────────────────────────────────
+async function saveUrlToDB(region: string, url: string): Promise<void> {
+  const res  = await fetch('/api/region-video', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ region, url }),
+  });
+  const text = await res.text();
+  let data: any = {};
+  try { data = JSON.parse(text); } catch { throw new Error(text.slice(0,120) || `Error ${res.status}`); }
+  if (!res.ok) throw new Error(data.error || 'Save failed');
+}
+
 // ── VideoCard ─────────────────────────────────────────────────────────────────
-function VideoCard({ slug, label, country, accent, tagline, videoUrl, status, err, onUpload, onRemove }: {
+function VideoCard({ slug, label, country, accent, tagline, videoUrl, status, err, onUpload, onRemove, onSaveUrl }: {
   slug: string; label: string; country: string; accent: string; tagline: string;
   videoUrl: string; status: string; err: string;
-  onUpload: (slug: string, file: File) => void;
-  onRemove: (slug: string) => void;
+  onUpload:  (slug: string, file: File)   => void;
+  onRemove:  (slug: string)               => void;
+  onSaveUrl: (slug: string, url: string)  => void;
 }) {
-  const [slow, setSlow] = useState(false);
+  // Speed — 1 = normal, 0.5 = half
+  const [rate,     setRate]     = useState(1);
+  const [urlInput, setUrlInput] = useState(videoUrl);
+  const [saveMsg,  setSaveMsg]  = useState('');
   const vidRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => { if (vidRef.current) vidRef.current.playbackRate = slow ? 0.5 : 1; }, [slow]);
-  const onCanPlay = () => { if (vidRef.current) vidRef.current.playbackRate = slow ? 0.5 : 1; };
+  // Keep urlInput in sync when videoUrl changes (after upload/save)
+  useEffect(() => { setUrlInput(videoUrl); }, [videoUrl]);
+
+  // Apply speed — called on every relevant video event and on button click
+  const applyRate = (r: number) => {
+    if (vidRef.current) {
+      vidRef.current.playbackRate = r;
+    }
+  };
+
+  const handleSetRate = (r: number) => {
+    setRate(r);
+    applyRate(r);
+    // Retry after short delay — some browsers need the video to be playing first
+    setTimeout(() => applyRate(r), 150);
+    setTimeout(() => applyRate(r), 500);
+  };
+
+  const handleVideoEvent = () => applyRate(rate);
+
+  const handleSaveUrl = async () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed || trimmed === videoUrl) return;
+    try {
+      await onSaveUrl(slug, trimmed);
+      setSaveMsg('Saved ✓');
+      setTimeout(() => setSaveMsg(''), 3000);
+    } catch (e: any) {
+      setSaveMsg(`Error: ${e.message}`);
+    }
+  };
 
   return (
     <div style={{ background: T.surface2, border: `0.5px solid ${videoUrl ? 'rgba(212,175,55,0.2)' : T.border}`, borderRadius: 12, overflow: 'hidden' }}>
 
       {/* Thumbnail */}
       <div style={{ height: 175, position: 'relative', background: '#0c0c0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {videoUrl
-          ? <video ref={vidRef} key={videoUrl} src={videoUrl} autoPlay muted loop playsInline onCanPlay={onCanPlay} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : <div style={{ textAlign: 'center', color: T.textDim }}><div style={{ fontSize: 26, marginBottom: 5 }}>🎬</div><div style={{ fontSize: 11 }}>No video yet</div></div>
-        }
+        {videoUrl ? (
+          <video
+            ref={vidRef}
+            key={videoUrl}
+            src={videoUrl}
+            autoPlay muted loop playsInline
+            onCanPlay={handleVideoEvent}
+            onPlay={handleVideoEvent}
+            onLoadedData={handleVideoEvent}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : (
+          <div style={{ textAlign: 'center', color: T.textDim }}>
+            <div style={{ fontSize: 26, marginBottom: 5 }}>🎬</div>
+            <div style={{ fontSize: 11 }}>No video yet</div>
+          </div>
+        )}
+
+        {/* Gradient + labels */}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 55%)', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
           <div style={{ fontSize: 8, color: accent, letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 3 }}>{country}</div>
           <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 16, fontWeight: 300, color: 'rgba(245,240,232,0.95)' }}>{label}</div>
           <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.38)', marginTop: 2, fontStyle: 'italic' }}>{tagline}</div>
         </div>
+
+        {/* Live badge */}
         {videoUrl && (
           <div style={{ position: 'absolute', top: 8, right: 8 }}>
-            {slow
-              ? <span style={{ background: 'rgba(212,175,55,0.15)', border: `0.5px solid rgba(212,175,55,0.3)`, color: T.gold, borderRadius: 20, padding: '2px 8px', fontSize: 9 }}>½× Slow</span>
-              : <span style={{ background: 'rgba(74,222,128,0.12)', border: '0.5px solid rgba(74,222,128,0.3)', color: T.green, borderRadius: 20, padding: '2px 8px', fontSize: 9 }}>● Live</span>
-            }
+            <span style={{ background: 'rgba(74,222,128,0.12)', border: '0.5px solid rgba(74,222,128,0.3)', color: T.green, borderRadius: 20, padding: '2px 8px', fontSize: 9 }}>● Live</span>
           </div>
         )}
       </div>
 
       {/* Controls */}
-      <div style={{ padding: '11px 13px' }}>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' as const }}>
-          <label style={{ background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, color: '#0a0a0a', borderRadius: 7, padding: '7px 13px', fontSize: 11, fontWeight: 700, cursor: status === 'uploading' ? 'not-allowed' : 'pointer', opacity: status === 'uploading' ? 0.7 : 1 }}>
-            {status === 'uploading' ? '⏳ Uploading…' : status === 'done' ? '✓ Done' : videoUrl ? 'Replace' : 'Upload MP4'}
+      <div style={{ padding: '12px 13px' }}>
+
+        {/* Row 1: Upload + Speed buttons + Remove */}
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' as const, alignItems: 'center', marginBottom: 10 }}>
+
+          {/* Upload */}
+          <label style={{ background: `linear-gradient(135deg,${T.gold},${T.goldLight})`, color: '#0a0a0a', borderRadius: 7, padding: '7px 13px', fontSize: 11, fontWeight: 700, cursor: status === 'uploading' ? 'not-allowed' : 'pointer', opacity: status === 'uploading' ? 0.7 : 1, flexShrink: 0 }}>
+            {status === 'uploading' ? '⏳ Uploading…' : status === 'done' ? '✓ Uploaded' : videoUrl ? 'Replace' : 'Upload MP4'}
             <input type="file" accept="video/mp4,video/quicktime,video/mov" style={{ display: 'none' }} disabled={status === 'uploading'} onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(slug, f); e.target.value = ''; }} />
           </label>
+
+          {/* Speed: two buttons side by side */}
           {videoUrl && (
-            <button onClick={() => setSlow(s => !s)} style={{ background: slow ? T.goldDim : 'rgba(255,255,255,0.04)', border: `0.5px solid ${slow ? T.borderGold : T.border}`, color: slow ? T.gold : T.textMid, borderRadius: 7, padding: '7px 12px', cursor: 'pointer', fontSize: 11, transition: 'all 0.15s' }}>
-              {slow ? '1× Normal' : '½× Slow'}
-            </button>
+            <div style={{ display: 'flex', borderRadius: 7, overflow: 'hidden', border: `0.5px solid rgba(255,255,255,0.12)`, flexShrink: 0 }}>
+              <button
+                onClick={() => handleSetRate(1)}
+                style={{ padding: '7px 14px', border: 'none', borderRight: `0.5px solid rgba(255,255,255,0.12)`, background: rate === 1 ? T.goldDim : 'rgba(255,255,255,0.03)', color: rate === 1 ? T.gold : T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: rate === 1 ? 600 : 300, transition: 'all 0.15s' }}
+              >1×</button>
+              <button
+                onClick={() => handleSetRate(0.5)}
+                style={{ padding: '7px 14px', border: 'none', background: rate === 0.5 ? T.goldDim : 'rgba(255,255,255,0.03)', color: rate === 0.5 ? T.gold : T.textMid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: rate === 0.5 ? 600 : 300, transition: 'all 0.15s' }}
+              >½×</button>
+            </div>
           )}
+
+          {/* Remove */}
           {videoUrl && (
             <button onClick={() => onRemove(slug)} style={{ background: 'rgba(248,113,113,0.05)', border: '0.5px solid rgba(248,113,113,0.18)', color: T.red, borderRadius: 7, padding: '7px 12px', cursor: 'pointer', fontSize: 11 }}>
               Remove
             </button>
           )}
         </div>
+
+        {/* Row 2: URL field + Save button */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input
+            value={urlInput}
+            onChange={e => setUrlInput(e.target.value)}
+            placeholder="Paste video URL and click Save"
+            style={{ flex: 1, background: 'rgba(255,255,255,0.03)', border: `0.5px solid rgba(255,255,255,0.1)`, color: T.text, borderRadius: 6, padding: '7px 10px', fontSize: 10, fontFamily: 'inherit', outline: 'none', minWidth: 0, letterSpacing: '0.02em' }}
+          />
+          <button
+            onClick={handleSaveUrl}
+            disabled={!urlInput.trim() || urlInput.trim() === videoUrl}
+            style={{ background: (!urlInput.trim() || urlInput.trim() === videoUrl) ? 'rgba(255,255,255,0.03)' : T.goldDim, border: `0.5px solid ${(!urlInput.trim() || urlInput.trim() === videoUrl) ? 'rgba(255,255,255,0.08)' : T.borderGold}`, color: (!urlInput.trim() || urlInput.trim() === videoUrl) ? T.textDim : T.gold, borderRadius: 6, padding: '7px 14px', cursor: (!urlInput.trim() || urlInput.trim() === videoUrl) ? 'default' : 'pointer', fontSize: 11, fontWeight: 500, fontFamily: 'inherit', whiteSpace: 'nowrap' as const, transition: 'all 0.15s', flexShrink: 0 }}
+          >
+            Save
+          </button>
+        </div>
+
+        {/* Status messages */}
         {status === 'uploading' && <div style={{ marginTop: 8, fontSize: 10, color: T.amber }}>⏳ Uploading direct to R2…</div>}
-        {status === 'done'      && <div style={{ marginTop: 8, fontSize: 10, color: T.green }}>✓ Live</div>}
-        {err                    && <div style={{ marginTop: 8, fontSize: 10, color: T.red }}>{err}</div>}
-        {videoUrl && <div style={{ marginTop: 5, fontSize: 9, color: 'rgba(245,240,232,0.16)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{videoUrl}</div>}
+        {status === 'done'      && <div style={{ marginTop: 8, fontSize: 10, color: T.green }}>✓ Uploaded and live</div>}
+        {saveMsg                && <div style={{ marginTop: 6, fontSize: 10, color: saveMsg.startsWith('Error') ? T.red : T.green }}>{saveMsg}</div>}
+        {err                    && <div style={{ marginTop: 6, fontSize: 10, color: T.red }}>{err}</div>}
       </div>
     </div>
   );
@@ -192,13 +283,7 @@ export default function RegionMediaPage() {
       const ts  = Date.now();
       const ext = file.name.split('.').pop() || 'mp4';
       const url = await uploadToR2(file, `cinematic/${slug}/${ts}.${ext}`);
-
-      const res  = await fetch('/api/region-video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ region: slug, url }) });
-      const text = await res.text();
-      let data: any = {};
-      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0,120) || `Error ${res.status}`); }
-      if (!res.ok) throw new Error(data.error || 'DB update failed');
-
+      await saveUrlToDB(slug, url);
       setVideos(v => ({ ...v, [slug]: url }));
       setUploads(u => ({ ...u, [slug]: 'done' }));
       setTimeout(() => setUploads(u => ({ ...u, [slug]: 'idle' })), 4000);
@@ -208,13 +293,25 @@ export default function RegionMediaPage() {
     }
   };
 
+  const handleSaveUrl = async (slug: string, url: string) => {
+    await saveUrlToDB(slug, url);
+    setVideos(v => ({ ...v, [slug]: url }));
+  };
+
   const handleRemove = async (slug: string) => {
     if (!confirm(`Remove video for "${slug}"?`)) return;
     await fetch('/api/region-video', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ region: slug }) });
     setVideos(v => { const n = { ...v }; delete n[slug]; return n; });
   };
 
-  const cp = (slug: string) => ({ videoUrl: videos[slug] || '', status: uploads[slug] || 'idle', err: errors[slug] || '', onUpload: handleUpload, onRemove: handleRemove });
+  const cp = (slug: string) => ({
+    videoUrl:   videos[slug]  || '',
+    status:     uploads[slug] || 'idle',
+    err:        errors[slug]  || '',
+    onUpload:   handleUpload,
+    onRemove:   handleRemove,
+    onSaveUrl:  handleSaveUrl,
+  });
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg, fontFamily: "'Jost',sans-serif", color: T.text }}>
@@ -226,10 +323,10 @@ export default function RegionMediaPage() {
           <div style={{ fontSize: 9, color: T.gold, letterSpacing: '0.3em', textTransform: 'uppercase' as const, marginBottom: 6 }}>Admin · Region Media</div>
           <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 32, fontWeight: 300, marginBottom: 10 }}>Region Videos</div>
           <div style={{ fontSize: 13, color: T.textDim, lineHeight: 1.7, maxWidth: 600 }}>
-            Two separate video sets — upload different clips for each screen. Files go directly to R2, no size limit.
+            Two separate video sets — upload different clips to each screen. Use <strong style={{ color: T.text, fontWeight: 400 }}>Upload MP4</strong> to upload a file, or paste an external URL into the field and click <strong style={{ color: T.text, fontWeight: 400 }}>Save</strong>.
           </div>
-          <div style={{ marginTop: 14, padding: '10px 16px', background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 8, fontSize: 12, color: T.gold }}>
-            ✦ &nbsp;Recommended: 8–20 second landscape clips. Use the ½× toggle to preview at half speed before publishing.
+          <div style={{ marginTop: 14, padding: '10px 16px', background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 8, fontSize: 12, color: T.gold, lineHeight: 1.65 }}>
+            ✦ &nbsp;Speed buttons: <strong>1×</strong> plays at normal speed · <strong>½×</strong> plays at half speed. The highlighted button shows which speed is active. Files upload directly to R2 — no size limit.
           </div>
         </div>
 
@@ -237,23 +334,25 @@ export default function RegionMediaPage() {
 
         {!loading && (
           <>
-            {/* ── SECTION 1: PLAN MY JOURNEY ────────────────────────────── */}
+            {/* SECTION 1: PLAN MY JOURNEY */}
             <div style={{ marginBottom: 60 }}>
               <SectionHead
                 title="Plan My Journey — Destination Panel"
-                sub="Plays in the right panel as the traveller selects a destination. Wide landscape clips work best — the traveller is still making decisions, so the video should feel atmospheric, not distracting."
+                sub="Plays in the right panel as the traveller selects a destination. Wide landscape clips work best."
                 color={T.gold}
               />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(285px,1fr))', gap: 14 }}>
-                {REGIONS.map(r => <VideoCard key={r.slug} slug={r.slug} label={r.label} country={r.country} accent={r.accent} tagline={r.tagline} {...cp(r.slug)} />)}
+                {REGIONS.map(r => (
+                  <VideoCard key={r.slug} slug={r.slug} label={r.label} country={r.country} accent={r.accent} tagline={r.tagline} {...cp(r.slug)} />
+                ))}
               </div>
             </div>
 
-            {/* ── SECTION 2: CINEMATIC PLANNER ──────────────────────────── */}
+            {/* SECTION 2: CINEMATIC PLANNER */}
             <div>
               <SectionHead
                 title="Cinematic Planner — Full Screen"
-                sub="Plays full-screen while the AI builds the itinerary. The traveller is waiting — so these clips can be more dramatic. Slow-moving wildlife, misty mornings, fire and stars. Use the ½× toggle to see how they look at half speed."
+                sub="Plays full-screen while the AI builds the itinerary. Upload different clips here — the Cinematic Planner reads these first, falling back to the Destination Panel clips only if no Cinematic clip is uploaded."
                 color="#60a5fa"
               />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(285px,1fr))', gap: 14 }}>
