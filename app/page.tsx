@@ -1700,50 +1700,101 @@ function LoginGate({ onUnlock }: { onUnlock: () => void }) {
 function Spinner() { return <div className="spinner" />; }
 function StepDot({ active }: { active: boolean }) { return <div style={{ width:8, height:8, borderRadius:'50%', background:active?T.gold:'rgba(255,255,255,0.15)', transition:'all 0.3s' }} />; }
 
-function Nav({ edition, setScreen, currency, setCurrency, chatOpen, setChatOpen, totalZAR, fmt, hasPricedItems }: any) {
+function Nav({ edition, setScreen, currency, setCurrency }: any) {
   const [editionOpen, setEditionOpen] = useState(false);
   return (
-    <nav style={{ position:'sticky', top:0, zIndex:100, background:'rgba(10,10,10,0.96)', backdropFilter:'blur(16px)', borderBottom:`0.5px solid ${T.border}`, padding:'0 20px' }}>
-      <div style={{ maxWidth:900, margin:'0 auto', height:58, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-          <button onClick={() => setScreen('landing')} title="Home" style={{ background:'none', border:'none', cursor:'pointer', color:T.textDim, width:34, height:34, borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontFamily:'inherit' }}>🏠</button>
+    <nav style={{ position:'sticky', top:0, zIndex:100, background:'rgba(10,10,6,0.97)', backdropFilter:'blur(20px)', borderBottom:'0.5px solid rgba(212,175,55,0.1)', padding:'0 clamp(16px,4vw,40px)' }}>
+      <div style={{ height:58, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+
+        {/* LEFT: Diamond logo + edition dropdown */}
+        <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+
+          {/* Branded wordmark — doubles as Home button */}
+          <button
+            onClick={() => setScreen('landing')}
+            title="Return to home"
+            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:10, padding:'4px 10px 4px 4px', borderRadius:8, transition:'opacity 0.2s' }}
+            onMouseEnter={e => (e.currentTarget.style.opacity='0.75')}
+            onMouseLeave={e => (e.currentTarget.style.opacity='1')}
+          >
+            {/* Diamond gem */}
+            <div style={{ position:'relative', width:24, height:24, flexShrink:0 }}>
+              <div style={{ position:'absolute', inset:0, border:'1px solid rgba(212,175,55,0.65)', transform:'rotate(45deg)', borderRadius:2 }} />
+              <div style={{ position:'absolute', inset:6, background:'rgba(212,175,55,0.8)', transform:'rotate(45deg)' }} />
+            </div>
+            <div>
+              <span style={{ fontFamily:"'Cormorant Garamond',serif", fontWeight:300, fontSize:15, color:'rgba(212,175,55,0.9)', letterSpacing:'0.08em', display:'block', lineHeight:1.1 }}>
+                {edition?.name || 'The Safari Edition'}
+              </span>
+              <span style={{ fontWeight:200, fontSize:7, letterSpacing:'0.44em', textTransform:'uppercase' as const, color:'rgba(212,175,55,0.4)', display:'block', marginTop:1 }}>
+                Sub-Saharan Africa · Handpicked
+              </span>
+            </div>
+          </button>
+
+          {/* Edition switcher dropdown */}
           <div style={{ position:'relative' }}>
-            <button onClick={() => setEditionOpen((x:boolean)=>!x)} style={{ background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6 }}>
-              <span style={{ fontSize:14, fontWeight:700, color:T.gold, letterSpacing:'0.05em' }}>✦ {edition.name}</span>
-              <span style={{ fontSize:10, color:T.textDim }}>{editionOpen?'▲':'▼'}</span>
+            <button
+              onClick={() => setEditionOpen((x:boolean) => !x)}
+              style={{ background:'none', border:'none', cursor:'pointer', padding:'6px 8px', color:'rgba(212,175,55,0.45)', fontSize:9, fontFamily:'inherit' }}
+            >
+              {editionOpen ? '▲' : '▼'}
             </button>
             {editionOpen && (
-              <div style={{ position:'absolute', top:'calc(100% + 8px)', left:0, background:'#111', border:`0.5px solid rgba(212,175,55,0.3)`, borderRadius:14, padding:10, minWidth:240, zIndex:200, boxShadow:'0 8px 32px rgba(0,0,0,0.6)' }}>
-                <div style={{ padding:'8px 12px', marginBottom:6, background:'rgba(212,175,55,0.08)', borderRadius:10 }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:T.gold }}>✦ {edition.name}</div>
-                  <div style={{ fontSize:10, color:T.textDim, marginTop:1 }}>Sub-Saharan Africa · Active</div>
+              <div style={{ position:'absolute', top:'calc(100% + 6px)', left:-150, background:'#0f0f0a', border:'0.5px solid rgba(212,175,55,0.25)', borderRadius:12, padding:8, minWidth:248, zIndex:300, boxShadow:'0 8px 40px rgba(0,0,0,0.7)' }}>
+                {/* Current edition */}
+                <div style={{ padding:'10px 12px', marginBottom:6, background:'rgba(212,175,55,0.08)', borderRadius:8 }}>
+                  <div style={{ fontSize:12, fontWeight:500, color:'rgba(212,175,55,0.9)' }}>✦ {edition?.name}</div>
+                  <div style={{ fontSize:10, color:'rgba(245,240,232,0.3)', marginTop:2 }}>Sub-Saharan Africa · Active</div>
                 </div>
+                {/* Other editions */}
                 {OTHER_EDITIONS.map((e:any) => (
-                  <div key={e.id} style={{ padding:'8px 12px', borderRadius:10, display:'flex', alignItems:'center', gap:10, opacity:0.6 }}>
-                    <span style={{ fontSize:18 }}>{e.icon}</span>
-                    <div style={{ flex:1 }}><div style={{ fontSize:12, color:T.text, fontWeight:600 }}>{e.name}</div><div style={{ fontSize:10, color:T.textDim }}>{e.desc}</div></div>
-                    <span style={{ fontSize:9, color:e.color, background:`${e.color}18`, border:`0.5px solid ${e.color}40`, borderRadius:20, padding:'2px 7px', fontWeight:700 }}>Soon</span>
-                  </div>
+                  e.live && e.href ? (
+                    <a
+                      key={e.id}
+                      href={e.href}
+                      style={{ padding:'9px 12px', borderRadius:8, display:'flex', alignItems:'center', gap:10, textDecoration:'none', transition:'background 0.15s', cursor:'pointer' }}
+                      onMouseEnter={ev => (ev.currentTarget.style.background='rgba(96,165,250,0.06)')}
+                      onMouseLeave={ev => (ev.currentTarget.style.background='transparent')}
+                      onClick={() => setEditionOpen(false)}
+                    >
+                      <span style={{ fontSize:16 }}>{e.icon}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:12, color:e.color, fontWeight:500 }}>{e.name}</div>
+                        <div style={{ fontSize:10, color:'rgba(245,240,232,0.3)' }}>{e.desc}</div>
+                      </div>
+                      <span style={{ fontSize:9, color:'#4ade80', background:'rgba(74,222,128,0.1)', border:'0.5px solid rgba(74,222,128,0.28)', borderRadius:20, padding:'2px 7px' }}>Visit →</span>
+                    </a>
+                  ) : (
+                    <div key={e.id} style={{ padding:'9px 12px', borderRadius:8, display:'flex', alignItems:'center', gap:10, opacity:0.4 }}>
+                      <span style={{ fontSize:16 }}>{e.icon}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:12, color:'rgba(245,240,232,0.55)', fontWeight:400 }}>{e.name}</div>
+                        <div style={{ fontSize:10, color:'rgba(245,240,232,0.28)' }}>{e.desc}</div>
+                      </div>
+                      <span style={{ fontSize:9, color:'#a78bfa', background:'rgba(167,139,250,0.1)', border:'0.5px solid rgba(167,139,250,0.25)', borderRadius:20, padding:'2px 7px' }}>Soon</span>
+                    </div>
+                  )
                 ))}
               </div>
             )}
           </div>
-          <button onClick={() => setScreen('curated')} style={{ background:'none', border:'none', cursor:'pointer', color:T.textMid, fontSize:12, fontFamily:'inherit', padding:'6px 10px', borderRadius:7 }}>Curated →</button>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          {hasPricedItems && <div style={{ fontSize:13, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(totalZAR)}</div>}
-          <select value={currency.code} onChange={(e:any)=>setCurrency(CURRENCIES.find((c:any)=>c.code===e.target.value)!)} style={{ background:T.bg3, border:`0.5px solid ${T.border}`, color:T.text, borderRadius:8, padding:'5px 10px', fontSize:12, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
-            {CURRENCIES.map(c=><option key={c.code} value={c.code}>{c.code}</option>)}
-          </select>
-          <button onClick={()=>setChatOpen((x:boolean)=>!x)} style={{ background:T.goldDim, border:`0.5px solid ${T.borderGold}`, color:T.gold, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>{chatOpen?'✕ Close':'✦ Specialists'}</button>
-          <a href="/admin" style={{ background:'rgba(255,255,255,0.06)', border:`0.5px solid rgba(255,255,255,0.14)`, color:T.textMid, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', textDecoration:'none' }}>Admin →</a>
-        </div>
+
+        {/* RIGHT: Currency selector only */}
+        <select
+          value={currency.code}
+          onChange={(e:any) => setCurrency(CURRENCIES.find((c:any) => c.code === e.target.value)!)}
+          style={{ background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.1)', color:'rgba(245,240,232,0.7)', borderRadius:6, padding:'6px 10px', fontSize:11, outline:'none', fontFamily:'inherit', cursor:'pointer', letterSpacing:'0.1em', appearance:'none' as const }}
+        >
+          {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+        </select>
+
       </div>
-      {editionOpen && <div style={{ position:'fixed', inset:0, zIndex:199 }} onClick={()=>setEditionOpen(false)} />}
+      {editionOpen && <div style={{ position:'fixed', inset:0, zIndex:299 }} onClick={() => setEditionOpen(false)} />}
     </nav>
   );
 }
-
 function ChatDrawer({ msgs, input, setInput, send, loading, endRef, onClose, edition }: any) {
   return (
     <div style={{ position:'fixed', bottom:0, right:16, width:340, height:460, background:'rgba(14,14,14,0.98)', border:`0.5px solid rgba(255,255,255,0.1)`, borderRadius:'16px 16px 0 0', backdropFilter:'blur(20px)', display:'flex', flexDirection:'column', zIndex:200, boxShadow:'0 -4px 40px rgba(0,0,0,0.6)' }}>
