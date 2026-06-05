@@ -565,17 +565,28 @@ function ImageMiniChat({ hotel, slide, edition, onEscalate, onClose }: { hotel:H
 }
 function SectionLabel({ text, sub, noMargin }: { text:string; sub?:string; noMargin?:boolean }) {
   return (
-    <div style={{ marginBottom:noMargin?0:14 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <div style={{ width:2, height:13, background:'#d4af37', borderRadius:1, flexShrink:0 }} />
-        <div style={{ fontSize:10, color:'rgba(245,240,232,0.7)', letterSpacing:'0.18em', textTransform:'uppercase' as const, fontWeight:500 }}>{text}</div>
-      </div>
-      {sub && <div style={{ fontSize:11, color:'rgba(245,240,232,0.32)', marginTop:4, paddingLeft:12 }}>{sub}</div>}
+    <div style={{ marginBottom: noMargin ? 0 : 18 }}>
+      <div style={{
+        fontSize: 10,
+        color: 'rgba(245,240,232,0.55)',
+        letterSpacing: '0.26em',
+        textTransform: 'uppercase' as const,
+        fontWeight: 300,
+      }}>{text}</div>
+      {sub && (
+        <div style={{
+          fontSize: 11,
+          color: 'rgba(245,240,232,0.26)',
+          marginTop: 5,
+          fontWeight: 200,
+          letterSpacing: '0.04em',
+        }}>{sub}</div>
+      )}
     </div>
   );
 }
 function InputDivider() {
-  return <div style={{ height:'0.5px', background:'rgba(255,255,255,0.055)', margin:'0 0 28px 0' }} />;
+  return <div style={{ height: 44 }} />;
 }
 const M_HOTELS = 1.15;
 
@@ -2549,326 +2560,467 @@ const runBriefPlanner = (briefText: string) => {
              
       {/* INSPIRE INPUT */}
 {screen==='inspire-input' && (
-        <div style={{ minHeight:'100vh', background:T.bg }}>
-          <Nav {...navProps} />
-          <div className="inspire-split">
-          <div className="fade-up inspire-form">
+  <div style={{ minHeight:'100vh', background: T.bg }}>
+    <Nav {...navProps} />
+    <div className="inspire-split">
 
-            {/* Header */}
-            <button onClick={()=>setScreen('landing')} style={{ background:'transparent', border:`0.5px solid ${T.border}`, color:T.textDim, borderRadius:7, padding:'6px 14px', fontSize:11, cursor:'pointer', fontFamily:'inherit', marginBottom:36, letterSpacing:'0.04em' }}>← Back</button>
-            <div style={{ marginBottom:36 }}>
-              <div style={{ fontSize:9, color:T.gold, letterSpacing:'0.32em', textTransform:'uppercase' as const, fontWeight:500, marginBottom:14 }}>Plan your journey</div>
-              <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(34px,5.5vw,52px)', fontWeight:300, marginBottom:10, color:T.text, lineHeight:1.05, letterSpacing:'-0.01em' }}>
-                Tell us about your{' '}
-                <em style={{ color:'rgba(212,175,55,0.9)' }}>dream safari</em>
-              </h2>
-              <p style={{ fontSize:13, color:T.textDim, lineHeight:1.75, fontWeight:300, maxWidth:480 }}>
-                We'll build a fully-priced, bookable itinerary in under 30 seconds.
-              </p>
+      {/* ── LEFT — FORM ──────────────────────────────────────────────────── */}
+      <div
+        className="fade-up inspire-form"
+        style={{ padding: 'clamp(40px,6vh,72px) clamp(24px,5vw,60px) 120px' }}
+      >
+
+        {/* Back */}
+        <button
+          onClick={() => setScreen('landing')}
+          style={{
+            background: 'transparent', border: 'none',
+            color: 'rgba(245,240,232,0.28)', fontSize: 11,
+            cursor: 'pointer', fontFamily: 'inherit',
+            marginBottom: 52, letterSpacing: '0.18em',
+            padding: 0, display: 'flex', alignItems: 'center', gap: 8,
+          }}
+        >
+          ← &nbsp;Back
+        </button>
+
+        {/* Header */}
+        <div style={{ marginBottom: 56 }}>
+          <div style={{
+            fontSize: 9, color: T.gold, letterSpacing: '0.44em',
+            textTransform: 'uppercase' as const, fontWeight: 200,
+            marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            <span style={{ display: 'inline-block', width: 28, height: '0.5px', background: T.gold, opacity: 0.5, flexShrink: 0 }} />
+            Plan your journey
+          </div>
+          <h2 style={{
+            fontFamily: "'Cormorant Garamond',serif",
+            fontSize: 'clamp(40px,5.5vw,60px)',
+            fontWeight: 300, marginBottom: 18,
+            color: T.text, lineHeight: 0.95, letterSpacing: '-0.01em',
+          }}>
+            Tell us about<br />
+            <em style={{ color: 'rgba(212,175,55,0.88)', fontStyle: 'italic' }}>your dream safari</em>
+          </h2>
+          <p style={{
+            fontSize: 13, color: 'rgba(245,240,232,0.36)',
+            lineHeight: 1.9, fontWeight: 200, maxWidth: 400, letterSpacing: '0.025em',
+          }}>
+            Five questions. A fully-priced, bookable itinerary built in minutes.
+          </p>
+        </div>
+
+        {/* ── 1. DESTINATION ─────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 44 }}>
+          <SectionLabel text="Where would you like to go?" sub="Select one or more — or let us inspire you" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {REGIONS.map(r => {
+              const isActive = r.id === 'inspire-me'
+                ? selectedRegions.length === 0
+                : selectedRegions.includes(r.id);
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => toggleRegion(r.id)}
+                  style={{
+                    padding: '16px 20px',
+                    borderRadius: 8,
+                    border: `0.5px solid ${isActive ? T.gold : 'rgba(255,255,255,0.08)'}`,
+                    background: isActive ? T.goldDim : 'transparent',
+                    color: isActive ? T.gold : 'rgba(245,240,232,0.5)',
+                    fontSize: isActive ? 15 : 13,
+                    fontFamily: isActive ? "'Cormorant Garamond',serif" : 'inherit',
+                    fontWeight: isActive ? 400 : 300,
+                    fontStyle: isActive ? 'italic' : 'normal',
+                    cursor: 'pointer',
+                    textAlign: 'left' as const,
+                    letterSpacing: isActive ? '0.02em' : '0.04em',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+          {selectedRegions.length > 1 && (
+            <div style={{
+              marginTop: 12, fontSize: 11, color: T.gold,
+              background: T.goldDim, border: `0.5px solid ${T.borderGold}`,
+              borderRadius: 8, padding: '8px 14px', fontWeight: 300,
+              letterSpacing: '0.04em',
+            }}>
+              ✦ &nbsp;{selectedRegions.length} regions — multi-destination journey
             </div>
+          )}
+        </div>
 
-            {/* ── 1. DESTINATION ───────────────────────────────────── */}
-            <div style={{ marginBottom:28 }}>
-              <SectionLabel text="Where do you want to go?" sub="Select one or more — or let us inspire you" />
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                {REGIONS.map(r => {
-                  const isActive = r.id==='inspire-me' ? selectedRegions.length===0 : selectedRegions.includes(r.id);
-                  return (
-                    <button key={r.id} onClick={()=>toggleRegion(r.id)}
-                      style={{ padding:'13px 16px', borderRadius:10, border:`1px solid ${isActive?T.gold:T.border}`, background:isActive?T.goldDim:'rgba(255,255,255,0.02)', color:isActive?T.gold:T.textMid, fontSize:13, fontWeight:isActive?600:400, cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontFamily:'inherit', position:'relative' as const, transition:'all 0.15s' }}>
-                      {isActive && r.id!=='inspire-me' && <span style={{ fontSize:9 }}>✦</span>}
-                      {r.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedRegions.length>1 && (
-                <div style={{ marginTop:10, fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'7px 13px' }}>
-                  ✦ {selectedRegions.length} regions selected — multi-destination journey
-                </div>
-              )}
-            </div>
+        <InputDivider />
 
-            <InputDivider />
-
-            {/* ── 2. INTERNATIONAL FLIGHTS ─────────────────────────── */}
-            <div style={{ marginBottom:28 }}>
-              <SectionLabel text="International flights" />
-              <div style={{ display:'flex', flexDirection:'column' as const, gap:8 }}>
-                {[
-                  { val:'include' as const, title:'Find flights for me',   sub:"We'll search and include your international flights in the package" },
-                  { val:'own'     as const, title:"I've already booked",   sub:'Share your arrival details so we can plan around your schedule' },
-                  { val:'flexible'as const, title:'Dates still flexible',  sub:'Your Journey Specialist will find the best fares once dates are confirmed' },
-                ].map(opt => {
-                  const isSel = flightIntent===opt.val;
-                  return (
-                    <button key={opt.val}
-                      onClick={() => { setFlightIntent(opt.val); setNeedsIntlFlight(opt.val==='include'); setIncludeIntlFlight(opt.val==='include'); }}
-                      style={{ padding:'13px 16px', borderRadius:10, textAlign:'left' as const, border:`1px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:'rgba(255,255,255,0.02)', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'flex-start', gap:12, transition:'all 0.15s' }}>
-                      <div style={{ width:16, height:16, borderRadius:'50%', border:`1.5px solid ${isSel?T.gold:'rgba(255,255,255,0.2)'}`, flexShrink:0, marginTop:2, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s' }}>
-                        {isSel && <div style={{ width:6, height:6, borderRadius:'50%', background:T.gold }} />}
-                      </div>
-                      <div>
-                        <div style={{ fontSize:13, fontWeight:600, color:isSel?T.gold:T.text, marginBottom:2 }}>{opt.title}</div>
-                        <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{opt.sub}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              {flightIntent==='include' && (
-                <div style={{ marginTop:12, paddingTop:14, borderTop:`0.5px solid ${T.border}` }}>
-                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:8 }}>Flying from</div>
-                  <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:9, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit', marginBottom:12 }}>
-                    {INTERNATIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                  </select>
-                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:8 }}>Gateway preference</div>
-                  <div style={{ display:'flex', flexDirection:'column' as const, gap:7 }}>
-                    {[
-                      { val:'open_jaw' as const, label:'Cheapest combination', sub:'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
-                      { val:'return'   as const, label:'Same airport in and out', sub:'e.g. LHR → JNB → LHR' },
-                    ].map(opt => (
-                      <button key={opt.val} onClick={()=>setGatewayPreference(opt.val)}
-                        style={{ padding:'10px 13px', borderRadius:9, textAlign:'left' as const, border:`1px solid ${gatewayPreference===opt.val?T.gold:T.border}`, background:gatewayPreference===opt.val?T.goldDim:'transparent', cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
-                        <div style={{ fontSize:12, color:gatewayPreference===opt.val?T.gold:T.text, fontWeight:600 }}>{opt.label}</div>
-                        <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>{opt.sub}</div>
-                      </button>
-                    ))}
+        {/* ── 2. INTERNATIONAL FLIGHTS ───────────────────────────────────── */}
+        <div style={{ marginBottom: 44 }}>
+          <SectionLabel text="International flights" />
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+            {([
+              { val: 'include'  as const, title: 'Find flights for me',  sub: "We'll search and include your international flights in the package" },
+              { val: 'own'      as const, title: "I've already booked",   sub: 'Share your arrival details so we can plan around your schedule' },
+              { val: 'flexible' as const, title: 'Dates still flexible', sub: 'Your Journey Specialist will find the best fares once dates are confirmed' },
+            ]).map(opt => {
+              const isSel = flightIntent === opt.val;
+              return (
+                <button
+                  key={opt.val}
+                  onClick={() => {
+                    setFlightIntent(opt.val);
+                    setNeedsIntlFlight(opt.val === 'include');
+                    setIncludeIntlFlight(opt.val === 'include');
+                  }}
+                  style={{
+                    padding: '14px 18px', borderRadius: 10,
+                    textAlign: 'left' as const,
+                    border: `0.5px solid ${isSel ? T.gold : 'rgba(255,255,255,0.08)'}`,
+                    background: isSel ? T.goldDim : 'rgba(255,255,255,0.015)',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    display: 'flex', alignItems: 'flex-start', gap: 14,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{
+                    width: 16, height: 16, borderRadius: '50%',
+                    border: `1.5px solid ${isSel ? T.gold : 'rgba(255,255,255,0.18)'}`,
+                    flexShrink: 0, marginTop: 2,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'all 0.15s',
+                  }}>
+                    {isSel && <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.gold }} />}
                   </div>
-                </div>
-              )}
-              {flightIntent==='own' && (
-                <div style={{ marginTop:12, paddingTop:14, borderTop:`0.5px solid ${T.border}` }}>
-                  <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:8 }}>Arriving into</div>
-                  <select value={origin} onChange={e=>setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, color:T.text, borderRadius:9, padding:'11px 13px', fontSize:13, outline:'none', fontFamily:'inherit' }}>
-                    {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                  </select>
-                </div>
-              )}
-              {flightIntent==='flexible' && (
-                <div style={{ marginTop:10, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:9, padding:'11px 14px', fontSize:12, color:T.textDim, lineHeight:1.6 }}>
-                  Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
-                </div>
-              )}
-            </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: isSel ? 400 : 300, color: isSel ? T.gold : T.text, marginBottom: 3 }}>{opt.title}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(245,240,232,0.32)', lineHeight: 1.55, fontWeight: 200 }}>{opt.sub}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
-            <InputDivider />
-
-            {/* ── 3. JOURNEY THEME ─────────────────────────────────── */}
-            <div style={{ marginBottom:28 }}>
-              <SectionLabel text="Journey theme" sub="Optional — personalises your recommendations" />
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
+          {flightIntent === 'include' && (
+            <div style={{ marginTop: 14, paddingTop: 16, borderTop: `0.5px solid rgba(255,255,255,0.06)` }}>
+              <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.18em', fontWeight: 300, marginBottom: 8 }}>Flying from</div>
+              <select
+                value={intlOrigin}
+                onChange={e => setIntlOrigin(e.target.value)}
+                style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: `0.5px solid rgba(255,255,255,0.1)`, color: T.text, borderRadius: 8, padding: '12px 14px', fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 14, cursor: 'pointer' }}
+              >
+                {INTERNATIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
+              </select>
+              <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.18em', fontWeight: 300, marginBottom: 10 }}>Gateway preference</div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
                 {([
-                  { id:'honeymoon',   label:'Honeymoon',   icon:'💍' },
-                  { id:'anniversary', label:'Anniversary', icon:'✨' },
-                  { id:'family',      label:'Family',      icon:'👨‍👩‍👧' },
-                  { id:'adventure',   label:'Adventure',   icon:'🧗' },
-                  { id:'bucket-list', label:'Bucket list', icon:'🌍' },
-                  { id:'returning',   label:'Been before', icon:'🔄' },
-                ] as {id:string;label:string;icon:string}[]).map(t => {
-                  const active = selectedTheme===t.id;
-                  return (
-                    <button key={t.id} onClick={()=>setSelectedTheme(active?'':t.id)}
-                      style={{ padding:'12px 8px', borderRadius:10, border:`1px solid ${active?T.gold:T.border}`, background:active?T.goldDim:'rgba(255,255,255,0.02)', color:active?T.gold:T.textMid, fontSize:11, fontWeight:active?600:400, cursor:'pointer', display:'flex', flexDirection:'column' as const, alignItems:'center', gap:5, fontFamily:'inherit', transition:'all 0.15s' }}>
-                      <span style={{ fontSize:18 }}>{t.icon}</span>
-                      <span>{t.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <InputDivider />
-
-            {/* ── 4. TRAVELLERS ────────────────────────────────────── */}
-            <div style={{ marginBottom:28 }}>
-              <SectionLabel text="Who's travelling?" />
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
-                {[
-                  { label:'Adults',   sub:'\u00a0',    value:adults,   set:setAdults,   min:1 },
-                  { label:'Children', sub:'Ages 2–17', value:children, set:setChildren, min:0 },
-                  { label:'Infants',  sub:'Under 2',   value:infants,  set:setInfants,  min:0 },
-                ].map(p => (
-                  <div key={p.label}>
-                    <div style={{ fontSize:9, fontWeight:600, letterSpacing:'0.14em', color:T.textDim, textTransform:'uppercase' as const, marginBottom:3 }}>{p.label}</div>
-                    <div style={{ fontSize:9, color:T.textDim, marginBottom:6, minHeight:13 }}>{p.sub}</div>
-                    <div style={{ display:'flex', alignItems:'center', background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:8, overflow:'hidden', height:38 }}>
-                      <button onClick={()=>p.set(Math.max(p.min,p.value-1))} style={{ width:38, height:38, border:'none', background:'transparent', color:p.value>p.min?T.text:T.textDim, fontSize:20, cursor:p.value>p.min?'pointer':'default', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>−</button>
-                      <div style={{ flex:1, textAlign:'center' as const, fontSize:16, fontWeight:500, color:T.text }}>{p.value}</div>
-                      <button onClick={()=>p.set(p.value+1)} style={{ width:38, height:38, border:'none', background:'transparent', color:T.text, fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>+</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {infants>0 && (
-                <div style={{ marginTop:12, background:'rgba(251,191,36,0.06)', border:'0.5px solid rgba(251,191,36,0.2)', borderRadius:8, padding:'9px 13px', fontSize:12, color:T.amber, lineHeight:1.55 }}>
-                  ⚠ Some camps restrict under-5s on open game drives — we'll flag this and can suggest malaria-free alternatives.
-                </div>
-              )}
-            </div>
-
-            <InputDivider />
-
-            {/* ── 5. DATES ─────────────────────────────────────────── */}
-            <div style={{ marginBottom:28 }}>
-              <SectionLabel text="When are you travelling?" />
-              <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
-            </div>
-
-            <InputDivider />
-
-            {/* ── 6. TRIP LENGTH ───────────────────────────────────── */}
-            <div style={{ marginBottom:28 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-                <SectionLabel text="Trip length" noMargin />
-                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:300, color:T.text }}>{nights} <span style={{ fontSize:13, color:T.textDim }}>nights</span></span>
-              </div>
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap' as const }}>
-                {[5,7,10,12,14,21].map(n => (
-                  <button key={n} onClick={()=>setNights(n)}
-                    style={{ padding:'8px 18px', borderRadius:8, border:`1px solid ${nights===n?T.gold:T.border}`, background:nights===n?T.goldDim:'transparent', color:nights===n?T.gold:T.textMid, fontSize:13, cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
-                    {n}n
+                  { val: 'open_jaw' as const, label: 'Cheapest combination', sub: 'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
+                  { val: 'return'   as const, label: 'Same airport in and out', sub: 'e.g. LHR → JNB → LHR' },
+                ]).map(opt => (
+                  <button
+                    key={opt.val}
+                    onClick={() => setGatewayPreference(opt.val)}
+                    style={{
+                      padding: '11px 14px', borderRadius: 8, textAlign: 'left' as const,
+                      border: `0.5px solid ${gatewayPreference === opt.val ? T.gold : 'rgba(255,255,255,0.08)'}`,
+                      background: gatewayPreference === opt.val ? T.goldDim : 'transparent',
+                      cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, color: gatewayPreference === opt.val ? T.gold : T.text, fontWeight: 400 }}>{opt.label}</div>
+                    <div style={{ fontSize: 10, color: T.textDim, marginTop: 2, fontWeight: 200 }}>{opt.sub}</div>
                   </button>
                 ))}
               </div>
             </div>
+          )}
 
-            <InputDivider />
-
-            {/* ── 7. BUDGET ────────────────────────────────────────── */}
-            <div style={{ marginBottom:40 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14 }}>
-                <SectionLabel text="Total budget" noMargin />
-                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:26, fontWeight:300, color:T.gold }}>{fmt(budget)}</span>
-              </div>
-              <input type="range" min={20000} max={2000000} step={10000} value={budget} onChange={e=>setBudget(+e.target.value)} style={{ width:'100%' }} />
-              <div style={{ display:'flex', justifyContent:'space-between', marginTop:5 }}>
-                <span style={{ fontSize:10, color:T.textDim }}>{fmt(20000)}</span>
-                <span style={{ fontSize:10, color:T.textDim }}>{fmt(2000000)}</span>
-              </div>
+          {flightIntent === 'own' && (
+            <div style={{ marginTop: 14, paddingTop: 16, borderTop: `0.5px solid rgba(255,255,255,0.06)` }}>
+              <div style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase' as const, letterSpacing: '0.18em', fontWeight: 300, marginBottom: 8 }}>Arriving into</div>
+              <select
+                value={origin}
+                onChange={e => setOrigin(e.target.value)}
+                style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: `0.5px solid rgba(255,255,255,0.1)`, color: T.text, borderRadius: 8, padding: '12px 14px', fontSize: 13, outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}
+              >
+                {REGIONAL_ORIGINS.map(o => <option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
+              </select>
             </div>
+          )}
 
-            {/* ── BUILD BUTTON ─────────────────────────────────────── */}
-            <button className="btn-gold" style={{ width:'100%', padding:'17px 24px', fontSize:14, letterSpacing:'0.08em' }} onClick={runSocraticPlanner}>
-              ✦  Build My Itinerary
-            </button>
-            <p style={{ textAlign:'center' as const, fontSize:11, color:T.textDim, marginTop:10, letterSpacing:'0.04em' }}>
-              Ready in under 30 seconds · Fully priced · No commitment
-            </p>
-         </div>{/* end inspire-form */}
-
-          {/* ── RIGHT PANEL — atmospheric imagery responding to selections ── */}
-          <div className="inspire-panel">
-            <div style={{ position:'relative', width:'100%', height:'100%', overflow:'hidden' }}>
-
-              {/* Image layer(s) — single or multi-split */}
-              <div style={{ position:'absolute', inset:0, opacity:panelFade?1:0, transition:'opacity 0.35s ease' }}>
-{selectedRegions.length <= 1 ? (() => {
-                    const slug = selectedRegions.length === 1
-                      ? (REGIONS.find(r=>r.id===selectedRegions[0])?.slug ?? '')
-                      : '';
-                    const videoSrc = regionVideoMap[slug];
-                    const imgSrc   = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
-                    return videoSrc ? (
-                      <video key={videoSrc} src={videoSrc} autoPlay muted loop playsInline
-                        style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }} />
-                    ) : (
-                      <div style={{ position:'absolute', inset:0, backgroundImage:`url(${imgSrc})`, backgroundSize:'cover', backgroundPosition:'center' }} />
-                    );
-})() : (
-                  // Multiple regions: vertical split — each region gets equal height band
-                  selectedRegions.map((id, idx) => {
-                    const slug = REGIONS.find(r=>r.id===id)?.slug ?? '';
-                    const img  = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
-                    const pct  = 100 / selectedRegions.length;
-                    return (
-                      <div key={id} style={{
-                        position:'absolute', left:0, right:0,
-                        top:`${idx * pct}%`, height:`${pct}%`,
-                        overflow:'hidden',
-                      }}>
-                        {/* Each band fills its space — background-position centres vertically within band */}
-                        {regionVideoMap[slug] ? (
-                          <video key={regionVideoMap[slug]} src={regionVideoMap[slug]}
-                            autoPlay muted loop playsInline
-                            style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', transform:'scale(1.05)' }} />
-                        ) : (
-                          <div style={{ position:'absolute', inset:0, backgroundImage:`url(${img})`, backgroundSize:'cover', backgroundPosition:'center', transform:'scale(1.05)' }} />
-                        )}
-                        {/* Region label on each band */}
-                        <div style={{
-                          position:'absolute', top:'50%', left:20,
-                          transform:'translateY(-50%)',
-                          fontSize:10, fontWeight:600, letterSpacing:'0.18em',
-                          color:'rgba(255,255,255,0.55)', textTransform:'uppercase',
-                          textShadow:'0 1px 8px rgba(0,0,0,0.8)',
-                          zIndex:2,
-                        }}>
-                          {REGIONS.find(r=>r.id===id)?.label}
-                        </div>
-                        {/* Thin separator between bands */}
-                        {idx > 0 && (
-                          <div style={{
-                            position:'absolute', top:0, left:0, right:0,
-                            height:'1.5px', background:'rgba(10,10,10,0.85)',
-                            zIndex:3,
-                          }} />
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Gradient overlays for depth */}
-              <div style={{ position:'absolute', inset:0, background:'linear-gradient(to right, rgba(10,10,10,0.5) 0%, transparent 35%)', pointerEvents:'none' }} />
-              <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(10,10,10,0.9) 0%, rgba(10,10,10,0.15) 45%, transparent 70%)', pointerEvents:'none' }} />
-
-              {/* Bottom overlay text */}
-              <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'24px 24px 32px', zIndex:4 }}>
-                {selectedRegions.length === 0 && (
-                  <>
-                    <div style={{ fontSize:9, color:'rgba(212,175,55,0.55)', letterSpacing:'0.28em', textTransform:'uppercase', marginBottom:8 }}>Southern Africa</div>
-                    <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:300, fontStyle:'italic', color:'rgba(245,240,232,0.7)', lineHeight:1.25 }}>
-                      Select a destination<br/>to begin your journey
-                    </div>
-                  </>
-                )}
-                {selectedRegions.length === 1 && (() => {
-                  const slug = REGIONS.find(r=>r.id===selectedRegions[0])?.slug ?? '';
-                  const reg  = REGIONS.find(r=>r.id===selectedRegions[0]);
-                  return (
-                    <>
-                      <div style={{ fontSize:9, color:'rgba(212,175,55,0.65)', letterSpacing:'0.28em', textTransform:'uppercase', marginBottom:8 }}>Selected destination</div>
-                      <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:26, fontWeight:300, color:'rgba(245,240,232,0.95)', marginBottom:8, lineHeight:1.15 }}>{reg?.label}</div>
-                      {REGION_WHY[slug] && <div style={{ fontSize:11, color:'rgba(245,240,232,0.48)', lineHeight:1.65, maxWidth:260 }}>{REGION_WHY[slug]}</div>}
-                    </>
-                  );
-                })()}
-                {selectedRegions.length > 1 && (
-                  <>
-                    <div style={{ fontSize:9, color:'rgba(212,175,55,0.65)', letterSpacing:'0.28em', textTransform:'uppercase', marginBottom:8 }}>
-                      {selectedRegions.length}-destination journey
-                    </div>
-                    <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:18, fontWeight:300, color:'rgba(245,240,232,0.85)', marginBottom:10 }}>
-                      {selectedRegions.map(id => REGIONS.find(r=>r.id===id)?.label).filter(Boolean).join(' · ')}
-                    </div>
-                    <div style={{ fontSize:11, color:'rgba(245,240,232,0.4)' }}>
-                      {selectedRegions.reduce((sum, id) => {
-                        const slug = REGIONS.find(r=>r.id===id)?.slug ?? '';
-                        return sum + ({'kruger-sabi-sand':3,'okavango-delta':3,'cape-town':3,'madikwe':2,'chobe-vic-falls':2}[slug] || 2);
-                      }, 0)}+ recommended nights
-                    </div>
-                  </>
-                )}
-              </div>
+          {flightIntent === 'flexible' && (
+            <div style={{ marginTop: 12, background: T.goldDim, border: `0.5px solid ${T.borderGold}`, borderRadius: 9, padding: '12px 16px', fontSize: 12, color: T.textDim, lineHeight: 1.7, fontWeight: 200 }}>
+              Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
             </div>
-          </div>{/* end inspire-panel */}
-
-          </div>{/* end inspire-split */}
+          )}
         </div>
-      )}
 
+        <InputDivider />
+
+        {/* ── 3. JOURNEY THEME ───────────────────────────────────────────── */}
+        <div style={{ marginBottom: 44 }}>
+          <SectionLabel text="Journey theme" sub="Optional — personalises your recommendations" />
+          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8 }}>
+            {([
+              { id: 'honeymoon',   label: 'Honeymoon'    },
+              { id: 'anniversary', label: 'Anniversary'  },
+              { id: 'family',      label: 'Family'       },
+              { id: 'adventure',   label: 'Adventure'    },
+              { id: 'bucket-list', label: 'Bucket List'  },
+              { id: 'returning',   label: 'Return Visit' },
+            ] as {id:string;label:string}[]).map(t => {
+              const active = selectedTheme === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setSelectedTheme(active ? '' : t.id)}
+                  style={{
+                    padding: '10px 20px', borderRadius: 2,
+                    border: `0.5px solid ${active ? T.gold : 'rgba(255,255,255,0.1)'}`,
+                    background: active ? T.goldDim : 'transparent',
+                    color: active ? T.gold : 'rgba(245,240,232,0.4)',
+                    fontSize: 12, fontWeight: 300, cursor: 'pointer',
+                    fontFamily: 'inherit', letterSpacing: '0.1em',
+                    textTransform: 'uppercase' as const,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <InputDivider />
+
+        {/* ── 4. TRAVELLERS ──────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 44 }}>
+          <SectionLabel text="Who's travelling?" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            {([
+              { label: 'Adults',   sub: '\u00a0',    value: adults,   set: setAdults,   min: 1 },
+              { label: 'Children', sub: 'Ages 2–17', value: children, set: setChildren, min: 0 },
+              { label: 'Infants',  sub: 'Under 2',   value: infants,  set: setInfants,  min: 0 },
+            ]).map(p => (
+              <div key={p.label}>
+                <div style={{ fontSize: 9, fontWeight: 300, letterSpacing: '0.22em', color: 'rgba(245,240,232,0.38)', textTransform: 'uppercase' as const, marginBottom: 2 }}>{p.label}</div>
+                <div style={{ fontSize: 9, color: 'rgba(245,240,232,0.24)', marginBottom: 10, minHeight: 13, fontWeight: 200 }}>{p.sub}</div>
+                <div style={{
+                  display: 'flex', alignItems: 'center',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: `0.5px solid rgba(255,255,255,0.08)`,
+                  borderRadius: 8, overflow: 'hidden', height: 52,
+                }}>
+                  <button
+                    onClick={() => p.set(Math.max(p.min, p.value - 1))}
+                    style={{ width: 44, height: 52, border: 'none', background: 'transparent', color: p.value > p.min ? T.text : 'rgba(255,255,255,0.15)', fontSize: 20, cursor: p.value > p.min ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}
+                  >−</button>
+                  <div style={{
+                    flex: 1, textAlign: 'center' as const,
+                    fontFamily: "'Cormorant Garamond',serif",
+                    fontSize: 26, fontWeight: 300, color: T.text,
+                  }}>{p.value}</div>
+                  <button
+                    onClick={() => p.set(p.value + 1)}
+                    style={{ width: 44, height: 52, border: 'none', background: 'transparent', color: T.text, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}
+                  >+</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {infants > 0 && (
+            <div style={{ marginTop: 14, background: 'rgba(251,191,36,0.05)', border: '0.5px solid rgba(251,191,36,0.18)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: T.amber, lineHeight: 1.65, fontWeight: 200 }}>
+              Some camps restrict under-5s on open game drives — we'll flag this and suggest malaria-free alternatives.
+            </div>
+          )}
+        </div>
+
+        <InputDivider />
+
+        {/* ── 5. DATES ───────────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 44 }}>
+          <SectionLabel text="When are you travelling?" />
+          <DateSelector
+            checkinDate={checkinDate} setCheckinDate={setCheckinDate}
+            dateMode={dateMode} setDateMode={setDateMode}
+            flexMonth={flexMonth} setFlexMonth={setFlexMonth}
+            windowStart={windowStart} setWindowStart={setWindowStart}
+            windowEnd={windowEnd} setWindowEnd={setWindowEnd}
+            nights={nights}
+          />
+        </div>
+
+        <InputDivider />
+
+        {/* ── 6. TRIP LENGTH ─────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 44 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
+            <SectionLabel text="Trip length" noMargin />
+            <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 28, fontWeight: 300, color: T.text }}>
+              {nights} <span style={{ fontSize: 14, color: T.textDim, fontFamily: 'inherit' }}>nights</span>
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+            {[5, 7, 10, 12, 14, 21].map(n => (
+              <button
+                key={n}
+                onClick={() => setNights(n)}
+                style={{
+                  padding: '10px 22px', borderRadius: 8,
+                  border: `0.5px solid ${nights === n ? T.gold : 'rgba(255,255,255,0.08)'}`,
+                  background: nights === n ? T.goldDim : 'transparent',
+                  color: nights === n ? T.gold : 'rgba(245,240,232,0.45)',
+                  fontSize: 13, fontWeight: 300, cursor: 'pointer',
+                  fontFamily: 'inherit', letterSpacing: '0.04em',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {n}n
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <InputDivider />
+
+        {/* ── 7. BUDGET ──────────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 52 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
+            <SectionLabel text="Total budget" noMargin />
+            <div style={{ textAlign: 'right' as const }}>
+              <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 36, fontWeight: 300, color: T.gold, lineHeight: 1 }}>
+                {fmt(budget)}
+              </div>
+              {adults > 0 && (
+                <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.28)', marginTop: 3, fontWeight: 200, letterSpacing: '0.06em' }}>
+                  approx {fmt(Math.round(budget / adults))} per person
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ paddingTop: 18 }}>
+            <input
+              type="range"
+              className="budget-range"
+              min={20000} max={2000000} step={10000}
+              value={budget}
+              onChange={e => setBudget(+e.target.value)}
+              style={{ width: '100%' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+              <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.22)', fontWeight: 200 }}>{fmt(20000)}</span>
+              <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.22)', fontWeight: 200 }}>{fmt(2000000)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── BUILD BUTTON ───────────────────────────────────────────────── */}
+        <button
+          className="btn-gold"
+          style={{ width: '100%', padding: '18px 24px', fontSize: 14, letterSpacing: '0.1em', borderRadius: 4 }}
+          onClick={runSocraticPlanner}
+        >
+          ✦ &nbsp; Build My Itinerary
+        </button>
+        <p style={{ textAlign: 'center' as const, fontSize: 11, color: 'rgba(245,240,232,0.2)', marginTop: 12, letterSpacing: '0.08em', fontWeight: 200 }}>
+          Itinerary built in minutes · Fully priced · No commitment
+        </p>
+
+      </div>{/* end inspire-form */}
+
+      {/* ── RIGHT — ATMOSPHERIC PANEL ──────────────────────────────────────── */}
+      <div className="inspire-panel">
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+
+          <div style={{ position: 'absolute', inset: 0, opacity: panelFade ? 1 : 0, transition: 'opacity 0.4s ease' }}>
+            {selectedRegions.length <= 1 ? (() => {
+              const slug     = selectedRegions.length === 1 ? (REGIONS.find(r => r.id === selectedRegions[0])?.slug ?? '') : '';
+              const videoSrc = regionVideoMap[slug];
+              const imgSrc   = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
+              return videoSrc ? (
+                <video key={videoSrc} src={videoSrc} autoPlay muted loop playsInline
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${imgSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+              );
+            })() : (
+              selectedRegions.map((id, idx) => {
+                const slug = REGIONS.find(r => r.id === id)?.slug ?? '';
+                const img  = regionImageMap[slug] || REGION_DEFAULT_IMAGE;
+                const pct  = 100 / selectedRegions.length;
+                return (
+                  <div key={id} style={{ position: 'absolute', left: 0, right: 0, top: `${idx * pct}%`, height: `${pct}%`, overflow: 'hidden' }}>
+                    {regionVideoMap[slug] ? (
+                      <video key={regionVideoMap[slug]} src={regionVideoMap[slug]} autoPlay muted loop playsInline
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.05)' }} />
+                    ) : (
+                      <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${img})`, backgroundSize: 'cover', backgroundPosition: 'center', transform: 'scale(1.05)' }} />
+                    )}
+                    <div style={{ position: 'absolute', top: '50%', left: 24, transform: 'translateY(-50%)', fontSize: 9, fontWeight: 300, letterSpacing: '0.32em', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', textShadow: '0 1px 8px rgba(0,0,0,0.9)', zIndex: 2 }}>
+                      {REGIONS.find(r => r.id === id)?.label}
+                    </div>
+                    {idx > 0 && (
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'rgba(8,8,4,0.9)', zIndex: 3 }} />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(10,10,6,0.45) 0%, transparent 40%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,6,0.95) 0%, rgba(10,10,6,0.1) 40%, transparent 65%)', pointerEvents: 'none' }} />
+
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '28px 28px 40px', zIndex: 4 }}>
+            {selectedRegions.length === 0 && (
+              <>
+                <div style={{ fontSize: 9, color: 'rgba(212,175,55,0.45)', letterSpacing: '0.36em', textTransform: 'uppercase', marginBottom: 12, fontWeight: 200 }}>Southern Africa</div>
+                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 26, fontWeight: 300, fontStyle: 'italic', color: 'rgba(245,240,232,0.55)', lineHeight: 1.2 }}>
+                  Select a destination<br />to begin your journey
+                </div>
+              </>
+            )}
+            {selectedRegions.length === 1 && (() => {
+              const slug = REGIONS.find(r => r.id === selectedRegions[0])?.slug ?? '';
+              const reg  = REGIONS.find(r => r.id === selectedRegions[0]);
+              return (
+                <>
+                  <div style={{ fontSize: 9, color: 'rgba(212,175,55,0.55)', letterSpacing: '0.36em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 200 }}>Selected destination</div>
+                  <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 30, fontWeight: 300, color: 'rgba(245,240,232,0.95)', marginBottom: 10, lineHeight: 1.1 }}>{reg?.label}</div>
+                  {REGION_WHY[slug] && (
+                    <div style={{ fontSize: 12, color: 'rgba(245,240,232,0.42)', lineHeight: 1.75, maxWidth: 280, fontWeight: 200 }}>{REGION_WHY[slug]}</div>
+                  )}
+                </>
+              );
+            })()}
+            {selectedRegions.length > 1 && (
+              <>
+                <div style={{ fontSize: 9, color: 'rgba(212,175,55,0.55)', letterSpacing: '0.36em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 200 }}>
+                  {selectedRegions.length}-destination journey
+                </div>
+                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, fontWeight: 300, color: 'rgba(245,240,232,0.88)', marginBottom: 10, lineHeight: 1.2 }}>
+                  {selectedRegions.map(id => REGIONS.find(r => r.id === id)?.label).filter(Boolean).join(' · ')}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(245,240,232,0.35)', fontWeight: 200 }}>
+                  {selectedRegions.reduce((sum, id) => {
+                    const slug = REGIONS.find(r => r.id === id)?.slug ?? '';
+                    return sum + (({ 'kruger-sabi-sand': 3, 'okavango-delta': 3, 'cape-town': 3, 'madikwe': 2, 'chobe-vic-falls': 2 } as Record<string,number>)[slug] || 2);
+                  }, 0)}+ recommended nights
+                </div>
+              </>
+            )}
+          </div>
+
+        </div>
+      </div>{/* end inspire-panel */}
+
+    </div>{/* end inspire-split */}
+  </div>
+)}
       {/* INSPIRE RESEARCH */}
 {screen === 'inspire-research' && (
   <SafariCinematicResearch
