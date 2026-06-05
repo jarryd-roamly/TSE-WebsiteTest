@@ -261,11 +261,23 @@ useEffect(() => {
 
   const currentClip     = clipsRef.current[clipIdx] || clipsRef.current[0] || clips[clipIdx] || clips[0];
   const thoughtProgress = Math.round((displayedThoughts.length / thoughts.length) * 100);
+  // Proper display labels for each region ID
+  const REGION_ID_LABELS = {
+    'kruger':     'Kruger / Sabi Sand',
+    'okavango':   'Okavango Delta',
+    'cape-town':  'Cape Town',
+    'madikwe':    'Madikwe',
+    'chobe':      'Victoria Falls / Chobe',
+    'masai-mara': 'Masai Mara',
+    'bwindi':     'Bwindi',
+    'phinda':     'Phinda',
+  };
+
   const pills = [
     `${nights} nights`, travellers,
     ...(budget ? [budget] : []),
     ...((regions||[]).filter(r => r !== 'inspire-me')
-      .map(r => r.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()))),
+      .map(r => REGION_ID_LABELS[r] || r.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()))),
   ].filter(Boolean);
 
   return (
