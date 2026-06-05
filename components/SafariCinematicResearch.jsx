@@ -136,7 +136,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
     const chosen = valid.length > 0 ? valid : ['kruger-sabi-sand','okavango-delta'];
     return chosen.map(slug => {
       const meta = (REGION_CLIPS[slug] || REGION_CLIPS['kruger-sabi-sand'])[0];
-      const mp4  = videoUrls[slug] || null;
+      const mp4  = videoUrls[`${slug}-journey`] || videoUrls[slug] || null;
       return { ...meta, mp4 };
     });
   })();
