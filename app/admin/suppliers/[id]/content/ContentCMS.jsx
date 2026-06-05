@@ -93,6 +93,21 @@ async uploadFile(supplierId, file, isAdmin, mediaType = 'images') {
       if (!res.ok) throw new Error(await res.text().catch(() => `Status ${res.status}`));
       return res.json();
     },
+    async removeFile(fileUrl) {
+      // Extract storage path from full Supabase public URL
+      // e.g. https://xxx.supabase.co/storage/v1/object/public/supplier-media/suppliers/uuid/file.jpg
+      //   → suppliers/uuid/file.jpg
+      const marker = '/storage/v1/object/public/supplier-media/';
+      const path = fileUrl?.split(marker)[1];
+      if (!path) return; // Not a Supabase storage URL — skip silently
+      try {
+        await fetch(`${url}/storage/v1/object/supplier-media`, {
+          method: 'DELETE',
+          headers: { ...h },
+          body: JSON.stringify({ prefixes: [path] }),
+        });
+      } catch { /* silent — storage delete is best-effort */ }
+    },
   };
 }
 
@@ -525,10 +540,23 @@ function TabGallery({ supplierId, isAdmin, images, setImages, locked }) {
     setImages(images.map((img,i) => ({ ...img, is_primary:i===idx })).sort((a,b) => (b.is_primary?1:0)-(a.is_primary?1:0)).map((img,i) => ({ ...img, display_order:i+1 })));
   };
 
-  const deleteImage = (idx) => {
+  const deleteImage = async (idx) => {
     if (!window.confirm('Remove this image?')) return;
-    setImages(images.filter((_,i) => i!==idx).map((img,i) => ({ ...img, display_order:i+1 })));
+    const removed = images[idx];
+    const updated = images.filter((_,i) => i!==idx).map((img,i) => ({ ...img, display_order:i+1 }));
+    // Update UI immediately
+    setImages(updated);
     setEditIdx(null); setEditDraft(null);
+    // Persist to DB immediately — no need to click "Save changes"
+    try {
+      await db.patch('suppliers', `id=eq.${supplierId}`, { images: updated });
+    } catch(e) {
+      console.warn('Image delete DB save failed:', e.message);
+    }
+    // Remove the actual file from Supabase Storage
+    if (removed?.url) {
+      await db.removeFile(removed.url);
+    }
   };
 
   const openEdit = (idx) => {
