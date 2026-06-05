@@ -21,17 +21,33 @@ const OTHER_EDITIONS = [
 ];
 
 const TRUST = [
-  { icon: '✦', label: 'Contracted rates',     sub: '15–27% below direct booking' },
-  { icon: '🛡', label: 'Verified lodges',      sub: 'Every property personally vetted' },
-  { icon: '📞', label: 'Journey Specialists',  sub: 'Real people. Available now.' },
-  { icon: '🔄', label: 'Flexible terms',       sub: 'Best cancellation in the market' },
+  {
+    icon: `<svg width="18" height="20" viewBox="0 0 18 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 1.5L2 4.5V10.5C2 14.42 5.18 18.08 9 19.5C12.82 18.08 16 14.42 16 10.5V4.5L9 1.5Z" stroke="rgba(200,169,110,0.75)" stroke-width="0.9" stroke-linejoin="round"/><path d="M6 10.5L7.8 12.3L12 8.5" stroke="rgba(200,169,110,0.75)" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    label: 'Contracted rates',
+    sub: 'Up to 27% below direct booking*'
+  },
+  {
+    icon: `<svg width="20" height="16" viewBox="0 0 20 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 8C1 8 4 2 10 2C16 2 19 8 19 8C19 8 16 14 10 14C4 14 1 8 1 8Z" stroke="rgba(200,169,110,0.75)" stroke-width="0.9"/><circle cx="10" cy="8" r="2.5" stroke="rgba(200,169,110,0.75)" stroke-width="0.9"/><circle cx="10" cy="8" r="0.8" fill="rgba(200,169,110,0.5)"/></svg>`,
+    label: 'Verified properties',
+    sub: 'Every lodge personally inspected'
+  },
+  {
+    icon: `<svg width="16" height="21" viewBox="0 0 16 21" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="5.5" r="3.5" stroke="rgba(200,169,110,0.75)" stroke-width="0.9"/><path d="M1 19.5C1 15.634 4.134 12.5 8 12.5C11.866 12.5 15 15.634 15 19.5" stroke="rgba(200,169,110,0.75)" stroke-width="0.9" stroke-linecap="round"/></svg>`,
+    label: 'Dedicated concierge',
+    sub: 'Your personal travel planner'
+  },
+  {
+    icon: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 2C5.58 2 2 5.58 2 10C2 14.42 5.58 18 10 18C14.42 18 18 14.42 18 10" stroke="rgba(200,169,110,0.75)" stroke-width="0.9" stroke-linecap="round"/><path d="M14 2H18V6" stroke="rgba(200,169,110,0.75)" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 2L12 8" stroke="rgba(200,169,110,0.75)" stroke-width="0.9" stroke-linecap="round"/></svg>`,
+    label: 'Flexible terms',
+    sub: 'Best cancellation in the market'
+  },
 ];
 
 const STATS = [
-  { value: 90,  suffix: '+',   label: 'Curated properties' },
-  { value: 27,  suffix: '%',   label: 'Average saving' },
-  { value: 9,   suffix: 'min', label: 'Booking time' },
-  { value: 4.9, suffix: '★',   label: 'Guest satisfaction' },
+  { value: 52,  suffix: '+',   label: 'Verified properties' },
+  { value: 27,  suffix: '%',   label: 'Up to 27% saving*' },
+  { value: 9,   suffix: 'min', label: 'Avg. booking time' },
+  { value: 4.9, suffix: '★',   label: 'Guest satisfaction†' },
 ];
 
 // Unsplash fallback images per curated journey
@@ -43,10 +59,10 @@ const CURATED = [
 ];
 
 const CURRENCIES = [
-  { code: 'ZAR', symbol: 'R ',  rate: 1     },
   { code: 'USD', symbol: '$',   rate: 18.62 },
   { code: 'GBP', symbol: '£',   rate: 23.48 },
   { code: 'EUR', symbol: '€',   rate: 20.14 },
+  { code: 'ZAR', symbol: 'R ',  rate: 1     },
 ];
 type Currency = { code: string; symbol: string; rate: number };
 
@@ -396,7 +412,7 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
               </div>
               <div>
                 <span className="lh2-wm-title">The Safari Edition</span>
-                <span className="lh2-wm-sub">Sub-Saharan Africa · Curated</span>
+                <span className="lh2-wm-sub">Sub-Saharan Africa · Handpicked</span>
               </div>
             </div>
             <div style={{ position: 'relative' }}>
@@ -445,7 +461,7 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
                 <option key={c.code} value={c.code}>{c.code}</option>
               ))}
             </select>
-            <a href="/admin" className="lh2-nav-admin">Admin →</a>
+            <a href="/admin" className="lh2-nav-admin">Partner Login</a>
             <button className="lh2-nav-cta" onClick={onPlanJourney}>Plan My Journey</button>
           </div>
         </nav>
@@ -518,7 +534,7 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
               <div className={`lh2-r lh2-r1 ${revealed ? 'show' : ''}`}>
                 <div className="lh2-eyebrow">
                   <div className="lh2-eyebrow-line" />
-                  Sub-Saharan Africa · Curated
+                  Sub-Saharan Africa · Handpicked
                 </div>
               </div>
               <div className={`lh2-r lh2-r2 ${revealed ? 'show' : ''}`}>
@@ -529,15 +545,15 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
               </div>
               <div className={`lh2-r lh2-r4 ${revealed ? 'show' : ''}`}>
                 <p className="lh2-sub">
-                  Handpicked lodges. Contracted rates 15–27% below direct.<br />
-                  Expert sequencing. One specialist. Built in minutes.
+                  Handpicked lodges. Contracted rates up to 27% below direct.<br />
+                  Bespoke sequencing. Your dedicated concierge. Complete in minutes.
                 </p>
               </div>
               <div className={`lh2-r lh2-r5 ${revealed ? 'show' : ''}`}>
                 <div className="lh2-ctas">
                   <button className="lh2-cta-primary" onClick={onPlanJourney}>
                     <span className="lh2-cta-title">✦ Plan My Journey</span>
-                    <span className="lh2-cta-sub">Itinerary in under 30 seconds</span>
+                    <span className="lh2-cta-sub">Itinerary built in minutes</span>
                   </button>
                   <button className="lh2-cta-ghost" onClick={onCuratedJourneys}>
                     <span className="lh2-cta-title">Curated Journeys</span>
@@ -564,7 +580,11 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
           <div className="lh2-trust-inner">
             {TRUST.map(t => (
               <div key={t.label} className="lh2-trust-item">
-                <span className="lh2-trust-icon">{t.icon}</span>
+                <div
+                  className="lh2-trust-icon"
+                  style={{ flexShrink: 0, marginTop: 2, width: 20, display: 'flex', alignItems: 'flex-start' }}
+                  dangerouslySetInnerHTML={{ __html: t.icon }}
+                />
                 <div>
                   <div className="lh2-trust-lbl">{t.label}</div>
                   <div className="lh2-trust-sub">{t.sub}</div>
@@ -584,6 +604,40 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
               </div>
             ))}
           </div>
+          {/* Footnotes */}
+          <div style={{ maxWidth: 1200, margin: '18px auto 0', paddingTop: 12, borderTop: '0.5px solid rgba(255,255,255,0.05)', display: 'flex', flexWrap: 'wrap' as const, gap: 16 }}>
+            <p style={{ fontWeight: 200, fontSize: 10, color: 'rgba(245,240,232,0.22)', letterSpacing: '0.04em', lineHeight: 1.7, margin: 0 }}>
+              * Saving compared to booking directly with the lodge. Actual saving varies by property, season and room type.
+            </p>
+            <p style={{ fontWeight: 200, fontSize: 10, color: 'rgba(245,240,232,0.22)', letterSpacing: '0.04em', lineHeight: 1.7, margin: 0 }}>
+              † Guest satisfaction target. Tracked via post-journey NPS survey from first confirmed booking.
+            </p>
+          </div>
+        </div>
+
+        {/* AFFILIATIONS STRIP */}
+        <div style={{ background: '#0a0a0a', borderTop: '0.5px solid rgba(255,255,255,0.04)', borderBottom: '0.5px solid rgba(255,255,255,0.04)', padding: '28px clamp(20px,5vw,64px)' }}>
+          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+            <p style={{ textAlign: 'center' as const, fontWeight: 200, fontSize: 9, letterSpacing: '0.42em', textTransform: 'uppercase' as const, color: 'rgba(245,240,232,0.2)', marginBottom: 24 }}>
+              Accreditation &amp; Industry Partnerships
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'clamp(24px,5vw,64px)', flexWrap: 'wrap' as const }}>
+              {[
+                { abbr: 'ASATA', full: 'Association of Southern African Travel Agents', note: 'Member' },
+                { abbr: 'SATSA', full: 'Southern Africa Tourism Services Association', note: 'Member' },
+                { abbr: 'ATTA',  full: 'African Travel & Tourism Association', note: 'Applying 2026' },
+                { abbr: 'SA Tourism', full: 'South African Tourism Board', note: 'Partner' },
+              ].map(org => (
+                <div key={org.abbr} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 4, opacity: org.note === 'Applying 2026' ? 0.45 : 0.7 }}>
+                  <div style={{ fontFamily: "'Cormorant Garamond',serif", fontWeight: 400, fontSize: 15, color: 'rgba(200,169,110,0.8)', letterSpacing: '0.08em' }}>{org.abbr}</div>
+                  <div style={{ fontWeight: 200, fontSize: 8, letterSpacing: '0.22em', textTransform: 'uppercase' as const, color: 'rgba(245,240,232,0.25)', textAlign: 'center' as const, maxWidth: 120 }}>{org.full}</div>
+                  <div style={{ fontWeight: 300, fontSize: 8, letterSpacing: '0.18em', color: org.note === 'Applying 2026' ? 'rgba(167,139,250,0.6)' : 'rgba(74,222,128,0.55)', textTransform: 'uppercase' as const }}>
+                    {org.note === 'Applying 2026' ? '◌ ' : '✓ '}{org.note}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* CURATED JOURNEYS */}
@@ -591,9 +645,9 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
           <div className="lh2-curated-inner">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, flexWrap: 'wrap', gap: 12 }}>
               <div>
-                <div className="lh2-section-eyebrow">Curated Journeys</div>
-                <div className="lh2-section-title">Ready to book — from price</div>
-                <div className="lh2-section-sub">All-inclusive. Contracted rates. Every detail handled.</div>
+                <div className="lh2-section-eyebrow">Signature Journeys</div>
+                <div className="lh2-section-title">Bespoke itineraries, ready to book</div>
+                <div className="lh2-section-sub">All-inclusive. Contracted rates. Every detail handled by your personal specialist.</div>
               </div>
               <button className="lh2-view-btn" onClick={onCuratedJourneys}>View all →</button>
             </div>
@@ -655,7 +709,7 @@ export default function LandingHero({ onPlanJourney, onCuratedJourneys, onSendBr
                 <ul>
                   <li><a href="/about">About Us</a></li>
                   <li><a href="/contact">Contact</a></li>
-                  <li><a href="/admin">Admin</a></li>
+                  <li><a href="/admin">Partner Login</a></li>
                 </ul>
               </div>
               <div className="lh2-footer-col">
