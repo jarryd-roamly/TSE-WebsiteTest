@@ -3041,14 +3041,19 @@ const runBriefPlanner = (briefText: string) => {
 {screen === 'inspire-research' && (
   <SafariCinematicResearch
     answers={{
-      experience: adults === 1 ? 'first' : 'returning',
-      regions: selectedRegions,
+      experience:   adults === 1 ? 'first' : 'returning',
+      regions:      selectedRegions,
       nights,
-      travellers: adults === 1 ? 'solo' : adults === 2 ? 'couple' : `group of ${adults}`,
-      budget: fmt(budget),
+      travellers:   adults === 1 ? 'solo' : adults === 2 ? 'couple' : `group of ${adults}`,
+      budget:       fmt(budget),
+      budgetRaw:    budget,
       adults,
       children,
-      origin: needsIntlFlight ? intlOrigin : origin,
+      infants,
+      occasion:     selectedTheme,
+      origin:       needsIntlFlight ? intlOrigin : origin,
+      checkinDate,
+      flexMonth,
     }}
     aiReady={itinerary !== null}
     onComplete={() => setScreen('builder')}
