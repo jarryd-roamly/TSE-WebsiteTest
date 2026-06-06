@@ -1,20 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import {
+  fetchKBForRegions,
+  fetchOverrideEntries,
+  buildKBContext,
+  buildKBContextForSkeleton,
+  type KBEntry,
+} from '@/app/lib/kb';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/build-itinerary  (v2)
+// POST /api/build-itinerary  (v3)
 //
-// Changes from v1:
-//   ✓ Strict region adherence: regions.length === output.cities.length, or fail
-//   ✓ Theme parameter: drives KB selection, property scoring, malaria-free filter
-//   ✓ Brief extraction: structured fields via Haiku, not regex
-//   ✓ Multi-region templates (3+ regions) supported
-//   ✓ Returns followUps array for low-confidence brief fields
+// Changes from v2:
+//   ✓ KB integration — four-tier priority hierarchy enforced
+//   ✓ Override entries gate property selection (guidance_importance:3)
+//   ✓ Commercial KB entries inform property ranking (margin-aware)
+//   ✓ KB context injected into AI planner system prompt
+//   ✓ KB entries matched to skeleton findings stored in response
+//   ✓ Property scoring boosted by KB trust signals
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL    = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_KEY     = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY!;
+const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SERVICE_KEY   = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY!;
 
 const M = {
   hotels:     Number(process.env.MARGIN_HOTELS)     || 1.15,
@@ -91,27 +99,62 @@ function extractImage(s: any): string {
   return img || s.hero_image || s.cover_image || '';
 }
 
-// ── Theme-aware property scoring ──────────────────────────────────────────────
-function scoreSupplier(s: any, checkIn: string | undefined, nights: number, themeTags: string[]): any {
+// ── KB-aware property scoring ─────────────────────────────────────────────────
+// Extends the v2 theme-aware scorer with:
+//   + KB trust boost: +10 if property has active KB entries with evidence_strength >= 4
+//   + KB commercial boost: margin-ranked properties get up to +15
+//   + KB demotion: properties flagged in KB guardrails get -20
+function scoreSupplier(
+  s:               any,
+  checkIn:         string | undefined,
+  nights:          number,
+  themeTags:       string[],
+  kbBySupplier:    Record<string, KBEntry[]>,
+  marginRankMap:   Record<string, number>,  // supplierId → rank (1=best, higher=worse)
+): any {
   const net  = Number(s.net_rate_per_night) || 25000;
   const disp = Number(s.display_rate_per_night) || Math.round(net * M.hotels);
   const gp   = disp - net;
 
-  // Base score from scoring engine
+  // Base score (unchanged from v2)
   let score = Math.round(
     (Number(s.trust_score)   || 50) * 0.25 +
     (Number(s.content_score) || 40) * 0.15 +
-    normGP(gp)                       * 0.30 +
-    seasonScore(s.region_slug, checkIn) * 0.20 +
-    availScore(s.pms_type)            * 0.10
+    normGP(gp)                            * 0.30 +
+    seasonScore(s.region_slug, checkIn)   * 0.20 +
+    availScore(s.pms_type)                * 0.10
   );
 
-  // ── Theme tag boost ─────────────────────────────────────────────────────────
-  const supplierTags = Array.isArray(s.tags) ? s.tags.map((t: string) => t.toLowerCase()) : [];
-  const matchedTags  = themeTags.filter(t => supplierTags.includes(t.toLowerCase()));
-  if (matchedTags.length > 0) score += Math.min(15, matchedTags.length * 5);  // up to +15
+  // Theme tag boost (unchanged from v2)
+  const supplierTags  = Array.isArray(s.tags) ? s.tags.map((t: string) => t.toLowerCase()) : [];
+  const matchedTags   = themeTags.filter(t => supplierTags.includes(t.toLowerCase()));
+  if (matchedTags.length > 0) score += Math.min(15, matchedTags.length * 5);
 
-  score = Math.min(100, score);
+  // ── KB boosts ──────────────────────────────────────────────────────────────
+  const supplierKB = kbBySupplier[s.id] ?? [];
+
+  // Trust boost: property has high-evidence KB entries (site visits, FAM trips)
+  const highEvidenceEntries = supplierKB.filter(e =>
+    e.status === 'active' &&
+    e.claim_type !== 'commercial' &&
+    (e.evidence_strength ?? 1) >= 4
+  );
+  if (highEvidenceEntries.length > 0) score += 10;
+
+  // Commercial margin rank boost: rank 1 gets +15, rank 2 gets +10, rank 3 gets +5
+  const marginRank = marginRankMap[s.id];
+  if (marginRank === 1) score += 15;
+  else if (marginRank === 2) score += 10;
+  else if (marginRank === 3) score += 5;
+
+  // KB demotion: commercial entries with trust flags get penalised
+  const demoted = supplierKB.some(e =>
+    e.claim_type === 'commercial' &&
+    e.specialist_recs?.some(r => r.toLowerCase().includes('not preferred') || r.toLowerCase().includes('do not recommend'))
+  );
+  if (demoted) score -= 20;
+
+  score = Math.min(100, Math.max(0, score));
 
   return {
     id:                   s.id,
@@ -125,11 +168,12 @@ function scoreSupplier(s: any, checkIn: string | undefined, nights: number, them
     subRegion:            s.region_slug || '',
     country:              s.country || '',
     image:                extractImage(s),
-    funFact:              s.fun_fact || '',
+    funFact:              s.fun_fact || s.short_tagline || '',
     malariaFree:          Boolean(s.malaria_free),
     tags:                 supplierTags,
     pmsType:              s.pms_type || null,
     themeMatch:           matchedTags,
+    kbEntryCount:         supplierKB.filter(e => e.status === 'active').length,
     upgrades: s.upgrades || {
       rooms:       [{ label:'Standard Suite', extra:0, tier:0 }, { label:'Premium Suite', extra:Math.round(disp*0.35), tier:1 }],
       basis:       [{ label:'All-inclusive',  extra:0, tier:0 }],
@@ -138,7 +182,55 @@ function scoreSupplier(s: any, checkIn: string | undefined, nights: number, them
   };
 }
 
-// ── Default city for an unmatched region (used when AI/template fails) ───────
+// ── Build margin rank map from commercial KB entries ──────────────────────────
+// Returns: { supplierId: rank } where rank 1 = highest margin recommended
+function buildMarginRankMap(kbEntries: KBEntry[]): Record<string, number> {
+  const commercialEntries = kbEntries.filter(e =>
+    e.claim_type === 'commercial' &&
+    e.status === 'active' &&
+    e.supplier_id &&
+    e.guidance_importance === 2
+  );
+
+  // Sort by evidence_strength desc (higher = more confident margin data)
+  // Within same strength, by guidance_importance
+  const sorted = [...commercialEntries].sort((a, b) =>
+    (b.evidence_strength ?? 1) - (a.evidence_strength ?? 1)
+  );
+
+  const rankMap: Record<string, number> = {};
+  sorted.forEach((e, i) => {
+    if (e.supplier_id && !rankMap[e.supplier_id]) {
+      rankMap[e.supplier_id] = i + 1;
+    }
+  });
+
+  return rankMap;
+}
+
+// ── Check if a property is blocked by a KB override entry ────────────────────
+function isBlockedByKB(
+  supplierId: string,
+  supplierName: string,
+  overrideEntries: KBEntry[]
+): boolean {
+  return overrideEntries.some(e =>
+    e.override_ai &&
+    e.specialist_recs?.some(r => {
+      const lower = r.toLowerCase();
+      return (
+        lower.includes('do not recommend') ||
+        lower.includes('not recommended') ||
+        lower.includes('must not be recommended')
+      ) && (
+        lower.includes(supplierName.toLowerCase()) ||
+        (e.supplier_id && e.supplier_id === supplierId)
+      );
+    })
+  );
+}
+
+// ── Default city for region ───────────────────────────────────────────────────
 function defaultCityForRegion(slug: string, nights: number): any {
   const r = REGIONS[slug];
   const whys: Record<string, string> = {
@@ -160,12 +252,12 @@ function defaultCityForRegion(slug: string, nights: number): any {
     'bwindi':           ['Mountain gorilla trekking','Forest walks','Community visit'],
   };
   return {
-    city:        r?.label || slug.replace(/-/g, ' '),
-    country:     r?.country || '',
-    regionSlug:  slug,
+    city:       r?.label || slug.replace(/-/g, ' '),
+    country:    r?.country || '',
+    regionSlug: slug,
     nights,
-    why:         whys[slug] || 'A region we know well.',
-    highlights:  highlights[slug] || [],
+    why:        whys[slug] || 'A region we know well.',
+    highlights: highlights[slug] || [],
   };
 }
 
@@ -186,17 +278,7 @@ async function extractBrief(text: string): Promise<any> {
         system: 'You extract structured data. Return ONLY JSON. No preamble.',
         messages: [{
           role: 'user',
-          content: `Extract from brief: "${text.replace(/"/g, '\\"')}"
-
-Categories (independent — a brief can have multiple):
-- party: family|couple|solo|friends|group|multigenerational
-- occasion: honeymoon|anniversary|birthday|babymoon|retirement|graduation|none
-- style: adventure|wildlife|photography|conservation|romantic|luxury|cultural|mixed
-
-"Family" is PARTY, never occasion. "Honeymoon" is OCCASION.
-
-Return:
-{"party":{"value":<x>,"confidence":<0-1>},"occasion":{"value":<x>,"confidence":<0-1>},"style":{"value":<x>,"confidence":<0-1>},"themes":[<tag keywords for property matching>]}`,
+          content: `Extract from brief: "${text.replace(/"/g, '\\"')}"\n\nCategories (independent — a brief can have multiple):\n- party: family|couple|solo|friends|group|multigenerational\n- occasion: honeymoon|anniversary|birthday|babymoon|retirement|graduation|none\n- style: adventure|wildlife|photography|conservation|romantic|luxury|cultural|mixed\n\n"Family" is PARTY, never occasion. "Honeymoon" is OCCASION.\n\nReturn:\n{"party":{"value":<x>,"confidence":<0-1>},"occasion":{"value":<x>,"confidence":<0-1>},"style":{"value":<x>,"confidence":<0-1>},"themes":[<tag keywords for property matching>]}`,
         }],
       }),
     });
@@ -208,19 +290,7 @@ Return:
   } catch { return null; }
 }
 
-// ── Smart night distribution ───────────────────────────────────────────────────
-// Algorithm:
-//   1. Assign minimum nights per region (non-negotiable rules)
-//   2. Score remaining nights by: avgGPperNight × seasonMultiplier × regionType
-//   3. Greedy allocation with 0.75 decay — prevents any single region dominating
-//
-// Example: Kruger + Okavango + Madikwe, 10 nights, July
-//   Minimums: 3+3+2 = 8. Remaining: 2.
-//   GP×Season scores: Okavango ~14,400 | Kruger ~10,080 | Madikwe ~6,000
-//   Night 1 → Okavango (scores: Okavango 10,800 | Kruger 10,080 | Madikwe 6,000)
-//   Night 2 → Kruger (scores: Okavango 10,800 | Kruger 7,560 | Madikwe 6,000)
-//   Result: Kruger 4 | Okavango 4 | Madikwe 2  ← earned by maths, not assumption
-
+// ── Night distribution ────────────────────────────────────────────────────────
 const REGION_MINIMUMS: Record<string, number> = {
   'kruger-sabi-sand': 3, 'okavango-delta': 3, 'cape-town': 3,
   'madikwe': 2, 'chobe-vic-falls': 2, 'masai-mara': 3,
@@ -237,40 +307,37 @@ const SEASON_PEAKS: Record<string, { peak: number[]; shoulder: number[] }> = {
   'bwindi':           { peak:[6,7,12,1],    shoulder:[2,3,8,9]   },
 };
 
-// City regions: lower wildlife GP — penalise extra nights
 const REGION_TYPE_MULT: Record<string, number> = { 'cape-town': 0.55 };
 
 function distributeNights(
-  regions:      string[],
-  totalNights:  number,
-  suppliers:    any[],
+  regions:     string[],
+  totalNights: number,
+  suppliers:   any[],
   checkinDate?: string,
   marginHotels: number = 1.15,
 ): number[] {
   if (regions.length === 0) return [];
   if (regions.length === 1) return [totalNights];
 
-  // Assign minimums
-  const minimums  = regions.map(r => REGION_MINIMUMS[r] ?? 2);
-  const minTotal  = minimums.reduce((a, b) => a + b, 0);
+  const minimums = regions.map(r => REGION_MINIMUMS[r] ?? 2);
+  const minTotal = minimums.reduce((a, b) => a + b, 0);
   if (minTotal >= totalNights) return minimums;
 
   const nights    = [...minimums];
   let remaining   = totalNights - minTotal;
 
-  // Score each region using actual supplier data
   const month = checkinDate ? new Date(checkinDate).getMonth() + 1 : 0;
   const scores = regions.map(slug => {
     const pool    = suppliers.filter((s: any) => s.region_slug === slug && s.is_active !== false);
     const avgNet  = pool.length > 0
-      ? pool.reduce((s: number, p: any) => s + (Number(p.net_rate_per_night)    || 25000), 0) / pool.length
+      ? pool.reduce((s: number, p: any) => s + (Number(p.net_rate_per_night) || 25000), 0) / pool.length
       : 25000;
     const avgDisp = pool.length > 0
       ? pool.reduce((s: number, p: any) => s + (Number(p.display_rate_per_night) || Math.round(avgNet * marginHotels)), 0) / pool.length
       : Math.round(avgNet * marginHotels);
-    const gpPerNight  = avgDisp - avgNet;
-    const sp          = SEASON_PEAKS[slug];
-    const seasonMult  = !month ? 1.0
+    const gpPerNight = avgDisp - avgNet;
+    const sp         = SEASON_PEAKS[slug];
+    const seasonMult = !month ? 1.0
       : sp?.peak.includes(month)     ? 1.25
       : sp?.shoulder.includes(month) ? 1.0
       : 0.75;
@@ -278,7 +345,6 @@ function distributeNights(
     return gpPerNight * seasonMult * typeMult;
   });
 
-  // Greedy allocation with diminishing returns
   const decayScores = [...scores];
   for (let i = 0; i < remaining; i++) {
     const maxIdx = decayScores.indexOf(Math.max(...decayScores));
@@ -289,17 +355,10 @@ function distributeNights(
   return nights;
 }
 
-// ── Order regions geographically (rough) for sensible routing ─────────────────
 function orderRegions(slugs: string[]): string[] {
-  // Rough order: SA bush → Botswana → Zim/Zambia → East Africa → Cape Town at end
   const orderPriority: Record<string, number> = {
-    'kruger-sabi-sand': 1,
-    'madikwe':          2,
-    'okavango-delta':   3,
-    'chobe-vic-falls':  4,
-    'masai-mara':       5,
-    'bwindi':           6,
-    'cape-town':        9,  // always last — return to city after bush
+    'kruger-sabi-sand': 1, 'madikwe': 2, 'okavango-delta': 3,
+    'chobe-vic-falls': 4, 'masai-mara': 5, 'bwindi': 6, 'cape-town': 9,
   };
   return [...slugs].sort((a, b) => (orderPriority[a] || 99) - (orderPriority[b] || 99));
 }
@@ -317,9 +376,10 @@ export async function POST(req: NextRequest) {
       flightIntent = 'flexible',
       checkinDate,
       briefText,
-      theme,             // 'honeymoon' | 'family' | ...
-      occasion,          // optional override
-      style,             // optional override
+      theme,
+      occasion,
+      style,
+      editionId = 'safari',
     } = body;
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -331,10 +391,9 @@ export async function POST(req: NextRequest) {
     let effectiveOccasion = occasion;
     let effectiveStyle    = style;
     let themeTags: string[] = [];
-    let followUps: string[] = [];
     let briefStructured: any = null;
 
-    // ── Step 1: Brief extraction ─────────────────────────────────────────────
+    // ── Step 1: Brief extraction ──────────────────────────────────────────────
     if (mode === 'brief' && briefText?.trim()) {
       briefStructured = await extractBrief(briefText);
       if (briefStructured) {
@@ -345,23 +404,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Step 2: Resolve theme tags for property scoring ──────────────────────
+    // ── Step 2: Theme tags ────────────────────────────────────────────────────
     if (effectiveOccasion && THEME_TAG_BOOST[effectiveOccasion]) themeTags.push(...THEME_TAG_BOOST[effectiveOccasion]);
     if (effectiveStyle    && THEME_TAG_BOOST[effectiveStyle])    themeTags.push(...THEME_TAG_BOOST[effectiveStyle]);
     if (effectiveTheme    && THEME_TAG_BOOST[effectiveTheme])    themeTags.push(...THEME_TAG_BOOST[effectiveTheme]);
-    themeTags = [...new Set(themeTags)];  // dedupe
+    themeTags = [...new Set(themeTags)];
 
-    // ── Step 3: Malaria filter for infants/babymoon ──────────────────────────
+    // ── Step 3: Malaria filter ────────────────────────────────────────────────
     const requiresMalariaFree = infants > 0 || effectiveOccasion === 'babymoon';
     if (requiresMalariaFree) {
       effectiveRegions = effectiveRegions.filter((r: string) => !MALARIA_REGIONS.has(r));
-      if (effectiveRegions.length === 0) {
-        // User selected only malaria regions but has infants — replace with default malaria-free
-        effectiveRegions = ['madikwe'];
-      }
+      if (effectiveRegions.length === 0) effectiveRegions = ['madikwe'];
     }
 
-    // ── Step 4: Order regions for sensible routing ───────────────────────────
+    // ── Step 4: Order regions ────────────────────────────────────────────────
     if (effectiveRegions.length > 0) {
       effectiveRegions = orderRegions(effectiveRegions);
     }
@@ -370,58 +426,89 @@ export async function POST(req: NextRequest) {
     const { data: suppliers = [] } = await supabase
       .from('suppliers')
       .select('*')
-      .eq('edition_id', 'safari')
+      .eq('edition_id', editionId)
       .eq('is_active', true)
       .order('trust_score', { ascending: false });
 
-    // ── Step 6: Build cities — STRICT region adherence ────────────────────────
+    // ── Step 6: Fetch KB entries (parallel with suppliers) ────────────────────
+    // Fetch ALL entries for the journey's regions including commercial ones.
+    // Commercial entries are used server-side for scoring only — never returned.
+    const regionsToFetch = effectiveRegions.length > 0
+      ? effectiveRegions
+      : ['kruger-sabi-sand', 'okavango-delta']; // fallback
+
+    const [kbEntries, overrideEntries] = await Promise.all([
+      fetchKBForRegions(regionsToFetch, editionId),
+      fetchOverrideEntries(regionsToFetch, editionId),
+    ]);
+
+    // Build lookup structures for fast scoring
+    const kbContext       = buildKBContext(kbEntries, regionsToFetch, editionId);
+    const kbForSkeleton   = buildKBContextForSkeleton(kbEntries, regionsToFetch);
+    const marginRankMap   = buildMarginRankMap(kbEntries);
+
+    // ── Step 7: Build cities ──────────────────────────────────────────────────
     let cities: any[] = [];
     let source: 'explicit-regions' | 'ai-suggested' | 'fallback' = 'explicit-regions';
 
     if (effectiveRegions.length > 0) {
-      // User explicitly chose regions — honour them, do NOT drop any
       const nightSplit = distributeNights(effectiveRegions, effectiveNights, suppliers, checkinDate, M.hotels);
       cities = effectiveRegions.map((slug: string, i: number) => defaultCityForRegion(slug, nightSplit[i]));
 
-      // Verify city count matches region count — non-negotiable
       if (cities.length !== effectiveRegions.length) {
-        return NextResponse.json({ success: false, error: `Region count mismatch: ${cities.length} cities for ${effectiveRegions.length} regions` }, { status: 500 });
+        return NextResponse.json({
+          success: false,
+          error: `Region count mismatch: ${cities.length} cities for ${effectiveRegions.length} regions`,
+        }, { status: 500 });
       }
     } else {
-      // No regions specified — let AI suggest
       source = 'ai-suggested';
-      // Fallback to canonical Sabi+Okavango if AI fails
       cities = [
         defaultCityForRegion('kruger-sabi-sand', Math.ceil(effectiveNights * 0.57)),
         defaultCityForRegion('okavango-delta',   effectiveNights - Math.ceil(effectiveNights * 0.57)),
       ];
     }
 
-    // ── Step 7: Score and assign property per city (theme-aware) ──────────────
-    const cityStays:    any[] = [];
-    const pricedCities: any[] = [];
+    // ── Step 8: Score and assign property per city (KB-aware) ─────────────────
+    const cityStays:     any[] = [];
+    const pricedCities:  any[] = [];
+    const kbMatchedIds:  string[] = [];
     let displayTotal = 0;
 
     for (const city of cities) {
       const pool = suppliers.filter((s: any) => s.region_slug === city.regionSlug);
-      const scored = pool
-        .map((s: any) => scoreSupplier(s, checkinDate, city.nights, themeTags))
+
+      // Apply KB override blocks — remove any property the KB says not to recommend
+      const eligiblePool = pool.filter((s: any) =>
+        !isBlockedByKB(s.id, s.name, overrideEntries)
+      );
+
+      const scored = eligiblePool
+        .map((s: any) => scoreSupplier(
+          s, checkinDate, city.nights, themeTags,
+          kbForSkeleton.bySupplier,
+          marginRankMap,
+        ))
         .sort((a: any, b: any) => b.score - a.score);
 
-      const best = scored[0];
-      const hotelId = best?.id ?? 0;
+      const best     = scored[0];
+      const hotelId  = best?.id ?? 0;
 
       cityStays.push({ hotelId, nights: city.nights, prefs: { rooms: 0, basis: 0, flexibility: 0 } });
 
       const lodgeCost = (best?.displayPricePerNight ?? 0) * city.nights;
       displayTotal += lodgeCost;
 
+      // Collect KB entry IDs matched to this city
+      const cityKBEntries = kbForSkeleton.byRegion[city.regionSlug] ?? [];
+      kbMatchedIds.push(...cityKBEntries.map(e => e.id));
+
       pricedCities.push({
         ...city,
         hotelRate:      best?.displayPricePerNight ?? 0,
         estimatedCost:  lodgeCost,
         flightCost: 0, transferCost: 0, activityCost: 0,
-        arrivalGap: 'Arrive midday — first drive at 16:00',
+        arrivalGap:   'Arrive midday — first drive at 16:00',
         departureGap: 'Final morning drive before departure',
         propertyOptions: scored.slice(0, 4).map((s: any) => ({
           id: s.id, name: s.name, score: s.score,
@@ -429,12 +516,13 @@ export async function POST(req: NextRequest) {
           image: s.image, funFact: s.funFact,
           trustScore: s.trustScore, contentScore: s.contentScore,
           malariaFree: s.malariaFree, tags: s.tags,
-          themeMatch: s.themeMatch, upgrades: s.upgrades,
+          themeMatch: s.themeMatch, kbEntryCount: s.kbEntryCount,
+          upgrades: s.upgrades,
         })),
       });
     }
 
-    // ── Step 8: Final integrity check (region count = city count) ────────────
+    // ── Step 9: Final integrity check ─────────────────────────────────────────
     if (effectiveRegions.length > 0 && pricedCities.length !== effectiveRegions.length) {
       return NextResponse.json({
         success: false,
@@ -442,7 +530,7 @@ export async function POST(req: NextRequest) {
       }, { status: 500 });
     }
 
-    // ── Step 9: Build response ────────────────────────────────────────────────
+    // ── Step 10: Build itinerary response ─────────────────────────────────────
     const itinerary = {
       title:               `${effectiveNights}-Night ${pricedCities.map((c: any) => c.city.split(' / ')[0]).join(' & ')}`,
       summary:             '',
@@ -453,8 +541,16 @@ export async function POST(req: NextRequest) {
         : '',
       cities:              pricedCities,
       totalEstimate:       displayTotal,
-      aiInsights:          ['Your rates are 15–27% below direct booking.'],
-      warnings:            requiresMalariaFree && infants > 0 ? ['Malaria regions excluded due to infants travelling.'] : [],
+      aiInsights:          [
+        'Your rates are 15–27% below direct booking.',
+        ...kbEntries
+          .filter(e => e.guidance_importance >= 2 && !e.internal_only && e.highlights?.length)
+          .slice(0, 2)
+          .map(e => e.highlights![0]),
+      ].filter(Boolean),
+      warnings:            requiresMalariaFree && infants > 0
+        ? ['Malaria regions excluded due to infants travelling.']
+        : [],
       inputMode:           mode,
       theme:               effectiveTheme,
       occasion:            effectiveOccasion,
@@ -463,19 +559,22 @@ export async function POST(req: NextRequest) {
     };
 
     return NextResponse.json({
-      success:       true,
+      success:        true,
       itinerary,
       cityStays,
       displayTotal,
-      depositAmount: Math.round(displayTotal * 0.30),
-      regions:       effectiveRegions,
+      depositAmount:  Math.round(displayTotal * 0.30),
+      regions:        effectiveRegions,
       source,
       briefStructured,
-      followUps,
+      // KB metadata — used by skeleton engine, not shown to traveller
+      kbMatchedIds:   [...new Set(kbMatchedIds)],
+      kbContext,       // injected into AI planner system prompt when used
+      overrideCount:  overrideEntries.length,
     });
 
   } catch (e: any) {
-    console.error('[build-itinerary v2]', e?.message);
+    console.error('[build-itinerary v3]', e?.message);
     return NextResponse.json({ success: false, error: e?.message || 'Build failed' }, { status: 500 });
   }
 }
