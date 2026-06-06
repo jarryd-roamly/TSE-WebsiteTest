@@ -389,7 +389,7 @@ function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
   if (imageUrl.includes('unsplash') && s.cover_image)   imageUrl = s.cover_image;
   const destination = REGION_LABEL[s.region_slug] ?? s.destination ?? s.region_slug ?? '';
   const hotel: any = {
-    id:s.id, edition_id:s.edition_id||'safari', name:s.name,
+    id:s.id, supplier_id:s.id, edition_id:s.edition_id||'safari', name:s.name,
     location:destination ? `${destination}, ${s.country}` : s.country??'',
     destination, subRegion:s.region_slug??'', region:COUNTRY_REGION[s.country]||'southern-africa',
     country:s.country||'', stars:5, trustScore:s.trust_score||85, contentScore:s.content_score||70,
@@ -397,7 +397,7 @@ function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
     marginScore:displayRate>0 ? Math.round((displayRate-netRate)/displayRate*100) : 20,
     image:imageUrl, reelUrl:s.reel_url??s.video_url??null,
     funFact:s.short_tagline??(s.description ? String(s.description).slice(0,120) : null),
-    malariaFree:s.malaria_status==='malaria-free', tags:s.tags||[],
+    malariaFree:s.malaria_status==='malaria-free', tags:s.tags||[], rate_includes:s.rate_includes||[],
     reviewScore:s.review_score??null, reviewCount:s.review_count??null,
     socialLinks:s.social_media_links??null,
     _images:extraSlides,
@@ -1241,7 +1241,7 @@ function NestedPropertyCarousel({
                       Customise ✦
                     </button>
                     {onExploreLodge && (
-                      <button onClick={() => onExploreLodge(hotel, (hotel as any).supplier_id, (hotel as any).rate_includes ?? [])} style={{ padding:'12px 14px', borderRadius:9, border:`0.5px solid ${T.border}`, background:'rgba(255,255,255,0.04)', color:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, letterSpacing:'0.02em', whiteSpace:'nowrap' as const }}>
+                      <button onClick={() => onExploreLodge(hotel, hotel.supplier_id ?? String(hotel.id), hotel.rate_includes ?? [])} style={{ padding:'12px 14px', borderRadius:9, border:`0.5px solid ${T.border}`, background:'rgba(255,255,255,0.04)', color:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, letterSpacing:'0.02em', whiteSpace:'nowrap' as const }}>
                         Explore →
                       </button>
                     )}
@@ -2996,13 +2996,15 @@ const runBriefPlanner = (briefText: string) => {
         <div style={{ minHeight:'100vh', background:T.bg, paddingBottom:120 }}>
           <Nav {...navProps} />
 
-          <div style={{ maxWidth:680, margin:'0 auto', padding:'20px 20px 0' }}>
-            <div style={{ background:T.surface, border:`0.5px solid ${T.borderGold}`, borderRadius:14, padding:'14px 18px', marginBottom:24 }}>
+          <div style={{ maxWidth:1280, margin:'0 auto', padding:'20px 20px 0' }}>
+            <div style={{ background:T.surface, border:`0.5px solid ${T.borderGold}`, borderRadius:14, padding:'14px 18px', marginBottom:24, maxWidth:680, margin:'0 auto 24px' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:8 }}>
                 <div>
                   <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Your Journey</div>
                   <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif" }}>{itinerary.title}</div>
-                  <div style={{ fontSize:12, color:T.textDim, marginTop:4 }}>{itinerary.routing}</div>
+                  <div style={{ fontSize:12, color:T.textDim, marginTop:4 }}>{
+                    itinerary.routing?.replace(/^JNB\s*→\s*/,'').replace(/\s*→\s*JNB$/,'') ?? itinerary.routing
+                  }</div>
                 </div>
                 <div style={{ textAlign:'right' as const }}>
                   <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>{itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights · {selectedFlightOffer ? 'incl. flights' : 'excl. flights'}</div>
@@ -3237,6 +3239,18 @@ const runBriefPlanner = (briefText: string) => {
                 supplierId={miniSiteSupplier}
                 kbEntries={kbEntries}
                 includes={miniSiteIncludes}
+                onSelectRoom={(extra, label) => {
+                  // Find the city index for this hotel and update prefs
+                  const cityIdx = cityStays.findIndex(s => String(s.hotelId) === String(miniSiteHotel?.id));
+                  if (cityIdx >= 0) {
+                    const roomTier = miniSiteHotel?.upgrades?.rooms?.findIndex((r:any) => r.label === label) ?? 0;
+                    setCityStays(prev => {
+                      const next = [...prev];
+                      next[cityIdx] = { ...next[cityIdx], prefs:{ ...next[cityIdx].prefs, rooms: roomTier >= 0 ? roomTier : 0 } };
+                      return next;
+                    });
+                  }
+                }}
                 onClose={() => { setMiniSiteHotel(null); setMiniSiteSupplier(undefined); setMiniSiteIncludes([]); }}
               />
             )}      
