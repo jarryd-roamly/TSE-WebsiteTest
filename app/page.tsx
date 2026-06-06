@@ -2726,24 +2726,10 @@ const runBriefPlanner = (briefText: string) => {
     <>
       <style suppressHydrationWarning>{GLOBAL_CSS}</style>
       <style suppressHydrationWarning>{`
-        /* BCC CINEMATIC OVERRIDE ─────────────────────────────── */
         body { background: #0e0c10 !important; }
-
-        /* Warmer, slightly lighter surfaces */
         .bcc-card { background: rgba(28,24,32,0.88) !important; }
-
-        /* Carousel arrows ─ gold bg, black arrow */
-        button[aria-label="Previous property"],
-        button[aria-label="Next property"] {
-          background: #d4af37 !important;
-          border-color: #d4af37 !important;
-          color: #0a0a0a !important;
-        }
-
-        /* Transfer card selects */
-        .transfer-select-btn {
-          transition: all 0.2s;
-        }
+        .carousel-arrow-btn { background: #d4af37 !important; border-color: #d4af37 !important; color: #0a0a0a !important; font-weight: 700 !important; }
+        .transfer-select-btn { transition: all 0.2s; }
       `}</style>
       {showValidation && <ValidationModal issues={validationIssues} onProceed={doCheckout} onBack={()=>setShowValidation(false)} />}
 
