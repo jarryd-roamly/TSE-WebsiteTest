@@ -214,7 +214,7 @@ export const MADIKWE_LASTMILE: LastMile[] = [
     mode: 'charter', label: 'Light aircraft charter via Gaborone (GBE)',
     fromAirport: 'GBE', fare: 35000, currency: 'ZAR', durationMin: 30,
     perCharter: true, recommended: false,
-    note: 'Madikwe is 28km from Gaborone Airport. Niche option for guests arriving via Botswana or EU/UK routing via GBE. Air Botswana / Airlink GBE→MUB for Delta connections.',
+    note: 'Madikwe is 28km from Gaborone Airport. Niche option for guests arriving via Botswana or EU/UK routing via GBE. ⚠ Requires road transfer from GBE to Madikwe gate (~28km) with 2 border crossings (Botswana exit + SA entry at Kopfontein or Derdepoort). Allow 2–3 hours for road + border processing. Not recommended for tight connections. Air Botswana / Airlink GBE→MUB for Delta connections.',
   },
 ];
 
