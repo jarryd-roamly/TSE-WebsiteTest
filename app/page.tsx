@@ -1225,7 +1225,7 @@ function NestedPropertyCarousel({
                   )}
 
                   {/* [V6-5] SINGLE BUTTON — Customise. Select button removed (auto-selected on swipe). */}
-<div style={{ display:'flex', gap:8, marginTop:4 }}>
+                  <div style={{ display:'flex', gap:8, marginTop:4 }}>
                     <button onClick={() => setUpgradeOpenId(String(hotel.id))} style={{ flex:1, padding:'12px 0', borderRadius:9, border:`1.5px solid ${T.borderGold}`, background:T.goldDim, color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700, letterSpacing:'0.03em' }}>
                       Customise ✦
                     </button>
