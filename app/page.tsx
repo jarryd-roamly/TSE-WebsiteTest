@@ -29,7 +29,7 @@ import { lastMileFor, lastMileZar, defaultCommercialTarget,
 import SafariCinematicResearch from '@/components/SafariCinematicResearch'
 import LandingHero from '@/components/LandingHero';
 import JourneyLoadingScreen from '@/components/JourneyLoadingScreen';
-import RegionChapter, { PropertyMiniSite } from '@/components/RegionChapter';
+import RegionChapter, { PropertyMiniSite, InclusionPills } from '@/components/RegionChapter';
 import type { SkeletonFinding as RegionSkeletonFinding } from '@/components/RegionChapter';
 import JourneyConfirmation from '@/components/JourneyConfirmation';
 import type { LastMile, AirportCode }        from './lib/transfers';
@@ -355,16 +355,38 @@ function buildSlides(hotel: Hotel): Slide[] {
 }
 
 function getSlideKB(hotel: Hotel, slide: Slide, kbEntries: KBEntry[]): string | null {
-  const entries = kbEntries.filter(e => e.active);
-  if (slide.roomType) {
-    const roomMatch = entries.find(e => e.linkedTo?.toLowerCase().includes(slide.roomType!.toLowerCase()));
-    if (roomMatch) return roomMatch.specialistNotes || Object.values(roomMatch.structuredFields ?? {}).find((v:any) => typeof v==='string'&&v.length>20) as string;
+  // TRAVELLER-SAFE ONLY — never expose specialistNotes or specialist_recs
+  const entries = kbEntries.filter((e:any) =>
+    (e.active || e.status === 'active') &&
+    !e.internal_only &&
+    e.claim_type !== 'commercial'
+  );
+  // Try property-level traveller tip
+  const propMatch = entries.find((e:any) =>
+    (e.type==='property' || e.entry_type==='property') &&
+    ((e.linkedTo ?? e.linked_name ?? '')).toLowerCase().includes(hotel.name.toLowerCase())
+  );
+  if (propMatch) {
+    const tip = (propMatch.tips ?? [])[0] ?? (propMatch.highlights ?? [])[0];
+    if (tip) return tip;
+    // Fall back to safe structured fields only (why_here, best_sightings — not commercial/ops)
+    const safe = ['why_here','best_sightings','ideal_nights'];
+    const field = safe.map(k => propMatch.structuredFields?.[k]).find(v => typeof v === 'string' && v.length > 15);
+    if (field) return String(field);
   }
-  const propMatch = entries.find(e => e.type==='property' && e.linkedTo?.toLowerCase().includes(hotel.name.toLowerCase()));
-  if (propMatch) return propMatch.specialistNotes || null;
+  // Try region-level traveller fact
   if (slide.label === 'Hero' || !slide.roomType) {
-    const regionMatch = entries.find(e => e.type==='regional' && hotel.subRegion && e.linkedTo?.toLowerCase().includes(hotel.subRegion.replace(/-/g,' ')));
-    if (regionMatch) return regionMatch.specialistNotes || null;
+    const regionMatch = entries.find((e:any) =>
+      (e.type==='regional' || e.entry_type==='region') &&
+      hotel.subRegion && ((e.linkedTo ?? e.region_slug ?? '')).toLowerCase().includes(hotel.subRegion.replace(/-/g,' '))
+    );
+    if (regionMatch) {
+      const tip = (regionMatch.tips ?? [])[0] ?? (regionMatch.highlights ?? [])[0];
+      if (tip) return tip;
+      const safe = ['why_visit','best_season','best_sightings'];
+      const field = safe.map(k => regionMatch.structuredFields?.[k]).find(v => typeof v === 'string' && v.length > 15);
+      if (field) return String(field);
+    }
   }
   return null;
 }
@@ -406,7 +428,14 @@ function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
       rooms: roomTypes.length > 0
         ? roomTypes.map((rt: any, i: number) => ({
             label: rt.name,
-            extra: Math.max(0, Math.round((Number(rt.display_rate_per_night) || displayRate) - displayRate)),
+            extra: (() => {
+              const cat = (rt.category || '').toLowerCase();
+              if (cat === 'standard') return 0;
+              if (cat === 'family')   return 0;
+              if (cat === 'premium')  return Math.round(displayRate * 0.20);
+              if (cat === 'villa' || cat === 'exclusive-use') return Math.round(displayRate * 0.45);
+              return 0;
+            })(),
             tier:  i,
           }))
         : [{label:'Standard Suite',extra:0,tier:0},{label:'Premium Suite',extra:Math.round(netRate*0.4),tier:1}],
@@ -640,7 +669,8 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
   );
   const kbHighlightsSheet: string[] = kbEntry?.highlights ?? [];
   const kbTipsSheet: string[]       = kbEntry?.tips ?? [];
-  const kbSpecialistNote: string    = kbEntry?.specialist_recs?.[0] ?? kbEntry?.specialistNotes ?? '';
+  // Never expose specialist_recs or specialistNotes to traveller
+  const kbSpecialistNote: string    = '';
   const allSlides = buildSlides(hotel);
 
   const [localPrefs, setLocalPrefs] = useState(stayPrefs);
@@ -1192,7 +1222,7 @@ function NestedPropertyCarousel({
                   {(currentSlide?.type==='reel'||currentSlide?.type==='video'||currentSlide?.type==='youtube') && (
                     <div style={{ position:'absolute', bottom:52, left:10, fontSize:9, color:'rgba(255,255,255,0.6)', background:'rgba(0,0,0,0.45)', borderRadius:4, padding:'2px 6px' }}>▶ Reel</div>
                   )}
-                  {currentSlide?.roomType && (
+                  {currentSlide?.roomType && currentSlide.roomType !== 'general' && (
                     <div style={{ position:'absolute', bottom:52, left:10, fontSize:9, color:'rgba(255,255,255,0.65)', background:'rgba(0,0,0,0.5)', borderRadius:4, padding:'2px 7px' }}>{currentSlide.roomType}</div>
                   )}
 
@@ -1232,7 +1262,11 @@ function NestedPropertyCarousel({
                 </div>
 
                 <div style={{ padding:'12px 14px 14px' }}>
-                  {hotel.funFact && (<div className="fun-fact" style={{ marginBottom:10 }}>✦ {hotel.funFact}</div>)}
+                  {hotel.funFact && (<div className="fun-fact" style={{ marginBottom:8 }}>✦ {hotel.funFact}</div>)}
+                  {/* Inclusions strip — pulled from rate_includes */}
+                  {isActive && hotel.rate_includes?.length > 0 && (
+                    <InclusionPills includes={hotel.rate_includes ?? []} malariaFree={hotel.malariaFree} compact />
+                  )}
 
 
                   {/* [V6-5] SINGLE BUTTON — Customise. Select button removed (auto-selected on swipe). */}
@@ -1972,7 +2006,7 @@ useEffect(() => {
     if (!url||!key) { setSuppliersLoaded(true); return; }
     const h = { apikey:key, Authorization:`Bearer ${key}` };
     const suppliersQ  = `${url}/rest/v1/suppliers?select=*&is_active=eq.true&region_slug=not.is.null&order=trust_score.desc&limit=100`;
-    const roomTypesQ  = `${url}/rest/v1/room_types?select=id,supplier_id,name,display_rate_per_night,category,max_occupancy,bed_type,view&order=name.asc`;
+    const roomTypesQ  = `${url}/rest/v1/room_types?select=id,supplier_id,name,net_rate_zar,category,max_occupancy,bed_type,view,meal_basis,description,images,keywords&is_active=eq.true&order=name.asc`;
     Promise.all([
       fetch(suppliersQ,  { headers:h }).then(r => r.ok ? r.json() : []),
       fetch(roomTypesQ,  { headers:h }).then(r => r.ok ? r.json() : []),
@@ -3126,11 +3160,20 @@ const runBriefPlanner = (briefText: string) => {
                 (e.region_slug === slug || (e.linkedTo ?? '').toLowerCase().includes(slug.replace(/-/g,' '))) &&
                 e.claim_type !== 'commercial'
               );
-              const regionEntry  = regionKBAll.find((e:any) => e.entry_type === 'region');
-              const kbHighlights = regionEntry?.highlights ?? regionEntry?.structured_fields
-                ? Object.values(regionEntry.structured_fields ?? {}).slice(0,4) as string[]
-                : [];
-              const kbTips       = regionEntry?.tips ?? [];
+              // Support both new schema (entry_type/highlights) and old (type/structuredFields)
+              const regionEntry = regionKBAll.find((e:any) =>
+                e.entry_type === 'region' || e.type === 'regional'
+              );
+              const kbHighlights: string[] = (() => {
+                if (!regionEntry) return [];
+                if (Array.isArray(regionEntry.highlights) && regionEntry.highlights.length > 0)
+                  return regionEntry.highlights;
+                // Fallback: pull traveller-safe fields from structuredFields
+                const sf = regionEntry.structuredFields ?? regionEntry.structured_fields ?? {};
+                const safeKeys = ['why_visit','best_sightings','best_season','ideal_nights'];
+                return safeKeys.map(k => sf[k]).filter((v:any) => typeof v === 'string' && v.length > 10) as string[];
+              })();
+              const kbTips: string[] = Array.isArray(regionEntry?.tips) ? regionEntry.tips : [];
               const seasonalNote: string | undefined = (() => {
                 if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
                 const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
@@ -3142,10 +3185,14 @@ const runBriefPlanner = (briefText: string) => {
               const selectedHotel = safePool.find((h:any) => String(h.id) === String(currentStay.hotelId));
               const selectedIncludes: string[] = (selectedHotel as any)?.rate_includes ?? [];
               const hotelMalariaFree = selectedHotel?.malariaFree ?? false;
-              const specialistNote = regionKBAll
-                .filter((e:any) => e.entry_type === 'property' && e.specialist_recs?.length)
-                .flatMap((e:any) => e.specialist_recs ?? [])
-                .find(Boolean);
+              // Right sidebar: traveller-facing regional tip only (no specialist_recs)
+              const specialistNote: string | undefined = (() => {
+                const tip = kbTips[0];
+                if (tip) return undefined; // don't duplicate if already in tips
+                const fact = regionEntry?.structuredFields?.why_visit
+                  ?? regionEntry?.structured_fields?.why_visit;
+                return fact ? String(fact) : undefined;
+              })();
 
               return (
                 <RegionChapter
@@ -3162,7 +3209,7 @@ const runBriefPlanner = (briefText: string) => {
                   kbTips={kbTips}
                   skeletonFindings={regionFindings}
                   selectedHotelName={selectedHotel?.name}
-                  selectedHotelIncludes={selectedIncludes}
+                  selectedHotelIncludes={[]}
                   malariaFree={hotelMalariaFree}
                   seasonalNote={seasonalNote}
                   specialistNote={specialistNote}
@@ -3272,7 +3319,7 @@ const runBriefPlanner = (briefText: string) => {
           </div>
 
           {/* Sticky bottom price bar */}
-          <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:90, background:'rgba(10,10,10,0.97)', backdropFilter:'blur(20px)', borderTop:`0.5px solid ${T.borderGold}`, padding:'14px 20px' }}>
+          <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:90, background:'rgba(10,10,10,0.97)', backdropFilter:'blur(20px)', borderTop:`0.5px solid ${T.borderGold}`, padding:'8px 16px' }}>
             {routeReversalResult?.is_cheaper && !routeReversalDismissed && (
               <div style={{ maxWidth:680, margin:'0 auto 10px', padding:'9px 12px', background:'rgba(74,222,128,0.06)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:8, display:'flex', alignItems:'center', gap:10 }}>
                 <span style={{ fontSize:14 }}>🔄</span>
