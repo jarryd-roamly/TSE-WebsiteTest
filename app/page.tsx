@@ -1009,7 +1009,7 @@ function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities }: {
 function NestedPropertyCarousel({
   destinationLabel, destinationSlug, cityNights, onNightsChange,
   hotels, selectedHotelId, onSelectHotel, stayPrefs, onUpgradeSelect,
-  kbEntries, fmt, edition, onEscalateChat,
+  kbEntries, fmt, edition, onEscalateChat, onExploreLodge,
 }: {
   destinationLabel:     string;
   destinationSlug:      string;
