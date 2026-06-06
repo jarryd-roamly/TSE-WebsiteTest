@@ -29,6 +29,8 @@ import { lastMileFor, lastMileZar, defaultCommercialTarget,
 import SafariCinematicResearch from '@/components/SafariCinematicResearch'
 import LandingHero from '@/components/LandingHero';
 import JourneyLoadingScreen from '@/components/JourneyLoadingScreen';
+import RegionChapter, { PropertyMiniSite } from '@/components/RegionChapter';
+import type { SkeletonFinding } from '@/components/RegionChapter';
 import JourneyConfirmation from '@/components/JourneyConfirmation';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
@@ -1022,6 +1024,7 @@ function NestedPropertyCarousel({
   fmt:                  (n: number) => string;
   edition:              EditionConfig;
   onEscalateChat:       (context: string) => void;
+  onExploreLodge?:      (hotel: Hotel, supplierId?: string, includes?: string[]) => void;
 }) {
   const [activeIdx, setActiveIdx] = useState(() => {
     const idx = hotels.findIndex(h => String(h.id) === String(selectedHotelId));
@@ -1222,9 +1225,16 @@ function NestedPropertyCarousel({
                   )}
 
                   {/* [V6-5] SINGLE BUTTON — Customise. Select button removed (auto-selected on swipe). */}
-                  <button onClick={() => setUpgradeOpenId(String(hotel.id))} style={{ width:'100%', padding:'12px 0', borderRadius:9, border:`1.5px solid ${T.borderGold}`, background:T.goldDim, color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700, letterSpacing:'0.03em', marginTop:4 }}>
-                    Customise ✦
-                  </button>
+<div style={{ display:'flex', gap:8, marginTop:4 }}>
+                    <button onClick={() => setUpgradeOpenId(String(hotel.id))} style={{ flex:1, padding:'12px 0', borderRadius:9, border:`1.5px solid ${T.borderGold}`, background:T.goldDim, color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700, letterSpacing:'0.03em' }}>
+                      Customise ✦
+                    </button>
+                    {onExploreLodge && (
+                      <button onClick={() => onExploreLodge(hotel, (hotel as any).supplier_id, (hotel as any).rate_includes ?? [])} style={{ padding:'12px 14px', borderRadius:9, border:`0.5px solid ${T.border}`, background:'rgba(255,255,255,0.04)', color:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, letterSpacing:'0.02em', whiteSpace:'nowrap' as const }}>
+                        Explore →
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {upgradeOpenId === String(hotel.id) && (
@@ -1839,8 +1849,8 @@ const toggleTheme = (id: string) =>
   const [intlOrigin,  setIntlOrigin]  = useState('LHR');
   const [researchStep,setResearchStep]= useState(0);
   const [itinerary,   setItinerary]   = useState<Itinerary|null>(null);
-         const [skeletonId,  setSkeletonId]  = useState<string|null>(null);
-const [skeletonFindings, setSkeletonFindings] = useState<any[]>([]);
+  const [skeletonId,  setSkeletonId]  = useState<string|null>(null);
+  const [skeletonFindings, setSkeletonFindings] = useState<any[]>([]);
 
   const [cityStays, setCityStays] = useState<Array<{ hotelId:string|number; nights:number; prefs:{rooms:number;basis:number;flexibility:number} }>>([]);
   // [Transfers v2] Live Duffel commercial-leg fares, keyed by target airport, in ZAR per person.
@@ -1922,6 +1932,9 @@ const [skeletonFindings, setSkeletonFindings] = useState<any[]>([]);
     });
     return map;
   }, [hotelsByMargin]);
+  const [miniSiteHotel, setMiniSiteHotel] = useState<any>(null);
+  const [miniSiteSupplier, setMiniSiteSupplier] = useState<string|undefined>(undefined);
+  const [miniSiteIncludes, setMiniSiteIncludes] = useState<string[]>([]);
   const [chatOpen,    setChatOpen]    = useState(false);
   const [chatMsgs,    setChatMsgs]    = useState<ChatMessage[]>([{ role:'assistant', text:`Welcome to ${edition.name}. How can our team help?` }]);
   const [chatInput,   setChatInput]   = useState('');
@@ -3088,8 +3101,60 @@ const runBriefPlanner = (briefText: string) => {
               const cityXferOpts = isCityDest ? (CITY_TRANSFERS[slug] ?? []) : [];
               const selCityXferId = cityTransferIds[slug];
 
+        // KB data for this region
+              const regionKB = kbEntries.filter((e:any) =>
+                e.status === 'active' &&
+                e.region_slug === slug &&
+                e.claim_type !== 'commercial' &&
+                !e.internal_only
+              );
+              const regionEntry   = regionKB.find((e:any) => e.entry_type === 'region');
+              const kbHighlights  = regionEntry?.highlights ?? [];
+              const kbTips        = regionEntry?.tips ?? [];
+
+              // Seasonal note for this region + travel month
+              const seasonalNote: string | undefined = (() => {
+                if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
+                const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
+                return (regionEntry.seasonal_notes as any)[m] ?? undefined;
+              })();
+
+              // Skeleton findings for this region
+              const regionFindings: SkeletonFinding[] = skeletonFindings.filter((f:any) =>
+                !f.traveller_flagged
+              );
+
+              // Selected hotel for inclusions
+              const selectedHotel = safePool.find(h => String(h.id) === String(currentStay.hotelId));
+              const selectedIncludes: string[] = (selectedHotel as any)?.rate_includes ?? [];
+              const hotelMalariaFree = selectedHotel?.malariaFree ?? false;
+
+              // Specialist note from skeleton findings
+              const specialistNote = regionFindings
+                .filter(f => f.severity === 'recommendation' || f.severity === 'confirmed')
+                .map(f => f.traveller_message)
+                .find(Boolean);
+
               return (
-                <div key={cityIdx}>
+                <RegionChapter
+                  key={cityIdx}
+                  chapterIndex={cityIdx}
+                  totalChapters={itinerary.cities.length}
+                  regionSlug={slug}
+                  regionLabel={destLabel}
+                  countryLabel={city.country}
+                  nights={currentStay.nights}
+                  checkinDate={checkinDate}
+                  bgImageUrl={regionImageMap[slug]}
+                  kbHighlights={kbHighlights}
+                  kbTips={kbTips}
+                  skeletonFindings={regionFindings}
+                  selectedHotelName={selectedHotel?.name}
+                  selectedHotelIncludes={selectedIncludes}
+                  malariaFree={hotelMalariaFree}
+                  seasonalNote={seasonalNote}
+                  specialistNote={specialistNote}
+                >
                   {/* [V6-3] Auto airport transfer for Cape Town & Vic Falls */}
                   {isCityDest && cityXferOpts.length > 0 && (
                     <CityTransferStrip slug={slug} destLabel={destLabel} opts={cityXferOpts} selectedId={selCityXferId} onSelect={id => setCityTransferIds(prev => ({ ...prev, [slug]: id }))} fmt={fmt} />
@@ -3115,9 +3180,14 @@ const runBriefPlanner = (briefText: string) => {
                     fmt={fmt}
                     edition={edition}
                     onEscalateChat={escalateToSpecialist}
+                    onExploreLodge={(hotel, supplierId, includes) => {
+                      setMiniSiteHotel(hotel);
+                      setMiniSiteSupplier(supplierId);
+                      setMiniSiteIncludes(includes ?? []);
+                    }}
                   />
 
-                  {/* [V6-3] ACTIVITY SPOOL — below the property carousel, separate from Customise sheet */}
+                  {/* [V6-3] ACTIVITY SPOOL */}
                   <ActivitySpool
                     regionSlug={slug}
                     selectedIds={selectedActivities[slug] ?? []}
@@ -3136,7 +3206,6 @@ const runBriefPlanner = (briefText: string) => {
                     const toSlug = CITY_TO_SLUG[nextCity.city.toLowerCase().trim()] ?? '';
                     if (!fromSlug||!toSlug) return null;
                     const legKey = `${fromSlug}→${toSlug}`;
-                    // Destination lodge for this leg = the next city's chosen hotel (resolves airport).
                     const nextStay = cityStays[cityIdx+1];
                     const nextPool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
                     const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
@@ -3148,9 +3217,20 @@ const runBriefPlanner = (briefText: string) => {
                       <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} originLodge={originHotel?.name} />
                     );
                   })()}
-                </div>
+                </RegionChapter>
+              );
               );
             })}
+             {/* PropertyMiniSite overlay — launched from Explore button */}
+            {miniSiteHotel && (
+              <PropertyMiniSite
+                hotel={miniSiteHotel}
+                supplierId={miniSiteSupplier}
+                kbEntries={kbEntries}
+                includes={miniSiteIncludes}
+                onClose={() => { setMiniSiteHotel(null); setMiniSiteSupplier(undefined); setMiniSiteIncludes([]); }}
+              />
+            )}      
 
             {itinerary.cities.length > 0 && (() => {
               const lastCity = itinerary.cities[itinerary.cities.length - 1];
@@ -3200,7 +3280,7 @@ const runBriefPlanner = (briefText: string) => {
                 })()}
               </div>
               <button className="btn-gold" style={{ padding:'14px 28px', fontSize:15, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
-                {checkoutLoading ? 'Saving…' : 'Validate & Pay →'}
+                {checkoutLoading ? 'Saving…' : (                   <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1 }}>                     <span>Validate & Firm up my choices →</span>                     <span style={{ fontSize:10, fontWeight:400, opacity:0.7, letterSpacing:'0.05em' }}>Price the journey</span>                   </span>                 )}
               </button>
             </div>
           </div>
