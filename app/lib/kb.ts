@@ -94,7 +94,8 @@ export interface KBEntry {
   guardrails?:           string[];     // ALWAYS internal — never shown to travellers
   specialist_recs?:      string[];     // Fed to AI planner
   logistics_notes?:      string;
-  seasonal_notes?:       KBSeasonalNotes;
+  seasonal_notes?:       KBSeasonalNotes;  // specialist voice — internal/AI use only
+  seasonal_notes_guest?: KBSeasonalNotes;  // guest voice — safe for traveller display
   guidance_importance:   KBGuidanceImportance;
   override_ai:           boolean;
   internal_only:         boolean;
