@@ -92,14 +92,17 @@ function useFade(threshold=0.08) {
 // ── Mobile hook ──────────────────────────────────────────────────────────────
 
 function useMobile() {
-  const [m, setM] = useState(false);
+  const [m,       setM]       = useState(false);
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    setMounted(true);
     const check = () => setM(window.innerWidth < 700);
     check();
     window.addEventListener('resize', check, { passive: true });
     return () => window.removeEventListener('resize', check);
   }, []);
-  return m;
+  // Return false until mounted — prevents SSR/hydration mismatch
+  return mounted && m;
 }
 
 // ── Mobile CSS ────────────────────────────────────────────────────────────────
@@ -551,6 +554,13 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
   const [loading, setLoading]     = useState(true);
   const [activeRoom, setActiveRoom] = useState(0);
   const [activeImg, setActiveImg]   = useState(0);
+
+  // Lock body scroll while overlay is open
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
   const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
