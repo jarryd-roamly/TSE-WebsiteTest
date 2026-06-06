@@ -270,7 +270,7 @@ const COMMERCIAL_FALLBACK_ZAR: Record<string, number> = {
 
 const INTERNAL_LEGS: Record<string, InternalLeg & { road_viable?: boolean }> = {
   'cape-town→kruger-sabi-sand': { fromLabel:'Cape Town', toLabel:'Sabi Sand', mode:'scheduled', provider:'Airlink CPT→JNB + Federal Air JNB→Skukuza', duration:'~2h 45m', estimatedCostZAR:12000, aiNote:'Morning departure from CPT recommended to catch the afternoon game drive.', bufferHours:3, road_viable:false },
-  'kruger-sabi-sand→okavango-delta': { fromLabel:'Sabi Sand', toLabel:'Okavango Delta', mode:'charter', provider:'Federal Air / Wilderness Air charter', duration:'~2h 15m', estimatedCostZAR:18000, aiNote:'Direct charter from Skukuza. Departs post-morning game drive (~10:00).', bufferHours:1.5, road_viable:false },
+  'kruger-sabi-sand→okavango-delta': { fromLabel:'Sabi Sand', toLabel:'Okavango Delta', mode:'scheduled', provider:'Federal Air SZK→JNB + Airlink/Fastjet JNB→Maun + Wilderness Air/MackAir to camp', duration:'~6h 30m door-to-door', estimatedCostZAR:22000, aiNote:'Exit Sabi Sand via Federal Air to O.R. Tambo. Connect JNB→MUB (Maun) via Airlink or Fastjet — allow 2hrs at O.R. Tambo. Then Wilderness Air or Mack Air charter to your camp. Full travel day. Depart post-morning drive (~10:00), arrive camp ~17:00.', bufferHours:6, road_viable:false },
   'okavango-delta→chobe-vic-falls': { fromLabel:'Okavango Delta', toLabel:'Chobe / Victoria Falls', mode:'charter', provider:'Air Botswana / Wilderness Air', duration:'~1h 30m', estimatedCostZAR:9500, aiNote:'Afternoon departure post-morning activity recommended.', bufferHours:1.5, road_viable:false },
   'kruger-sabi-sand→chobe-vic-falls': { fromLabel:'Sabi Sand', toLabel:'Victoria Falls', mode:'scheduled', provider:'Federal Air → Airlink via JNB → Victoria Falls', duration:'~4h 30m', estimatedCostZAR:14000, aiNote:'Exit via Skukuza or Hoedspruit, connect through O.R. Tambo (JNB), fly Fastjet or Airlink to Victoria Falls. Allow 4.5hrs door-to-door. Journey Specialist confirms best routing.', bufferHours:4.5, road_viable:false },
   'kruger-sabi-sand→cape-town': { fromLabel:'Sabi Sand', toLabel:'Cape Town', mode:'scheduled', provider:'Federal Air Skukuza→JNB + Airlink JNB→CPT', duration:'~3h', estimatedCostZAR:12000, aiNote:'Allow 2hr connection at O.R. Tambo.', bufferHours:2.5, road_viable:false },
@@ -1496,88 +1496,194 @@ function buildTransferOptions(
   });
 }
 
+
 function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; originLodge?:string; }) {
   const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62, commercialFares, commercialMeta, originLodge), [fromSlug, toSlug, destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [spinning, setSpinning] = useState(true);
-  const stripRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
       setSpinning(false);
       const rec = options.find(o => o.recommended);
       if (rec && !selectedTransferId) onSelect(rec.id);
-    }, 800);
+    }, 600);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const scrollToIdx = (idx: number) => {
-    const strip = stripRef.current; if (!strip) return;
-    const cards = strip.querySelectorAll<HTMLElement>('[data-transfer-card]');
-    cards[idx]?.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
-    setActiveIdx(idx);
-  };
+  if (!options.length) {
+    // Always show a transfer card even if no options — fallback to INTERNAL_LEGS
+    const leg = getInternalLeg(fromSlug, toSlug);
+    if (!leg) return null;
+    return (
+      <div style={{ margin:'0 0 24px', padding:'0 2px' }}>
+        <JourneyCardHeader fromLabel={fromLabel} toLabel={toLabel} />
+        <JourneyCardFallback leg={leg} fmt={fmt} />
+      </div>
+    );
+  }
 
-  if (!options.length) return null;
-  const selected = selectedTransferId ? options.find(o => o.id === selectedTransferId) ?? options[0] : options[0];
+  const cur = options[activeIdx] ?? options[0];
 
   return (
-    <div style={{ marginBottom:24 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, padding:'0 2px' }}>
-        <div style={{ flex:1, height:1, background:'rgba(96,165,250,0.15)' }} />
-        <div style={{ fontSize:11, color:'#60a5fa', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' as const }}>✈ {fromLabel} → {toLabel}</div>
-        <div style={{ flex:1, height:1, background:'rgba(96,165,250,0.15)' }} />
-      </div>
+    <div style={{ margin:'0 0 24px', padding:'0 2px' }}>
+      <JourneyCardHeader fromLabel={fromLabel} toLabel={toLabel} />
       {spinning ? (
-        <div style={{ background:'rgba(96,165,250,0.06)', border:'0.5px solid rgba(96,165,250,0.2)', borderRadius:10, padding:'16px', display:'flex', alignItems:'center', gap:12 }}>
-          <div className="spinner" style={{ width:20, height:20, borderWidth:2 }} />
-          <div style={{ fontSize:12, color:'#60a5fa' }}>Finding transfer options…</div>
+        <div style={{ background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.15)', borderRadius:12, padding:'16px 18px', display:'flex', alignItems:'center', gap:12 }}>
+          <div className="spinner" style={{ width:16, height:16, borderWidth:2, borderColor:'rgba(96,165,250,0.3)', borderTopColor:'#60a5fa' }} />
+          <div style={{ fontSize:12, color:'rgba(96,165,250,0.7)' }}>Checking transfer options…</div>
         </div>
       ) : (
-        <div style={{ position:'relative' as const, margin:'0 -4px' }}>
-          {activeIdx > 0 && (<button onClick={() => scrollToIdx(activeIdx-1)} style={{ position:'absolute', left:-4, top:'50%', transform:'translateY(-50%)', zIndex:12, background:'rgba(10,10,10,0.95)', border:'1px solid rgba(96,165,250,0.5)', color:'#60a5fa', width:34, height:52, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 16px rgba(0,0,0,0.6)' }}>‹</button>)}
-          {activeIdx < options.length-1 && (<button onClick={() => scrollToIdx(activeIdx+1)} style={{ position:'absolute', right:-4, top:'50%', transform:'translateY(-50%)', zIndex:12, background:'rgba(10,10,10,0.95)', border:'1px solid rgba(96,165,250,0.5)', color:'#60a5fa', width:34, height:52, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 16px rgba(0,0,0,0.6)' }}>›</button>)}
-          <div ref={stripRef} style={{ display:'flex', gap:10, overflowX:'auto', scrollSnapType:'x mandatory' as const, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingLeft:20, paddingRight:20, paddingBottom:2 }}>
-            {options.map((opt, idx) => {
-              const isSel = selectedTransferId === opt.id || (!selectedTransferId && opt.recommended);
-              return (
-                <div key={opt.id} data-transfer-card={idx} onClick={() => { onSelect(opt.id); scrollToIdx(idx); }} style={{ flexShrink:0, width:'min(78vw, 360px)', scrollSnapAlign:'center', borderRadius:12, overflow:'hidden', border:`1.5px solid ${isSel?'#60a5fa':T.border}`, background:isSel?'rgba(96,165,250,0.07)':T.surface, cursor:'pointer', transition:'border-color 0.2s, background 0.2s', opacity:idx===activeIdx?1:0.72 }}>
-                  <div style={{ padding:'14px 16px' }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <span style={{ fontSize:22 }}>{opt.icon}</span>
-                        <div>
-                          <div style={{ fontSize:14, fontWeight:700, color:isSel?'#93c5fd':T.text }}>{opt.label}</div>
-                          <div style={{ fontSize:11, color:T.textDim, marginTop:1 }}>{opt.provider}</div>
-                        </div>
+        <>
+          {/* JourneyCard — matches MD handoff spec */}
+          <div style={{ background:'rgba(12,14,18,0.92)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:12, overflow:'hidden' }}>
+            {/* Card header */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px 10px', borderBottom:'0.5px solid rgba(255,255,255,0.06)' }}>
+              <div>
+                <div style={{ fontSize:12, fontWeight:700, color:T.text }}>Getting there</div>
+                <div style={{ fontSize:10, color:T.textDim }}>door to lodge</div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                {/* Duration pill */}
+                <div style={{ display:'flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.06)', borderRadius:20, padding:'4px 10px' }}>
+                  <span style={{ fontSize:9 }}>⏱</span>
+                  <span style={{ fontSize:11, fontWeight:600, color:T.text }}>{cur.duration.replace('~','').replace(' total door-to-door','').replace(' door-to-door','')}</span>
+                </div>
+                {/* Pagination */}
+                {options.length > 1 && (
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <button onClick={() => setActiveIdx(i => Math.max(0,i-1))} disabled={activeIdx===0} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:activeIdx===0?'rgba(255,255,255,0.2)':T.text, width:24, height:24, borderRadius:'50%', cursor:activeIdx===0?'default':'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>‹</button>
+                    <span style={{ fontSize:10, color:T.textDim, minWidth:30, textAlign:'center' }}>{activeIdx+1}/{options.length}</span>
+                    <button onClick={() => setActiveIdx(i => Math.min(options.length-1,i+1))} disabled={activeIdx===options.length-1} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:activeIdx===options.length-1?'rgba(255,255,255,0.2)':T.text, width:24, height:24, borderRadius:'50%', cursor:activeIdx===options.length-1?'default':'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>›</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Badges row */}
+            <div style={{ display:'flex', gap:6, padding:'10px 16px 8px', flexWrap:'wrap' }}>
+              {cur.recommended && <span style={{ fontSize:9, fontWeight:700, color:T.green, background:'rgba(74,222,128,0.1)', border:'0.5px solid rgba(74,222,128,0.25)', borderRadius:20, padding:'2px 8px' }}>Recommended</span>}
+              {cur.badges.filter(b=>b.text!=='✦ Recommended').map((b,i)=>(
+                <span key={i} style={{ fontSize:9, fontWeight:700, color:b.color, background:`${b.color}18`, border:`0.5px solid ${b.color}35`, borderRadius:20, padding:'2px 8px' }}>{b.text}</span>
+              ))}
+            </div>
+
+            {/* Transfer chain legs */}
+            <div style={{ padding:'0 16px 4px' }}>
+              {parseTransferChain(cur).map((leg, i, arr) => (
+                <div key={i} style={{ display:'flex', gap:12, alignItems:'flex-start', marginBottom:i<arr.length-1?10:8 }}>
+                  {/* Icon badge */}
+                  <div style={{ width:32, height:32, borderRadius:8, background:leg.type==='airline'?'rgba(96,165,250,0.12)':leg.type==='charter'?'rgba(212,175,55,0.1)':'rgba(74,222,128,0.08)', border:`0.5px solid ${leg.type==='airline'?'rgba(96,165,250,0.25)':leg.type==='charter'?'rgba(212,175,55,0.2)':'rgba(74,222,128,0.2)'}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2 }}>
+                    {leg.icon}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize:12, fontWeight:600, color:T.text, lineHeight:1.2 }}>{leg.name}</div>
+                        {leg.flightNo && <div style={{ fontSize:10, color:T.textDim, marginTop:1 }}>{leg.flightNo}</div>}
+                        {leg.detail && <div style={{ fontSize:10, color:T.textMid, marginTop:1, lineHeight:1.5 }}>{leg.detail}</div>}
                       </div>
-                      {isSel && <div style={{ fontSize:10, color:'#60a5fa', background:'rgba(96,165,250,0.12)', border:'0.5px solid rgba(96,165,250,0.3)', borderRadius:20, padding:'2px 8px', fontWeight:700 }}>Selected</div>}
+                      {leg.times && (
+                        <div style={{ fontSize:11, fontWeight:600, color:T.text, textAlign:'right', flexShrink:0, marginLeft:8 }}>{leg.times}</div>
+                      )}
                     </div>
-                    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
-                      {opt.badges.map((b,i) => (<span key={i} style={{ fontSize:10, color:b.color, background:`${b.color}14`, border:`0.5px solid ${b.color}40`, borderRadius:20, padding:'2px 8px', fontWeight:700 }}>{b.text}</span>))}
-                    </div>
-                    <div style={{ marginBottom:8 }}>
-                      <div style={{ fontSize:13, color:T.textMid }}>{opt.duration}</div>
-                    </div>
-                    <div style={{ fontSize:11, color:T.textDim, lineHeight:1.55, background:'rgba(96,165,250,0.04)', borderRadius:7, padding:'7px 10px' }}>{opt.aiNote}</div>
+                    {leg.note && (
+                      <div style={{ fontSize:10, color:'rgba(74,222,128,0.75)', marginTop:3 }}>{leg.note}</div>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* AI note */}
+            {cur.aiNote && (
+              <div style={{ margin:'0 16px 12px', padding:'8px 12px', background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.1)', borderRadius:8, fontSize:11, color:'rgba(96,165,250,0.7)', lineHeight:1.6 }}>
+                ⚑ {cur.aiNote}
+              </div>
+            )}
+
+            {/* Select button */}
+            {options.length > 1 && (
+              <div style={{ padding:'0 16px 14px', display:'flex', gap:8 }}>
+                {options.map((opt, i) => (
+                  <button key={opt.id} onClick={() => { setActiveIdx(i); onSelect(opt.id); }} style={{
+                    flex:1, padding:'8px 0', borderRadius:8, border:`1.5px solid ${(selectedTransferId===opt.id||(i===0&&!selectedTransferId&&opt.recommended))?'#60a5fa':T.border}`, background:(selectedTransferId===opt.id||(i===0&&!selectedTransferId&&opt.recommended))?'rgba(96,165,250,0.08)':'transparent', color:(selectedTransferId===opt.id||(i===0&&!selectedTransferId&&opt.recommended))?'#60a5fa':T.textMid, fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+                  }}>{i===activeIdx ? '✓ Selected' : `Option ${i+1}`}</button>
+                ))}
+              </div>
+            )}
           </div>
-          {options.length > 1 && (
-            <div style={{ display:'flex', justifyContent:'center', gap:4, marginTop:8 }}>
-              {options.map((_,i) => (<div key={i} onClick={() => scrollToIdx(i)} style={{ width:i===activeIdx?16:5, height:5, borderRadius:3, background:i===activeIdx?'#60a5fa':'rgba(255,255,255,0.2)', cursor:'pointer', transition:'all 0.2s' }} />))}
-            </div>
-          )}
-          {selected && (
-            <div style={{ marginTop:10, padding:'8px 12px', background:'rgba(96,165,250,0.06)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:8 }}>
-              <div style={{ fontSize:11, color:'#60a5fa' }}>{selected.icon} {selected.label} · {selected.duration}</div>
-            </div>
-          )}
-        </div>
+
+          {/* Summary strip */}
+          <div style={{ marginTop:8, padding:'7px 12px', background:'rgba(96,165,250,0.05)', border:'0.5px solid rgba(96,165,250,0.12)', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ fontSize:11, color:'rgba(96,165,250,0.7)' }}>{cur.icon} {fromLabel} → {toLabel} · {cur.duration.replace('~','').replace(' total door-to-door','')}</div>
+            <div style={{ fontSize:11, color:T.textDim }}>{fmt(cur.estimatedCostZAR)} est.</div>
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+// Parse a transfer option's provider string into displayable legs
+function parseTransferChain(opt: any): Array<{type:string;icon:string;name:string;flightNo?:string;detail?:string;times?:string;note?:string}> {
+  const legs: Array<{type:string;icon:string;name:string;flightNo?:string;detail?:string;times?:string;note?:string}> = [];
+  // Try to parse the chain from the provider string
+  // Format is: "ExitLeg → CommercialLeg → ArrivalLeg"
+  const parts = opt.provider.split(/\s*→\s*|\s*->\s*/);
+  for (const part of parts) {
+    const p = part.trim();
+    if (!p) continue;
+    if (/FedAir|Federal Air|Airlink|Fastjet|Mack Air|Wilderness Air|charter/i.test(p)) {
+      const isAirline = /FedAir|Federal Air|Airlink|Fastjet/i.test(p);
+      const isCharter = /Mack Air|Wilderness Air|charter/i.test(p);
+      legs.push({
+        type: isCharter ? 'charter' : 'airline',
+        icon: isCharter ? '🛩' : '✈',
+        name: p.split(/\s*(CPT|JNB|SZK|MUB|VFA|HDS|MQP)\s*→/i)[0].trim() || p,
+        detail: p.includes('→') ? p : undefined,
+      });
+    } else if (/Private transfer|transfer|vehicle|road/i.test(p)) {
+      legs.push({ type:'road', icon:'🚗', name: p });
+    } else if (/Lodge collection|airstrip|meetup/i.test(p)) {
+      legs.push({ type:'lodge', icon:'🏠', name: p, note: 'Complimentary · 5–20 min to main lodge' });
+    } else {
+      legs.push({ type:'other', icon:'✦', name: p });
+    }
+  }
+  // If no legs parsed, show as single card
+  if (!legs.length) {
+    legs.push({ type:'airline', icon:'✈', name: opt.label, detail: opt.provider });
+  }
+  return legs;
+}
+
+// Fallback for when buildTransferOptions returns nothing
+function JourneyCardFallback({ leg, fmt }: { leg: any; fmt:(n:number)=>string }) {
+  return (
+    <div style={{ background:'rgba(12,14,18,0.92)', border:'0.5px solid rgba(96,165,250,0.15)', borderRadius:12, padding:'14px 16px' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+        <div style={{ fontSize:20 }}>✈</div>
+        <div>
+          <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{leg.fromLabel} → {leg.toLabel}</div>
+          <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{leg.provider}</div>
+        </div>
+        <div style={{ marginLeft:'auto', fontSize:12, color:'rgba(96,165,250,0.7)' }}>{leg.duration}</div>
+      </div>
+      <div style={{ fontSize:11, color:T.textDim, lineHeight:1.6, background:'rgba(96,165,250,0.04)', borderRadius:7, padding:'8px 10px' }}>{leg.aiNote}</div>
+    </div>
+  );
+}
+
+// Shared header for all transfer cards
+function JourneyCardHeader({ fromLabel, toLabel }: { fromLabel:string; toLabel:string }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+      <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.12)' }} />
+      <div style={{ fontSize:10, color:'rgba(96,165,250,0.65)', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase', display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
+        ✈ {fromLabel} → {toLabel}
+      </div>
+      <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.12)' }} />
     </div>
   );
 }
@@ -1659,14 +1765,19 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
   return (
     <div style={{ marginBottom:24, background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
       <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
-      <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>{knownGateway ? 'Your departure is set' : 'Where do you fly home from?'}</div>
-      <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>{
-        knownGateway
-          ? `Flying home from ${knownGateway}, on your selected international flight. We'll add the final transfer from your last lodge to the airport.`
-          : includeIntlFlight
-            ? 'Your return flight is included. Your Journey Specialist will confirm your departure timing and final transfer.'
-            : "Select your departure airport — we'll add your final lodge-to-airport transfer."
-      }</div>
+      <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>
+        {knownGateway ? 'Your departure is confirmed' : departureHubId ? 'Departure set — final transfer below' : 'Where are you flying home from?'}
+      </div>
+      <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
+        {knownGateway
+          ? `Flying home from ${knownGateway} on your selected flight. We'll time your final lodge transfer to match.`
+          : departureHubId
+            ? `Flying from ${GATEWAY_LABEL[departureHubId] ?? departureHubId}. Your final lodge-to-airport transfer is below.`
+            : includeIntlFlight
+              ? 'Your return flight is included — your Journey Specialist will confirm your final transfer.'
+              : "Select your departure airport — we'll arrange your final lodge-to-airport transfer."
+        }
+      </div>
       {!includeIntlFlight && (<>
         <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:selectedHub ? 14 : 0 }}>
           {hubs.map(hub => {
@@ -1838,12 +1949,27 @@ const HOTELS_FALLBACK: Hotel[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// Region background images — used for scroll-based cross-fade
+const REGION_BG_IMAGES: Record<string,string> = {
+  'kruger-sabi-sand':'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1600&q=40',
+  'okavango-delta':  'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=1600&q=40',
+  'cape-town':       'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=1600&q=40',
+  'madikwe':         'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=1600&q=40',
+  'chobe-vic-falls': 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1600&q=40',
+  'masai-mara':      'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=1600&q=40',
+};
+
 export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: EditionConfig }) {
 
   const [unlocked, setUnlocked] = useState(() => {
     if (typeof window==='undefined') return false;
     return localStorage.getItem('tse_access')==='safari2026';
   });
+  // Active region background — updated by IntersectionObserver as traveller scrolls
+  const [activeBgSlug, setActiveBgSlug] = useState<string>('');
+  const [prevBgSlug, setPrevBgSlug] = useState<string>('');
+  const [bgTransition, setBgTransition] = useState(false);
 
   const [screen,    setScreen]    = useState<Screen>('landing');
   const [inputMode, setInputMode] = useState<InputMode>('socratic');
@@ -2928,6 +3054,32 @@ const runBriefPlanner = (briefText: string) => {
           </div>
         </div>
 
+        {/* ── DEPARTURE AIRPORT ─────────────────────────────────────── */}
+        <div style={{ marginBottom:44 }}>
+          <SectionLabel text="Flying home from?" sub="We'll arrange your final lodge-to-airport transfer to match" />
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {[
+              { code:'JNB', label:'Johannesburg (O.R. Tambo)', note:'Main hub — most international routes via JNB' },
+              { code:'CPT', label:'Cape Town', note:'Direct flights to London, Amsterdam, Frankfurt & New York' },
+              { code:'', label:"Not sure yet", note:'Your specialist will confirm based on your final routing' },
+            ].map(opt => {
+              const isSel = departureHubId === opt.code;
+              return (
+                <button key={opt.code || 'tbd'} onClick={() => setDepartureHubId(opt.code)}
+                  style={{ padding:'13px 16px', borderRadius:8, textAlign:'left' as const, border:`0.5px solid ${isSel?T.gold:'rgba(255,255,255,0.15)'}`, background:isSel?T.goldDim:'rgba(255,255,255,0.02)', cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div>
+                    <div style={{ fontSize:14, fontWeight:isSel?400:300, color:isSel?T.gold:T.text }}>{opt.label}</div>
+                    <div style={{ fontSize:12, color:'rgba(245,240,232,0.38)', lineHeight:1.5, fontWeight:200, marginTop:2 }}>{opt.note}</div>
+                  </div>
+                  {isSel && <span style={{ fontSize:12, color:T.gold, flexShrink:0 }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <InputDivider />
+
         {/* ── BUILD BUTTON ───────────────────────────────────────────── */}
         <button className="btn-gold" style={{ width:'100%', padding:'18px 24px', fontSize:15, letterSpacing:'0.1em', borderRadius:4 }} onClick={runSocraticPlanner}>
           ✦ &nbsp; Build My Itinerary
@@ -3033,7 +3185,35 @@ const runBriefPlanner = (briefText: string) => {
 
       {/* BUILDER */}
       {screen==='builder' && itinerary && (
-        <div style={{ minHeight:'100vh', background:T.bg, paddingBottom:120 }}>
+        <div style={{ minHeight:'100vh', background:'#121014', paddingBottom:120, position:'relative' }}>
+          {/* ─── Fixed region background — cross-fades as traveller scrolls ─── */}
+          <div style={{ position:'fixed', inset:0, zIndex:0, pointerEvents:'none', overflow:'hidden' }}>
+            {/* Previous region — fades out */}
+            {prevBgSlug && REGION_BG_IMAGES[prevBgSlug] && (
+              <div style={{
+                position:'absolute', inset:0,
+                backgroundImage:`url(${REGION_BG_IMAGES[prevBgSlug]})`,
+                backgroundSize:'cover', backgroundPosition:'center',
+                opacity: bgTransition ? 0 : 0.07,
+                transition:'opacity 1.8s ease',
+                filter:'saturate(0.5) contrast(0.85)',
+              }}/>
+            )}
+            {/* Active region — fades in */}
+            {activeBgSlug && REGION_BG_IMAGES[activeBgSlug] && (
+              <div style={{
+                position:'absolute', inset:0,
+                backgroundImage:`url(${REGION_BG_IMAGES[activeBgSlug]})`,
+                backgroundSize:'cover', backgroundPosition:'center',
+                opacity: bgTransition ? 0.07 : 0,
+                transition:'opacity 1.8s ease',
+                filter:'saturate(0.5) contrast(0.85)',
+              }}/>
+            )}
+            {/* Very light vignette */}
+            <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom, rgba(18,16,20,0.35) 0%, rgba(18,16,20,0.05) 20%, rgba(18,16,20,0.05) 80%, rgba(18,16,20,0.5) 100%)' }}/>
+          </div>
+          <div style={{ position:'relative', zIndex:1 }}>
           <Nav {...navProps} />
 
           <div style={{ maxWidth:1280, margin:'0 auto', padding:'20px 20px 0' }}>
@@ -3213,6 +3393,14 @@ const runBriefPlanner = (briefText: string) => {
                   nights={currentStay.nights}
                   checkinDate={checkinDate}
                   bgImageUrl={regionImageMap[slug]}
+                  onRegionVisible={(s: string) => {
+                    if (s !== activeBgSlug) {
+                      setPrevBgSlug(activeBgSlug);
+                      setBgTransition(false);
+                      setActiveBgSlug(s);
+                      requestAnimationFrame(() => requestAnimationFrame(() => setBgTransition(true)));
+                    }
+                  }}
                   kbHighlights={kbHighlights}
                   kbTips={kbTips}
                   skeletonFindings={regionFindings}
@@ -3355,6 +3543,7 @@ const runBriefPlanner = (briefText: string) => {
           </div>
 
           {chatOpen && <ChatDrawer msgs={chatMsgs} input={chatInput} setInput={setChatInput} send={sendChat} loading={chatLoading} endRef={chatEndRef} onClose={()=>setChatOpen(false)} edition={edition} />}
+          </div>{/* end position:relative z-index:1 */}
         </div>
       )}
 
