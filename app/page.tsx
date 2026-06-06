@@ -138,15 +138,87 @@ const REGION_LABEL: Record<string, string> = {
 };
 
 const INTERNATIONAL_ORIGINS = [
-  { code: 'LHR', label: 'London Heathrow',  flag: '🇬🇧' },
-  { code: 'LGW', label: 'London Gatwick',   flag: '🇬🇧' },
-  { code: 'MAN', label: 'Manchester',       flag: '🇬🇧' },
-  { code: 'AMS', label: 'Amsterdam',        flag: '🇳🇱' },
-  { code: 'FRA', label: 'Frankfurt',        flag: '🇩🇪' },
-  { code: 'JFK', label: 'New York (JFK)',   flag: '🇺🇸' },
-  { code: 'LAX', label: 'Los Angeles',      flag: '🇺🇸' },
-  { code: 'DXB', label: 'Dubai',            flag: '🇦🇪' },
-  { code: 'SYD', label: 'Sydney',           flag: '🇦🇺' },
+  // United Kingdom
+  { code: 'LHR', label: 'London Heathrow',       flag: '🇬🇧' },
+  { code: 'LGW', label: 'London Gatwick',         flag: '🇬🇧' },
+  { code: 'LCY', label: 'London City',            flag: '🇬🇧' },
+  { code: 'STN', label: 'London Stansted',        flag: '🇬🇧' },
+  { code: 'MAN', label: 'Manchester',             flag: '🇬🇧' },
+  { code: 'EDI', label: 'Edinburgh',              flag: '🇬🇧' },
+  { code: 'BHX', label: 'Birmingham',             flag: '🇬🇧' },
+  { code: 'GLA', label: 'Glasgow',                flag: '🇬🇧' },
+  { code: 'BRS', label: 'Bristol',                flag: '🇬🇧' },
+  // Europe
+  { code: 'AMS', label: 'Amsterdam',              flag: '🇳🇱' },
+  { code: 'FRA', label: 'Frankfurt',              flag: '🇩🇪' },
+  { code: 'MUC', label: 'Munich',                 flag: '🇩🇪' },
+  { code: 'DUS', label: 'Düsseldorf',             flag: '🇩🇪' },
+  { code: 'BER', label: 'Berlin',                 flag: '🇩🇪' },
+  { code: 'HAM', label: 'Hamburg',                flag: '🇩🇪' },
+  { code: 'CDG', label: 'Paris Charles de Gaulle',flag: '🇫🇷' },
+  { code: 'ORY', label: 'Paris Orly',             flag: '🇫🇷' },
+  { code: 'NCE', label: 'Nice',                   flag: '🇫🇷' },
+  { code: 'ZUR', label: 'Zurich',                 flag: '🇨🇭' },
+  { code: 'GVA', label: 'Geneva',                 flag: '🇨🇭' },
+  { code: 'VIE', label: 'Vienna',                 flag: '🇦🇹' },
+  { code: 'BRU', label: 'Brussels',               flag: '🇧🇪' },
+  { code: 'MAD', label: 'Madrid',                 flag: '🇪🇸' },
+  { code: 'BCN', label: 'Barcelona',              flag: '🇪🇸' },
+  { code: 'FCO', label: 'Rome Fiumicino',         flag: '🇮🇹' },
+  { code: 'MXP', label: 'Milan Malpensa',         flag: '🇮🇹' },
+  { code: 'LIS', label: 'Lisbon',                 flag: '🇵🇹' },
+  { code: 'CPH', label: 'Copenhagen',             flag: '🇩🇰' },
+  { code: 'ARN', label: 'Stockholm Arlanda',      flag: '🇸🇪' },
+  { code: 'OSL', label: 'Oslo',                   flag: '🇳🇴' },
+  { code: 'HEL', label: 'Helsinki',               flag: '🇫🇮' },
+  { code: 'WAW', label: 'Warsaw',                 flag: '🇵🇱' },
+  { code: 'PRG', label: 'Prague',                 flag: '🇨🇿' },
+  { code: 'BUD', label: 'Budapest',               flag: '🇭🇺' },
+  { code: 'ATH', label: 'Athens',                 flag: '🇬🇷' },
+  { code: 'IST', label: 'Istanbul',               flag: '🇹🇷' },
+  // United States
+  { code: 'JFK', label: 'New York (JFK)',          flag: '🇺🇸' },
+  { code: 'EWR', label: 'New York (Newark)',       flag: '🇺🇸' },
+  { code: 'LAX', label: 'Los Angeles',             flag: '🇺🇸' },
+  { code: 'ORD', label: 'Chicago O\'Hare',         flag: '🇺🇸' },
+  { code: 'MIA', label: 'Miami',                   flag: '🇺🇸' },
+  { code: 'SFO', label: 'San Francisco',           flag: '🇺🇸' },
+  { code: 'BOS', label: 'Boston',                  flag: '🇺🇸' },
+  { code: 'ATL', label: 'Atlanta',                 flag: '🇺🇸' },
+  { code: 'IAD', label: 'Washington Dulles',       flag: '🇺🇸' },
+  { code: 'DFW', label: 'Dallas Fort Worth',       flag: '🇺🇸' },
+  { code: 'SEA', label: 'Seattle',                 flag: '🇺🇸' },
+  { code: 'DEN', label: 'Denver',                  flag: '🇺🇸' },
+  { code: 'HOU', label: 'Houston',                 flag: '🇺🇸' },
+  { code: 'MSP', label: 'Minneapolis',             flag: '🇺🇸' },
+  { code: 'PHX', label: 'Phoenix',                 flag: '🇺🇸' },
+  { code: 'DTW', label: 'Detroit',                 flag: '🇺🇸' },
+  // Canada
+  { code: 'YYZ', label: 'Toronto Pearson',         flag: '🇨🇦' },
+  { code: 'YVR', label: 'Vancouver',               flag: '🇨🇦' },
+  { code: 'YUL', label: 'Montreal',                flag: '🇨🇦' },
+  { code: 'YYC', label: 'Calgary',                 flag: '🇨🇦' },
+  // Middle East
+  { code: 'DXB', label: 'Dubai',                   flag: '🇦🇪' },
+  { code: 'AUH', label: 'Abu Dhabi',               flag: '🇦🇪' },
+  { code: 'DOH', label: 'Doha',                    flag: '🇶🇦' },
+  { code: 'RUH', label: 'Riyadh',                  flag: '🇸🇦' },
+  // Asia Pacific
+  { code: 'SYD', label: 'Sydney',                  flag: '🇦🇺' },
+  { code: 'MEL', label: 'Melbourne',               flag: '🇦🇺' },
+  { code: 'PER', label: 'Perth',                   flag: '🇦🇺' },
+  { code: 'BNE', label: 'Brisbane',                flag: '🇦🇺' },
+  { code: 'AKL', label: 'Auckland',                flag: '🇳🇿' },
+  { code: 'SIN', label: 'Singapore',               flag: '🇸🇬' },
+  { code: 'HKG', label: 'Hong Kong',               flag: '🇭🇰' },
+  { code: 'NRT', label: 'Tokyo Narita',            flag: '🇯🇵' },
+  { code: 'PVG', label: 'Shanghai',                flag: '🇨🇳' },
+  { code: 'PEK', label: 'Beijing',                 flag: '🇨🇳' },
+  { code: 'BOM', label: 'Mumbai',                  flag: '🇮🇳' },
+  { code: 'DEL', label: 'Delhi',                   flag: '🇮🇳' },
+  { code: 'ICN', label: 'Seoul Incheon',           flag: '🇰🇷' },
+  { code: 'KUL', label: 'Kuala Lumpur',            flag: '🇲🇾' },
+  { code: 'BKK', label: 'Bangkok',                 flag: '🇹🇭' },
 ];
 
 const REGIONAL_ORIGINS = [
@@ -2713,6 +2785,108 @@ const REGION_BG_IMAGES: Record<string,string> = {
   'masai-mara':      'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=1600&q=40',
 };
 
+// ── CITY TYPEAHEAD ─────────────────────────────────────────────────────────
+function CityTypeahead({
+  value, onChange, options, T: theme
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  options: { code: string; label: string; flag: string }[];
+  T: any;
+}) {
+  const selected = options.find(o => o.code === value);
+  const [query,    setQuery]    = useState('');
+  const [open,     setOpen]     = useState(false);
+  const [focused,  setFocused]  = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+        setFocused(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return options;
+    const q = query.toLowerCase();
+    return options.filter(o =>
+      o.label.toLowerCase().includes(q) || o.code.toLowerCase().includes(q)
+    );
+  }, [query, options]);
+
+  const displayText = focused ? query : (selected ? `${selected.flag}  ${selected.label}` : '');
+
+  return (
+    <div ref={containerRef} style={{ position:'relative', marginBottom:4 }}>
+      <div style={{ position:'relative' }}>
+        <input
+          type="text"
+          value={displayText}
+          placeholder={selected ? `${selected.flag}  ${selected.label}` : 'Search city or airport…'}
+          onFocus={() => { setFocused(true); setQuery(''); setOpen(true); }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          style={{
+            width:'100%', boxSizing:'border-box' as const,
+            background:'rgba(255,255,255,0.04)',
+            border:`0.5px solid ${open ? theme.gold : 'rgba(255,255,255,0.12)'}`,
+            color: theme.text, borderRadius:8,
+            padding:'12px 40px 12px 14px',
+            fontSize:14, outline:'none', fontFamily:'inherit',
+            cursor:'text', transition:'border-color 0.15s',
+          }}
+        />
+        <div style={{
+          position:'absolute', right:14, top:'50%', transform:`translateY(-50%) rotate(${open?'180deg':'0deg'})`,
+          transition:'transform 0.15s', pointerEvents:'none',
+          color:'rgba(245,240,232,0.35)', fontSize:10,
+        }}>▼</div>
+      </div>
+
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:200,
+          background:'#1a1610', border:`0.5px solid ${theme.gold}`,
+          borderRadius:10, maxHeight:240, overflowY:'auto' as const,
+          boxShadow:'0 12px 40px rgba(0,0,0,0.6)',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding:'14px 16px', fontSize:13, color:'rgba(245,240,232,0.35)', textAlign:'center' as const }}>
+              No cities found
+            </div>
+          ) : filtered.map(o => {
+            const isActive = o.code === value;
+            return (
+              <button
+                key={o.code}
+                onMouseDown={e => { e.preventDefault(); onChange(o.code); setOpen(false); setQuery(''); setFocused(false); }}
+                style={{
+                  display:'flex', alignItems:'center', gap:10,
+                  width:'100%', padding:'11px 16px',
+                  background: isActive ? theme.goldDim : 'transparent',
+                  border:'none', cursor:'pointer', fontFamily:'inherit',
+                  textAlign:'left' as const, transition:'background 0.1s',
+                }}
+                onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+              >
+                <span style={{ fontSize:16, flexShrink:0 }}>{o.flag}</span>
+                <span style={{ fontSize:13, color: isActive ? theme.gold : theme.text, fontWeight: isActive ? 400 : 300 }}>{o.label}</span>
+                <span style={{ fontSize:11, color:'rgba(245,240,232,0.28)', marginLeft:'auto', fontWeight:200 }}>{o.code}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: EditionConfig }) {
 
   const [unlocked, setUnlocked] = useState(() => {
@@ -3553,9 +3727,12 @@ const runBriefPlanner = (briefText: string) => {
                 {flightIntent==='include' && (
                   <div style={{ marginTop:12,paddingTop:12,borderTop:`0.5px solid ${T.border}` }}>
                     <div style={{ fontSize:10,color:T.textDim,textTransform:'uppercase' as const,letterSpacing:'0.1em',fontWeight:600,marginBottom:8 }}>Flying from</div>
-                    <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%',background:'rgba(255,255,255,0.04)',border:`0.5px solid ${T.border}`,color:T.text,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',fontFamily:'inherit' }}>
-                      {INTERNATIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                    </select>
+                    <CityTypeahead
+                      value={intlOrigin}
+                      onChange={setIntlOrigin}
+                      options={INTERNATIONAL_ORIGINS}
+                      T={T}
+                    />
                   </div>
                 )}
               </div>
@@ -3675,22 +3852,12 @@ const runBriefPlanner = (briefText: string) => {
           {flightIntent==='include' && (
             <div style={{ marginTop:14, paddingTop:16, borderTop:'0.5px solid rgba(255,255,255,0.06)' }}>
               <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:8 }}>Flying from</div>
-              <select value={intlOrigin} onChange={e=>setIntlOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.12)', color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit', marginBottom:14, cursor:'pointer' }}>
-                {INTERNATIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-              </select>
-              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:10 }}>Gateway preference</div>
-              <div style={{ display:'flex', flexDirection:'column' as const, gap:8 }}>
-                {([
-                  { val:'open_jaw' as const, label:'Cheapest combination', sub:'Open jaw if it saves money — e.g. LHR → JNB … CPT → LHR' },
-                  { val:'return'   as const, label:'Same airport in and out', sub:'e.g. LHR → JNB → LHR' },
-                ]).map(opt => (
-                  <button key={opt.val} onClick={()=>setGatewayPreference(opt.val)}
-                    style={{ padding:'12px 14px', borderRadius:8, textAlign:'left' as const, border:`0.5px solid ${gatewayPreference===opt.val?T.gold:'rgba(255,255,255,0.12)'}`, background:gatewayPreference===opt.val?T.goldDim:'transparent', cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
-                    <div style={{ fontSize:13, color:gatewayPreference===opt.val?T.gold:T.text, fontWeight:400 }}>{opt.label}</div>
-                    <div style={{ fontSize:11, color:T.textDim, marginTop:2, fontWeight:200 }}>{opt.sub}</div>
-                  </button>
-                ))}
-              </div>
+              <CityTypeahead
+                value={intlOrigin}
+                onChange={setIntlOrigin}
+                options={INTERNATIONAL_ORIGINS}
+                T={T}
+              />
             </div>
           )}
           {flightIntent==='own' && (
