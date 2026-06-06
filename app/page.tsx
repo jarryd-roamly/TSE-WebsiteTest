@@ -1167,12 +1167,13 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
 // Activities live here now, not inside the Customise sheet.
 // Filtered by region. Tap to add/remove.
 // ═══════════════════════════════════════════════════════════════════════════════
-function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities }: {
+function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities, pax = 1 }: {
   regionSlug:  string;
   selectedIds: string[];
   onToggle:    (id:string)=>void;
   fmt:         (n:number)=>string;
   activities:  Activity[];
+  pax:         number;
 }) {
   const regionActs = useMemo(() => activities.filter(a =>
     a.region_slug === regionSlug
@@ -1249,8 +1250,12 @@ function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities }: {
 
       {selectedIds.length > 0 && (
         <div style={{ marginTop:10, padding:'9px 14px', background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, display:'flex', justifyContent:'space-between', fontSize:12 }}>
-          <span style={{ color:T.gold, fontWeight:600 }}>{selectedIds.length} experience{selectedIds.length===1?'':'s'} added</span>
-          <span style={{ color:T.textMid }}>{fmt(regionActs.filter(a=>selectedIds.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*1.18),0))}</span>
+          <span style={{ color:T.gold, fontWeight:600 }}>
+            {selectedIds.length} experience{selectedIds.length===1?'':'s'} · {pax} {pax===1?'person':'people'}
+          </span>
+          <span style={{ color:T.textMid }}>
+            {fmt(regionActs.filter(a=>selectedIds.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*1.18)*pax,0))}
+          </span>
         </div>
       )}
     </div>
@@ -1661,13 +1666,13 @@ function buildTransferOptions(
     detail: isLowveld
       ? 'FedAir Lowveld Shuttle · dep 09:00 arr ~10:35 · 20kg (hard cases OK)'
       : isMadikwe
-      ? 'Daily 10:00 & 13:00 · ~60 min · 20kg (hard cases OK)'
+      ? 'Daily 10:00 & 13:00 · ~60 min · departs ~90 min after commercial landing · 20kg (hard cases OK)'
       : 'Daily 10:00 & 13:00 · ~55–65 min · 20kg (hard cases OK)',
     // Atlas Rd note only applies when departing FROM JNB (Madikwe / direct lodge service)
     // Lowveld Shuttle departs FROM the lodge — no OR Tambo reference
     note: isLowveld
       ? 'X Class available: 32kg + hard cases (+25%)'
-      : 'OR Tambo Atlas Rd terminal · X Class: 32kg + hard cases (+25%)',
+      : 'OR Tambo Atlas Rd terminal · allow 90 min from commercial arrival · X Class: 32kg + hard cases (+25%)',
     noteColor: 'rgba(212,175,55,0.5)',
   });
 
@@ -1849,7 +1854,25 @@ function buildTransferOptions(
     // ARRIVAL: dest hub → lodge
     const isLowveld = ['MQP','HDS','SZK'].includes(destHub);
     const isMadikweArr = toSlug === 'madikwe';
-    if (arr.mode === 'fedair') {
+    const isGBERoute  = (arr as any).fromAirport === 'GBE';
+
+    if (isGBERoute) {
+      // GBE → Madikwe: charter landing at Gaborone + road transfer with 2 border crossings
+      structured.push({
+        kind: 'arrival', badge: '✈', name: 'Charter — land at Gaborone (GBE)',
+        from: 'CPT / JNB', to: 'GBE',
+        detail: 'Light aircraft · ~30 min from origin · lands Gaborone International',
+        note: 'Flat rate per charter up to 6 pax',
+        noteColor: 'rgba(212,175,55,0.5)',
+      });
+      structured.push({
+        kind: 'road', badge: '🛂', name: '⚠ Road transfer + 2 border crossings',
+        from: 'Gaborone Airport (GBE)', to: 'Madikwe Lodge',
+        detail: '~28km road · Botswana exit + SA entry (Kopfontein/Derdepoort border posts)',
+        note: 'Allow 2–3 hours. Border hours: 07:00–20:00. Not recommended for tight connections or evening arrivals.',
+        noteColor: 'rgba(251,146,60,0.8)',
+      });
+    } else if (arr.mode === 'fedair') {
       structured.push(fedairLeg(destHub, 'Lodge airstrip', isLowveld, isMadikweArr));
     } else if (arr.mode === 'mackair') {
       structured.push({
@@ -1898,7 +1921,9 @@ function buildTransferOptions(
     const totalMin = (exitRec2?.durationMin ?? 0) + commDur + arr.durationMin;
     const badges: Array<{text:string;color:string}> = [];
     if (arr.recommended && i === 0) badges.push({text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'});
-    if (arr.perCharter) badges.push({text:'Private charter',color:'#a78bfa'});
+    if (arr.perCharter || isGBERoute) badges.push({text:'Private charter',color:'#a78bfa'});
+    if (arr.mode === 'fedair') badges.push({text:'✈ Federal Air charter included',color:'rgba(134,239,172,0.85)'});
+    if (isGBERoute) badges.push({text:'⚠ 2 border crossings required',color:'rgba(251,146,60,0.9)'});
     if (isEst) badges.push({text:'Est.',color:'rgba(255,255,255,0.3)'});
 
     const airline = meta?.carrier ? (AIRLINE_META[meta.carrier]?.name ?? meta.carrier) : null;
@@ -2511,6 +2536,33 @@ function TransferCarousel({
 }
 
 
+// ── BUILD INSTRUCTION BANNER ──────────────────────────────────────────────
+function BuildInstruction({ step, text, subdued = false }: { step: number; text: string; subdued?: boolean }) {
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', gap:10,
+      margin: subdued ? '8px 0 6px' : '16px 0 10px',
+      padding: subdued ? '7px 12px' : '10px 14px',
+      background: subdued ? 'rgba(212,175,55,0.03)' : 'rgba(212,175,55,0.06)',
+      border: `0.5px solid ${subdued ? 'rgba(212,175,55,0.15)' : 'rgba(212,175,55,0.28)'}`,
+      borderRadius: 8,
+    }}>
+      <div style={{
+        width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+        background: subdued ? 'rgba(212,175,55,0.15)' : 'rgba(212,175,55,0.22)',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        fontSize: 9, fontWeight: 700, color: T.gold, fontFamily:"'Jost',sans-serif",
+        letterSpacing: '0.04em',
+      }}>
+        {step}
+      </div>
+      <div style={{ fontSize: 11, color: subdued ? 'rgba(212,175,55,0.6)' : T.gold, fontWeight: 300, letterSpacing: '0.04em', lineHeight: 1.4 }}>
+        {text}
+      </div>
+    </div>
+  );
+}
+
 function CityTransferStrip({ slug, destLabel, opts, selectedId, onSelect, fmt }: { slug:string; destLabel:string; opts:CityTransferOption[]; selectedId:string|undefined; onSelect:(id:string)=>void; fmt:(n:number)=>string; }) {
   const [idx, setIdx] = useState(0);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -2777,12 +2829,19 @@ const HOTELS_FALLBACK: Hotel[] = [
 
 // Region background images — used for scroll-based cross-fade
 const REGION_BG_IMAGES: Record<string,string> = {
-  'kruger-sabi-sand':'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1600&q=40',
-  'okavango-delta':  'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=1600&q=40',
-  'cape-town':       'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=1600&q=40',
-  'madikwe':         'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=1600&q=40',
-  'chobe-vic-falls': 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1600&q=40',
-  'masai-mara':      'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=1600&q=40',
+  // South Africa
+  'kruger-sabi-sand': 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1600&q=40',  // leopard on tree
+  'cape-town':        'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=1600&q=40',  // Table Mountain Atlantic
+  'madikwe':          'https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=1600&q=40',     // elephant at sunset
+  'phinda':           'https://images.unsplash.com/photo-1551085254-e96b210db58a?w=1600&q=40',     // KZN coastal bush
+  // Botswana
+  'okavango-delta':   'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=1600&q=40',  // delta water and reeds
+  'chobe-vic-falls':  'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1600&q=40',  // Victoria Falls mist
+  // East Africa
+  'masai-mara':       'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=1600&q=40',  // Mara savanna migration
+  'bwindi':           'https://images.unsplash.com/photo-1564760055775-d63b17a55c44?w=1600&q=40',  // mountain gorilla Uganda
+  // Other
+  'mozambique':       'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1600&q=40',  // Indian Ocean beach
 };
 
 // ── DATE RANGE PICKER ──────────────────────────────────────────────────────
@@ -3506,7 +3565,8 @@ useEffect(() => {
     const activityCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
       const sel = selectedActivities[slug] ?? [];
-      return sum + activities.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + Math.round(a.netRate * M.activities), 0);
+      const pax = Math.max(adults + children, 1); // infants = 0 cost
+      return sum + activities.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + Math.round(a.netRate * M.activities) * pax, 0);
     }, 0);
     const cityXferCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
@@ -4698,11 +4758,16 @@ const runBriefPlanner = (briefText: string) => {
                   seasonalNote={seasonalNote}
                   specialistNote={specialistNote}
                 >
-                  {/* [V6-3] Auto airport transfer for Cape Town & Vic Falls */}
+                  {/* ── STEP 1: ARRIVAL TRANSFER ── */}
                   {isCityDest && cityXferOpts.length > 0 && (
-                    <CityTransferStrip slug={slug} destLabel={destLabel} opts={cityXferOpts} selectedId={selCityXferId} onSelect={id => setCityTransferIds(prev => ({ ...prev, [slug]: id }))} fmt={fmt} />
+                    <>
+                      <BuildInstruction step={1} text={`Select how you'd like to get from ${destLabel === 'Cape Town' ? 'Cape Town International Airport' : destLabel + ' Airport'} to your hotel`} />
+                      <CityTransferStrip slug={slug} destLabel={destLabel} opts={cityXferOpts} selectedId={selCityXferId} onSelect={id => setCityTransferIds(prev => ({ ...prev, [slug]: id }))} fmt={fmt} />
+                    </>
                   )}
 
+                  {/* ── STEP 2: PROPERTY ── */}
+                  <BuildInstruction step={isCityDest && cityXferOpts.length > 0 ? 2 : 1} text={`Select your ${destLabel} property — swipe to compare options`} />
                   <NestedPropertyCarousel
                     destinationLabel={destLabel}
                     destinationSlug={slug}
@@ -4730,6 +4795,8 @@ const runBriefPlanner = (briefText: string) => {
                     }}
                   />
 
+                  {/* ── STEP 3: EXPERIENCES ── */}
+                  <BuildInstruction step={isCityDest && cityXferOpts.length > 0 ? 3 : 2} text={`Add ${destLabel} experiences to your package — priced per person × ${Math.max(adults+children,1)}`} subdued />
                   {/* [V6-3] ACTIVITY SPOOL */}
                   <ActivitySpool
                     regionSlug={slug}
@@ -4741,11 +4808,13 @@ const runBriefPlanner = (briefText: string) => {
                     })}
                     fmt={fmt}
                     activities={activities}
+                    pax={Math.max(adults + children, 1)}
                   />
 
                   {/* Cape Town DEPARTURE transfer: hotel → CPT airport for onward flight */}
                   {slug === 'cape-town' && cityIdx < itinerary.cities.length - 1 && cityXferOpts.length > 0 && (
                     <div style={{ marginTop: 16 }}>
+                      <BuildInstruction step={4} text={`Select your transfer from your ${destLabel} hotel back to Cape Town International Airport`} />
                       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
                         <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
                         <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
@@ -4776,7 +4845,10 @@ const runBriefPlanner = (briefText: string) => {
                     const originHotel = thisPool.find(h => String(h.id) === String(thisStay?.hotelId)) ?? thisPool[0];
                     const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
                     return (
-                      <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} originLodge={originHotel?.name} />
+                      <>
+                        <BuildInstruction step={slug === 'cape-town' ? 5 : 4} text={`Select your flight from ${itinerary.cities[cityIdx].city} to ${nextCity.city} — options include commercial routes and charter connections`} />
+                        <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} originLodge={originHotel?.name} />
+                      </>
                     );
                   })()}
                 </RegionChapter>
