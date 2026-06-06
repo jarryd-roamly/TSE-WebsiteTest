@@ -867,83 +867,336 @@ function StackManager(){
   )
 }
 function KnowledgeBase(){
-  const LOCAL_KB=[
-    {id:'kb1',segment_type:'property',supplier_id:'sup-singita-001',title:'Singita Sabi Sand — Booking Notes',content:'Request Boulders Suite for couples. North-facing — uninterrupted bush views. WiFi limited at Boulders. Private vehicle confirmed with 48h notice. Early check-in available at R1,800. ⚑ Internal only — not visible to supplier.',priority:'high',verified_at:'2026-04-01',internal_only:true},
-    {id:'kb2',segment_type:'region',title:'Sabi Sand — Seasonal Notes',content:'Peak: June–October. Green season Nov–Feb — lower rates, dramatic skies, good birding. Leopard sightings year-round. Malaria area — prophylaxis required.',priority:'standard',verified_at:'2026-04-01'},
-    {id:'kb3',segment_type:'airport',title:'JNB — OR Tambo Transit Tips',content:'Domestic connections: minimum 2h. International to domestic: minimum 3h. Forex rates poor at airport — use Bidvest. SLOW lounge excellent for long layovers.',priority:'standard',verified_at:'2026-04-01'},
-    {id:'kb4',segment_type:'transfer',title:'Federal Airlines — Booking Notes',content:'Weight limit 20kg per person in soft bags only. Check-in 45min before departure. Ensure arrival before 16:00 at Skukuza for afternoon drive.',priority:'high',verified_at:'2026-04-01'},
-    {id:'kb5',segment_type:'region',title:'Okavango Delta — Best Timing',content:'Peak water: June–August. Best wildlife: July–October. Green season: Nov–March — good for birdlife. Mokoro season: May–September.',priority:'standard',verified_at:'2026-04-01'},
+  const session = (()=>{
+    try{
+      const s=typeof window!=='undefined'?sessionStorage.getItem('tse_session')??localStorage.getItem('tse_session'):null
+      if(!s)return null
+      const p=JSON.parse(s)
+      if(p?.type!=='edition')return null
+      return {name:p.name,email:p.email,role:p.role}
+    }catch{return null}
+  })()
+
+  const SUPABASE_URL_KB = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://tkthsbxuyihoblpcfnml.supabase.co'
+  const SUPABASE_KEY_KB = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+
+  const IMPORTANCE_LABELS:{[k:number]:string}={1:'Advisory',2:'Strong',3:'⚑ Override AI'}
+  const IMPORTANCE_COLORS:{[k:number]:string}={1:T.textDim,2:T.amber,3:T.red}
+  const STATUS_COLORS:{[k:string]:string}={active:T.green,flagged:T.amber,superseded:T.textDim,archived:T.textDim}
+  const EVIDENCE_LABELS=['','No source','Web only','Supplier comms','FAM trip','Site visit ✓']
+  const EVIDENCE_COLORS=['',T.textDim,T.blue,T.textMid,T.amber,T.green]
+  const REGION_SLUGS=[
+    {slug:'kruger-sabi-sand',label:'Kruger / Sabi Sand'},
+    {slug:'okavango-delta',label:'Okavango Delta'},
+    {slug:'cape-town',label:'Cape Town'},
+    {slug:'madikwe',label:'Madikwe'},
+    {slug:'chobe-vic-falls',label:'Chobe / Vic Falls'},
   ]
-  const [entries,setEntries]=useState<any[]>(LOCAL_KB)
+  const ENTRY_TYPES=['region','property','activity','logistics','airport','health','visa','commercial']
+  const CLAIM_TYPES=['factual','experiential','logistical','commercial']
+
+  const [entries,setEntries]=useState<any[]>([])
+  const [loading,setLoading]=useState(true)
+  const [total,setTotal]=useState(0)
   const [adding,setAdding]=useState(false)
-  const [form,setForm]=useState({segment_type:'property',title:'',content:'',priority:'standard',supplier_id:'',internal_only:true})
+  const [flagging,setFlagging]=useState<any>(null)
+  const [expandedId,setExpandedId]=useState<string|null>(null)
+  const [validatingId,setValidatingId]=useState<string|null>(null)
+  const [authors,setAuthors]=useState<string[]>([])
   const [search,setSearch]=useState('')
-  const [filter,setFilter]=useState('all')
-  const [sortField,setSortField]=useState('priority')
-  const [sortDir,setSortDir]=useState('desc')
-  const handleSort=(f:string)=>{if(sortField===f)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortField(f);setSortDir('asc')}}
-  const priorityColor=(p:string)=>p==='critical'?T.red:p==='high'?T.amber:T.textDim
-  const priorityRank=(p:string)=>p==='critical'?3:p==='high'?2:1
-  let filtered=entries
-  if(filter!=='all')filtered=filtered.filter(e=>e.segment_type===filter)
-  if(search)filtered=filtered.filter(e=>e.title.toLowerCase().includes(search.toLowerCase())||e.content.toLowerCase().includes(search.toLowerCase()))
-  filtered=[...filtered].sort((a,b)=>sortField==='priority'?(sortDir==='asc'?priorityRank(a.priority)-priorityRank(b.priority):priorityRank(b.priority)-priorityRank(a.priority)):sortDir==='asc'?(a[sortField]>b[sortField]?1:-1):(a[sortField]<b[sortField]?1:-1))
+  const [filterType,setFilterType]=useState('all')
+  const [filterRegion,setFilterRegion]=useState('all')
+  const [filterImportance,setFilterImportance]=useState('all')
+  const [filterStatus,setFilterStatus]=useState('active')
+  const [filterAuthor,setFilterAuthor]=useState('all')
+  const [addForm,setAddForm]=useState<any>({
+    edition_id:'safari',entry_type:'property',claim_type:'experiential',
+    region_slug:'',supplier_id:'',linked_name:'',title:'',
+    highlights:'',tips:'',guardrails:'',specialist_recs:'',
+    logistics_notes:'',guidance_importance:1,internal_only:true,
+  })
+  const [addMsg,setAddMsg]=useState('')
+  const [addSaving,setAddSaving]=useState(false)
+  const [flagReason,setFlagReason]=useState('Outdated — rates/policy changed')
+  const [flagNote,setFlagNote]=useState('')
+  const [flagSaving,setFlagSaving]=useState(false)
+
+  function sessionHeader(){
+    if(!session)return {}
+    return {'x-tse-session':JSON.stringify({...session,type:'edition'})}
+  }
+
+  async function load(){
+    setLoading(true)
+    try{
+      const p=new URLSearchParams({limit:'100',status:filterStatus==='all'?'all':filterStatus})
+      if(filterType!=='all')p.set('entry_type',filterType)
+      if(filterRegion!=='all')p.set('region_slug',filterRegion)
+      if(filterImportance!=='all')p.set('guidance_importance',filterImportance)
+      if(filterAuthor!=='all')p.set('created_by_email',filterAuthor)
+      const res=await fetch(`/api/kb?${p}`,{headers:{'Content-Type':'application/json',...sessionHeader()}})
+      const data=await res.json()
+      if(data.success){
+        let filtered=data.entries??[]
+        if(search){
+          const q=search.toLowerCase()
+          filtered=filtered.filter((e:any)=>
+            e.title?.toLowerCase().includes(q)||
+            e.linked_name?.toLowerCase().includes(q)||
+            e.logistics_notes?.toLowerCase().includes(q)||
+            e.highlights?.some((h:string)=>h.toLowerCase().includes(q))
+          )
+        }
+        setEntries(filtered)
+        setTotal(data.total??filtered.length)
+        const unique=[...new Set(filtered.map((e:any)=>e.created_by_email).filter(Boolean))] as string[]
+        setAuthors(prev=>[...new Set([...prev,...unique])])
+      }
+    }catch(e){console.error('[KB load]',e)}
+    setLoading(false)
+  }
+
+  useEffect(()=>{load()},[filterType,filterRegion,filterImportance,filterStatus,filterAuthor])
+  useEffect(()=>{const t=setTimeout(()=>load(),300);return()=>clearTimeout(t)},[search])
+
+  async function handleFlag(){
+    if(!flagging)return
+    setFlagSaving(true)
+    await fetch('/api/kb?action=flag',{method:'POST',headers:{'Content-Type':'application/json',...sessionHeader()},body:JSON.stringify({id:flagging.id,reason:flagReason,note:flagNote})})
+    setFlagSaving(false);setFlagging(null);setFlagNote('');load()
+  }
+
+  async function handleVerify(id:string){
+    await fetch('/api/kb?action=verify',{method:'POST',headers:{'Content-Type':'application/json',...sessionHeader()},body:JSON.stringify({id})})
+    load()
+  }
+
+  async function handleValidate(id:string){
+    setValidatingId(id)
+    await fetch('/api/kb?action=validate',{method:'POST',headers:{'Content-Type':'application/json',...sessionHeader()},body:JSON.stringify({id})})
+    setValidatingId(null);load()
+  }
+
+  function splitLines(v:string){return v.split('\n').map((s:string)=>s.trim()).filter(Boolean)}
+
+  async function handleSave(){
+    if(!addForm.title.trim()||!addForm.linked_name.trim()){setAddMsg('Title and Linked name are required');return}
+    setAddSaving(true);setAddMsg('')
+    const payload={...addForm,highlights:splitLines(addForm.highlights),tips:splitLines(addForm.tips),guardrails:splitLines(addForm.guardrails),specialist_recs:splitLines(addForm.specialist_recs),guidance_importance:Number(addForm.guidance_importance),supplier_id:addForm.supplier_id||undefined,region_slug:addForm.region_slug||undefined}
+    const res=await fetch('/api/kb',{method:'POST',headers:{'Content-Type':'application/json',...sessionHeader()},body:JSON.stringify(payload)})
+    const data=await res.json()
+    if(data.success){setAddMsg('✓ Saved');setTimeout(()=>{setAdding(false);setAddMsg('');setAddForm({edition_id:'safari',entry_type:'property',claim_type:'experiential',region_slug:'',supplier_id:'',linked_name:'',title:'',highlights:'',tips:'',guardrails:'',specialist_recs:'',logistics_notes:'',guidance_importance:1,internal_only:true})},800);load()}
+    else setAddMsg(`Error: ${data.error??'Could not save'}`)
+    setAddSaving(false)
+  }
+
+  const statsActive=entries.filter(e=>e.status==='active').length
+  const statsOverride=entries.filter(e=>e.override_ai&&e.status==='active').length
+  const statsFlagged=entries.filter(e=>e.status==='flagged').length
+  const statsAiUses=entries.reduce((s:number,e:any)=>s+(e.times_used_in_planner||0),0)
+  const noEvidence=entries.filter(e=>e.evidence_strength===1&&e.status==='active').length
+
+  const inp={padding:'7px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:11,outline:'none',fontFamily:'inherit',width:'100%',boxSizing:'border-box' as const}
+  const smInp={...inp,width:'auto'}
+
   return(
     <div>
-      <TableToolbar title="Knowledge Base" count={filtered.length} search={search} onSearch={setSearch} searchPlaceholder="Search entries…"
-        filters={[{label:'All',value:'all'},{label:'Property',value:'property'},{label:'Region',value:'region'},{label:'Area',value:'area'},{label:'Activity',value:'activity'},{label:'Airport',value:'airport'},{label:'Transfer',value:'transfer'}]}
-        activeFilter={filter} onFilter={setFilter}
-        onExportCSV={()=>exportCSV(filtered.map(e=>({Type:e.segment_type,Title:e.title,Content:e.content,Priority:e.priority,Verified:e.verified_at})),'knowledge-base')}
-        onExportPDF={()=>exportPDF('Knowledge Base',['Type','Title','Priority','Verified'],filtered.map(e=>[e.segment_type,e.title,e.priority,e.verified_at]))}
-        actions={<button onClick={()=>setAdding(true)} style={{padding:'7px 12px',borderRadius:8,border:'none',background:`linear-gradient(135deg,${T.gold},#f0c040)`,color:'#0a0a0a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>+ Add Entry</button>}
-      />
-      {adding&&(
-        <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:12,padding:'18px',marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:600,color:T.gold,marginBottom:12}}>New Entry</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Type</label>
-            <select value={form.segment_type} onChange={e=>setForm(f=>({...f,segment_type:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
-              {['property','region','area','activity','airport','transfer'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
-            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Priority</label>
-            <select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))} style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit'}}>
-              {['standard','high','critical'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
-          </div>
-          <div style={{marginBottom:10,display:'flex',gap:12,alignItems:'center'}}>
-            <div style={{flex:1}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Linked Supplier (optional)</label>
-            <input value={form.supplier_id} onChange={e=>setForm(f=>({...f,supplier_id:e.target.value}))} placeholder="e.g. sup-singita-001 — links to a specific supplier record"
-              style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
-            <div style={{flexShrink:0,paddingTop:16}}><label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:12,color:T.textMid}}>
-              <input type="checkbox" checked={form.internal_only} onChange={e=>setForm(f=>({...f,internal_only:e.target.checked}))} style={{accentColor:T.gold}}/>
-              <span style={{color:form.internal_only?T.amber:T.textDim,fontSize:11,fontWeight:600}}>⚑ Internal only — hidden from supplier, excluded from score</span>
-            </label></div>
-          </div>
-          <div style={{marginBottom:10}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Title</label>
-          <input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="e.g. Singita — Booking Notes" style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}/></div>
-          <div style={{marginBottom:12}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Notes</label>
-          <textarea value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))} rows={3} placeholder="Specialist notes…" style={{width:'100%',padding:'8px 10px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:7,color:T.text,fontSize:12,outline:'none',fontFamily:'inherit',boxSizing:'border-box',resize:'vertical'}}/></div>
-          <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>{if(form.title&&form.content){setEntries(e=>[{...form,id:`kb${Date.now()}`,verified_at:new Date().toISOString().slice(0,10)},...e]);setAdding(false);setForm({segment_type:'property',title:'',content:'',priority:'standard',supplier_id:'',internal_only:true})}}} style={{background:`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:8,padding:'8px 16px',color:'#0a0a0a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>Save</button>
-            <button onClick={()=>setAdding(false)} style={{background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:8,padding:'8px 16px',color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+      {/* Flag modal */}
+      {flagging&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:14,padding:24,width:'100%',maxWidth:460}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.red,marginBottom:4}}>⚑ Flag entry</div>
+            <div style={{fontSize:12,color:T.textDim,marginBottom:16}}>{flagging.title}</div>
+            <div style={{marginBottom:10}}>
+              <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Reason</label>
+              <select value={flagReason} onChange={e=>setFlagReason(e.target.value)} style={inp}>
+                <option>Outdated — rates/policy changed</option>
+                <option>Inaccurate — information is incorrect</option>
+                <option>Contradicts my ground experience</option>
+                <option>Requires specialist verification</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Additional context</label>
+              <textarea value={flagNote} onChange={e=>setFlagNote(e.target.value)} rows={3} placeholder="What do you know that contradicts this entry?" style={{...inp,resize:'vertical'}}/>
+            </div>
+            <div style={{background:`${T.amber}08`,border:`0.5px solid ${T.amber}25`,borderRadius:7,padding:'8px 12px',marginBottom:16,fontSize:11,color:T.amber}}>
+              Flagging preserves the entry — it is not deleted. It will be marked for admin review.
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={handleFlag} disabled={flagSaving} style={{flex:1,padding:'10px',background:`${T.red}18`,border:`0.5px solid ${T.red}40`,borderRadius:8,color:T.red,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{flagSaving?'Flagging…':'Submit flag'}</button>
+              <button onClick={()=>setFlagging(null)} style={{padding:'10px 18px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:8,color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+            </div>
           </div>
         </div>
       )}
-      <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:12,overflow:'hidden'}}>
-        <div style={{display:'grid',gridTemplateColumns:'110px 1fr 70px 80px 70px',gap:8,padding:'10px 16px',borderBottom:`0.5px solid ${T.border}`}}>
-          <ColHeader label="Type" field="segment_type" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
-          <ColHeader label="Title / Notes" field="title" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
-          <ColHeader label="Priority" field="priority" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
-          <ColHeader label="Visibility" />
-          <ColHeader label="Verified" field="verified_at" sortField={sortField} sortDir={sortDir} onSort={handleSort}/>
+
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:700,color:T.text}}>Knowledge Base</div>
+          <div style={{fontSize:12,color:T.textDim,marginTop:3}}>{total} entries · institutional memory · append-first</div>
         </div>
-        {filtered.map((e,i)=>(
-          <div key={i} style={{display:'grid',gridTemplateColumns:'120px 1fr 80px 100px',gap:8,padding:'0',borderBottom:`0.5px solid ${T.border}`,background:i%2===1?'rgba(255,255,255,0.01)':'transparent'}}>
-            <div style={{padding:'12px 16px',fontSize:11,color:T.textDim,textTransform:'capitalize',alignSelf:'start',paddingTop:14}}>{e.segment_type}</div>
-            <div style={{padding:'12px 8px'}}><div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3}}>{e.title}</div><div style={{fontSize:11,color:T.textMid,lineHeight:1.5}}>{e.content}</div></div>
-            <div style={{padding:'14px 8px',fontSize:11,color:priorityColor(e.priority),fontWeight:600,textTransform:'uppercase',alignSelf:'start'}}>{e.priority}</div>
-            <div style={{padding:'14px 8px',fontSize:11,color:T.textDim,alignSelf:'start'}}>{e.verified_at}</div>
+        <button onClick={()=>setAdding(v=>!v)} style={{padding:'8px 16px',borderRadius:8,border:adding?`0.5px solid ${T.border}`:'none',background:adding?'transparent':`linear-gradient(135deg,${T.gold},#f0c040)`,color:adding?T.textDim:'#0a0a0a',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+          {adding?'✕ Cancel':'+ Add Entry'}
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
+        {[{label:'Total active',val:statsActive,color:T.gold},{label:'AI overrides',val:statsOverride,color:T.red},{label:'Flagged',val:statsFlagged,color:T.amber},{label:'AI planner uses',val:statsAiUses,color:T.green}].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:9,padding:'12px 14px'}}>
+            <div style={{fontSize:10,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4}}>{s.label}</div>
+            <div style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
           </div>
         ))}
       </div>
+
+      {noEvidence>0&&<div style={{background:`${T.amber}08`,border:`0.5px solid ${T.amber}25`,borderRadius:8,padding:'9px 14px',marginBottom:14,fontSize:12,color:T.amber}}>⚑ {noEvidence} active entr{noEvidence===1?'y':'ies'} with no verification source.</div>}
+
+      {/* Add form */}
+      {adding&&(
+        <div style={{background:T.bg2,border:`0.5px solid ${T.borderGold}`,borderRadius:12,padding:20,marginBottom:14}}>
+          <div style={{fontSize:14,fontWeight:700,color:T.gold,marginBottom:16}}>New KB Entry</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:12}}>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Entry type *</label>
+            <select value={addForm.entry_type} onChange={e=>setAddForm((f:any)=>({...f,entry_type:e.target.value}))} style={inp}>{ENTRY_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Claim type *</label>
+            <select value={addForm.claim_type} onChange={e=>setAddForm((f:any)=>({...f,claim_type:e.target.value}))} style={inp}>{CLAIM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Guidance importance</label>
+            <select value={addForm.guidance_importance} onChange={e=>setAddForm((f:any)=>({...f,guidance_importance:Number(e.target.value)}))} style={inp}>
+              <option value={1}>1 — Advisory</option>
+              <option value={2}>2 — Strong recommendation</option>
+              <option value={3}>3 — Override AI (hard rule)</option>
+            </select></div>
+          </div>
+          {addForm.guidance_importance===3&&<div style={{background:`${T.red}08`,border:`0.5px solid ${T.red}30`,borderRadius:7,padding:'8px 12px',marginBottom:12,fontSize:11,color:T.red}}>⚑ Override AI = ON — this entry will be injected verbatim into the AI planner prompt. Use only for hard logistical rules.</div>}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Linked name *</label><input value={addForm.linked_name} onChange={e=>setAddForm((f:any)=>({...f,linked_name:e.target.value}))} placeholder="e.g. Singita Boulders Lodge" style={inp}/></div>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Region</label>
+            <select value={addForm.region_slug} onChange={e=>setAddForm((f:any)=>({...f,region_slug:e.target.value}))} style={inp}><option value="">— none —</option>{REGION_SLUGS.map(r=><option key={r.slug} value={r.slug}>{r.label}</option>)}</select></div>
+          </div>
+          <div style={{marginBottom:12}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Title *</label><input value={addForm.title} onChange={e=>setAddForm((f:any)=>({...f,title:e.target.value}))} placeholder="e.g. Singita Boulders — specialist notes" style={inp}/></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Highlights (one per line)</label><textarea value={addForm.highlights} onChange={e=>setAddForm((f:any)=>({...f,highlights:e.target.value}))} rows={3} placeholder="Best for leopard&#10;River-facing suites" style={{...inp,resize:'vertical'}}/></div>
+            <div><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Tips (one per line)</label><textarea value={addForm.tips} onChange={e=>setAddForm((f:any)=>({...f,tips:e.target.value}))} rows={3} placeholder="Request Suite 3&#10;Ask for Marcus as guide" style={{...inp,resize:'vertical'}}/></div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div><label style={{display:'block',fontSize:10,color:T.red,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Guardrails — internal (one per line)</label><textarea value={addForm.guardrails} onChange={e=>setAddForm((f:any)=>({...f,guardrails:e.target.value}))} rows={3} placeholder="Never promise leopard on specific dates&#10;20kg limit — hard stop, no reassurance" style={{...inp,resize:'vertical'}}/></div>
+            <div><label style={{display:'block',fontSize:10,color:T.blue,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Specialist recs → AI planner (one per line)</label><textarea value={addForm.specialist_recs} onChange={e=>setAddForm((f:any)=>({...f,specialist_recs:e.target.value}))} rows={3} placeholder="Lead with Singita for UK/US first-timers" style={{...inp,resize:'vertical'}}/></div>
+          </div>
+          <div style={{marginBottom:12}}><label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Logistics / transfer notes</label><textarea value={addForm.logistics_notes} onChange={e=>setAddForm((f:any)=>({...f,logistics_notes:e.target.value}))} rows={2} placeholder="20kg soft bag limit on all Federal Air flights." style={{...inp,resize:'vertical'}}/></div>
+          <div style={{marginBottom:16}}>
+            <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:12,color:T.textMid}}>
+              <input type="checkbox" checked={addForm.internal_only} onChange={e=>setAddForm((f:any)=>({...f,internal_only:e.target.checked}))} style={{accentColor:T.gold}}/>
+              <span style={{color:addForm.internal_only?T.amber:T.green,fontSize:11,fontWeight:600}}>{addForm.internal_only?'⚑ Internal only — hidden from BCC':'✓ Visible on BCC property tile'}</span>
+            </label>
+          </div>
+          {addMsg&&<div style={{fontSize:12,marginBottom:10,padding:'8px 12px',borderRadius:7,color:addMsg.startsWith('✓')?T.green:T.red,background:addMsg.startsWith('✓')?'rgba(74,222,128,0.08)':'rgba(248,113,113,0.08)'}}>{addMsg}</div>}
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={handleSave} disabled={addSaving} style={{background:addSaving?'rgba(255,255,255,0.06)':`linear-gradient(135deg,${T.gold},#f0c040)`,border:'none',borderRadius:8,padding:'10px 22px',color:addSaving?T.textDim:'#0a0a0a',fontSize:13,fontWeight:700,cursor:addSaving?'wait':'pointer',fontFamily:'inherit'}}>{addSaving?'Saving…':'Save Entry'}</button>
+            <button onClick={()=>setAdding(false)} style={{background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:8,padding:'10px 18px',color:T.textDim,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div style={{background:T.surface,border:`0.5px solid ${T.border}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search title, property, notes…" style={{...smInp,flex:1,minWidth:160}}/>
+        <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={smInp}><option value="all">All types</option>{ENTRY_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select>
+        <select value={filterRegion} onChange={e=>setFilterRegion(e.target.value)} style={smInp}><option value="all">All regions</option>{REGION_SLUGS.map(r=><option key={r.slug} value={r.slug}>{r.label}</option>)}</select>
+        <select value={filterImportance} onChange={e=>setFilterImportance(e.target.value)} style={smInp}><option value="all">All importance</option><option value="1">Advisory</option><option value="2">Strong</option><option value="3">⚑ Override AI</option></select>
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={smInp}><option value="active">Active</option><option value="flagged">Flagged</option><option value="superseded">Superseded</option><option value="archived">Archived</option><option value="all">All</option></select>
+        {authors.length>0&&<select value={filterAuthor} onChange={e=>setFilterAuthor(e.target.value)} style={smInp}><option value="all">All authors</option>{authors.map(a=><option key={a} value={a}>{a.split('@')[0]}</option>)}</select>}
+        <button onClick={load} style={{...smInp,cursor:'pointer',color:T.gold,border:`0.5px solid ${T.borderGold}`,background:T.goldDim,width:'auto'}}>↻</button>
+        <button onClick={()=>{
+          const csv=['Type,Region,Title,Importance,Status,Author,Created,AI Uses',...entries.map(e=>[e.entry_type,e.region_slug,e.title,IMPORTANCE_LABELS[e.guidance_importance]??'',e.status,e.created_by_name,e.created_at?.slice(0,10),e.times_used_in_planner].map((v:any)=>`"${String(v??'').replace(/"/g,'""')}"`).join(','))].join('\n')
+          const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'knowledge-base.csv'});a.click()
+        }} style={{...smInp,cursor:'pointer',color:T.textDim,width:'auto'}}>↓ CSV</button>
+      </div>
+
+      {/* Entries */}
+      {loading?(
+        <div style={{padding:40,textAlign:'center',color:T.textDim}}>Loading KB entries…</div>
+      ):entries.length===0?(
+        <div style={{padding:40,textAlign:'center',color:T.textDim,background:T.surface,borderRadius:10,border:`0.5px solid ${T.border}`}}>
+          {search||filterType!=='all'||filterRegion!=='all'?'No entries match this filter.':'No KB entries yet — add the first one above.'}
+        </div>
+      ):(
+        <div>
+          {[3,2,1].map(imp=>{
+            const group=entries.filter(e=>e.guidance_importance===imp)
+            if(!group.length)return null
+            return(
+              <div key={imp} style={{marginBottom:20}}>
+                <div style={{fontSize:10,fontWeight:700,letterSpacing:'0.12em',textTransform:'uppercase',color:IMPORTANCE_COLORS[imp],marginBottom:8,display:'flex',alignItems:'center',gap:8}}>
+                  <div style={{height:'0.5px',width:20,background:IMPORTANCE_COLORS[imp],opacity:0.4}}/>
+                  {IMPORTANCE_LABELS[imp]} ({group.length})
+                  <div style={{flex:1,height:'0.5px',background:IMPORTANCE_COLORS[imp],opacity:0.15}}/>
+                </div>
+                {group.map((entry:any)=>{
+                  const open=expandedId===entry.id
+                  const isFlagged=entry.status==='flagged'
+                  const isOverride=entry.override_ai
+                  const isCommercial=entry.claim_type==='commercial'
+                  const evidenceStr=entry.evidence_strength??1
+                  const typeColor=isCommercial?T.purple:entry.entry_type==='region'?T.purple:entry.entry_type==='property'?T.gold:entry.entry_type==='health'?T.red:T.blue
+                  return(
+                    <div key={entry.id} style={{background:T.surface,border:`0.5px solid ${isFlagged?T.amber:isOverride?`${T.red}50`:T.border}`,borderRadius:10,overflow:'hidden',marginBottom:8,opacity:entry.status==='archived'||entry.status==='superseded'?0.55:1}}>
+                      {/* Card header */}
+                      <div style={{display:'flex',alignItems:'flex-start',gap:10,padding:'12px 14px',cursor:'pointer'}} onClick={()=>setExpandedId(open?null:entry.id)}>
+                        <div style={{padding:'2px 7px',borderRadius:4,fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',flexShrink:0,marginTop:2,background:`${typeColor}18`,color:typeColor}}>{entry.entry_type}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3,lineHeight:1.3}}>{entry.title}</div>
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                            <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:3,background:`${IMPORTANCE_COLORS[imp]}15`,border:`0.5px solid ${IMPORTANCE_COLORS[imp]}40`,color:IMPORTANCE_COLORS[imp]}}>{IMPORTANCE_LABELS[imp]}</span>
+                            {entry.status!=='active'&&<span style={{fontSize:10,padding:'1px 6px',borderRadius:3,background:`${STATUS_COLORS[entry.status]}12`,border:`0.5px solid ${STATUS_COLORS[entry.status]}30`,color:STATUS_COLORS[entry.status]}}>{entry.status}</span>}
+                            <span style={{fontSize:10,padding:'1px 6px',borderRadius:3,background:entry.internal_only?'rgba(255,255,255,0.05)':'rgba(74,222,128,0.08)',border:`0.5px solid ${entry.internal_only?T.border:'rgba(74,222,128,0.2)'}`,color:entry.internal_only?T.textDim:T.green}}>{entry.internal_only?'⚑ internal':'✓ BCC visible'}</span>
+                            <span style={{fontSize:10,color:EVIDENCE_COLORS[evidenceStr]}}>{EVIDENCE_LABELS[evidenceStr]}</span>
+                            {entry.ext_confirm_count>0&&<span style={{fontSize:10,color:T.green}}>✓ {entry.ext_confirm_count} source{entry.ext_confirm_count>1?'s':''}</span>}
+                            {entry.ext_query_count>0&&<span style={{fontSize:10,color:T.amber}}>⚑ {entry.ext_query_count} queried</span>}
+                            {entry.region_slug&&<span style={{fontSize:10,color:T.textDim}}>{entry.region_slug.replace(/-/g,' ')}</span>}
+                          </div>
+                          <div style={{fontSize:10,color:T.textDim,marginTop:3}}>{entry.created_by_name} · {entry.created_by_role?.replace(/_/g,' ')} · {entry.created_at?.slice(0,10)}{entry.times_used_in_planner>0&&` · used ${entry.times_used_in_planner}× in AI`}</div>
+                        </div>
+                        {/* Action buttons */}
+                        <div style={{display:'flex',gap:5,flexShrink:0}} onClick={e=>e.stopPropagation()}>
+                          {entry.claim_type!=='commercial'&&(
+                            <button onClick={()=>handleValidate(entry.id)} disabled={validatingId===entry.id} style={{padding:'4px 8px',background:`${T.blue}12`,border:`0.5px solid ${T.blue}30`,borderRadius:6,color:T.blue,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>{validatingId===entry.id?'…':'validate'}</button>
+                          )}
+                          <button onClick={()=>setFlagging(entry)} style={{padding:'4px 8px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:6,color:T.textDim,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>⚑ flag</button>
+                          {entry.status==='flagged'&&session?.role==='edition_admin'&&(
+                            <button onClick={()=>handleVerify(entry.id)} style={{padding:'4px 8px',background:`${T.green}10`,border:`0.5px solid ${T.green}30`,borderRadius:6,color:T.green,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>✓ verify</button>
+                          )}
+                          <button onClick={()=>setExpandedId(open?null:entry.id)} style={{padding:'4px 8px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:6,color:T.textDim,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>{open?'▲':'▼'}</button>
+                        </div>
+                      </div>
+                      {/* Expanded body */}
+                      {open&&(
+                        <div style={{padding:'0 14px 14px',borderTop:`0.5px solid ${T.border}`}}>
+                          {entry.highlights?.length>0&&<div style={{marginTop:10}}><div style={{fontSize:9,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>Highlights</div><div style={{display:'flex',flexWrap:'wrap',gap:4}}>{entry.highlights.map((h:string,i:number)=><span key={i} style={{padding:'2px 8px',borderRadius:4,fontSize:11,background:`${T.gold}12`,border:`0.5px solid ${T.gold}30`,color:T.gold}}>{h}</span>)}</div></div>}
+                          {entry.tips?.length>0&&<div style={{marginTop:10}}><div style={{fontSize:9,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>Tips</div><div style={{display:'flex',flexWrap:'wrap',gap:4}}>{entry.tips.map((t:string,i:number)=><span key={i} style={{padding:'2px 8px',borderRadius:4,fontSize:11,background:`${T.green}10`,border:`0.5px solid ${T.green}25`,color:T.green}}>✓ {t}</span>)}</div></div>}
+                          {entry.guardrails?.length>0&&<div style={{marginTop:10}}><div style={{fontSize:9,color:T.red,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>Guardrails (internal)</div><div style={{display:'flex',flexWrap:'wrap',gap:4}}>{entry.guardrails.map((g:string,i:number)=><span key={i} style={{padding:'2px 8px',borderRadius:4,fontSize:11,background:`${T.red}10`,border:`0.5px solid ${T.red}25`,color:T.red}}>⚑ {g}</span>)}</div></div>}
+                          {entry.specialist_recs?.length>0&&<div style={{marginTop:10}}><div style={{fontSize:9,color:T.blue,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>Specialist recs → AI planner</div><div style={{display:'flex',flexWrap:'wrap',gap:4}}>{entry.specialist_recs.map((r:string,i:number)=><span key={i} style={{padding:'2px 8px',borderRadius:4,fontSize:11,background:`${T.blue}10`,border:`0.5px solid ${T.blue}25`,color:T.blue}}>→ {r}</span>)}</div></div>}
+                          {entry.logistics_notes&&<div style={{marginTop:10}}><div style={{fontSize:9,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>Logistics notes</div><div style={{fontSize:11,color:T.textMid,lineHeight:1.65,background:'rgba(96,165,250,0.05)',border:`0.5px solid rgba(96,165,250,0.12)`,borderRadius:6,padding:'8px 10px'}}>{entry.logistics_notes}</div></div>}
+                          {entry.ext_sources?.length>0&&<div style={{marginTop:10}}><div style={{fontSize:9,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>External validation</div>{entry.ext_sources.map((src:any,i:number)=><div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:4,padding:'6px 8px',background:'rgba(255,255,255,0.02)',borderRadius:5}}><span style={{fontSize:10,fontWeight:700,flexShrink:0,color:src.verdict==='confirms'?T.green:src.verdict==='queries'?T.amber:T.textDim}}>{src.verdict==='confirms'?'✓':src.verdict==='queries'?'⚑':'○'}</span><div style={{flex:1,minWidth:0}}><div style={{fontSize:11,color:T.textMid}}>{src.snippet}</div><a href={src.url} target="_blank" rel="noopener noreferrer" style={{fontSize:10,color:T.blue,textDecoration:'none',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}}>{src.url}</a></div></div>)}</div>}
+                          {entry.flags?.length>0&&<div style={{marginTop:10,background:`${T.amber}08`,border:`0.5px solid ${T.amber}25`,borderRadius:7,padding:'8px 10px'}}><div style={{fontSize:9,color:T.amber,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:6}}>Flags ({entry.flags.length})</div>{entry.flags.map((f:any,i:number)=><div key={i} style={{fontSize:11,color:T.amber,marginBottom:3}}>⚑ {f.by_name} · {f.reason}{f.note?` — ${f.note}`:''} <span style={{color:T.textDim}}>({f.flagged_at?.slice(0,10)})</span></div>)}</div>}
+                          <div style={{marginTop:10,paddingTop:8,borderTop:`0.5px solid ${T.border}`,display:'flex',gap:16,fontSize:10,color:T.textDim}}>
+                            <span>v{entry.version??1}</span>
+                            {entry.verified_at&&<span style={{color:T.green}}>✓ Verified {entry.verified_at.slice(0,10)}</span>}
+                            {entry.last_validated_at&&<span>Validated {entry.last_validated_at.slice(0,10)}</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
