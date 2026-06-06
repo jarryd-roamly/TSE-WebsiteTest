@@ -92,6 +92,7 @@ export default function FlightSelector({
 
   // Own-flight details (when flightIntent === 'own')
   const [own, setOwn] = useState({ arrivalAirport: preferredArrivalGateway || 'JNB', arrivalDate: travelDates?.start || '', arrivalTime: '', flightNo: '' });
+  const [flightSaved, setFlightSaved] = useState(false);
 
   // Return date derived from package nights = travelDates.end
   const retDate = travelDates?.end || '';
@@ -202,7 +203,14 @@ export default function FlightSelector({
             <input type="text" placeholder="e.g. BA 055" value={own.flightNo} onChange={e => setOwn(o => ({ ...o, flightNo: e.target.value }))} style={inputStyle(T)} />
           </Field>
         </div>
-        <button onClick={() => onOwnFlightDetails && onOwnFlightDetails(own)} style={btnGold(T)}>Save flight details →</button>
+        {flightSaved ? (
+          <div style={{ padding:'13px 18px', background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.3)', borderRadius:8, fontSize:13, color:'#4ade80', fontWeight:600, display:'flex', alignItems:'center', gap:8 }}>
+            ✓ Flight details saved — your first transfer is timed to your arrival
+            <button onClick={() => setFlightSaved(false)} style={{ marginLeft:'auto', background:'none', border:'none', color:'rgba(74,222,128,0.6)', cursor:'pointer', fontSize:12, fontFamily:'inherit' }}>Edit</button>
+          </div>
+        ) : (
+          <button onClick={() => { if (onOwnFlightDetails) { onOwnFlightDetails(own); setFlightSaved(true); } }} style={btnGold(T)}>Save flight details →</button>
+        )}
       </div>
     );
   }
