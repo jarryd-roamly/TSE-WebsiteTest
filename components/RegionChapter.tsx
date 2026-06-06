@@ -151,11 +151,14 @@ function LeftSidebar({ kbHighlights, skeletonFindings, chapterIndex, regionSlug 
       })}
 
       {/* KB highlights — "Did you know" */}
-      {kbHighlights.slice(0,4).map((h,i) => (
+      {kbHighlights.slice(0,2).map((h,i) => (
         <div key={i} style={{
           marginBottom:14,
           paddingBottom:14,
-          borderBottom: i < Math.min(kbHighlights.length,4)-1 ? `0.5px solid ${T.border}` : 'none',
+          borderBottom: i < Math.min(kbHighlights.length,2)-1 ? `0.5px solid ${T.border}` : 'none',
+          opacity: vis ? 1 : 0,
+          transform: vis ? 'none' : 'translateY(12px)',
+          transition: `opacity 0.7s ease ${0.15 + i*0.18}s, transform 0.7s ease ${0.15 + i*0.18}s`,
         }}>
           <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:5 }}>
             ✦ Did you know
@@ -200,11 +203,14 @@ function RightSidebar({ seasonalNote, kbTips, nights, checkinDate, regionLabel, 
       )}
 
       {/* KB tips */}
-      {kbTips.slice(0,4).map((tip,i) => (
+      {kbTips.slice(0,2).map((tip,i) => (
         <div key={i} style={{
           fontSize:11, color:T.textMid, lineHeight:1.68,
           padding:'5px 0',
-          borderBottom: i < Math.min(kbTips.length,4)-1 ? `0.5px solid ${T.border}` : 'none',
+          borderBottom: i < Math.min(kbTips.length,2)-1 ? `0.5px solid ${T.border}` : 'none',
+          opacity: vis ? 1 : 0,
+          transform: vis ? 'none' : 'translateX(8px)',
+          transition: `opacity 0.65s ease ${0.2 + i*0.18}s, transform 0.65s ease ${0.2 + i*0.18}s`,
         }}>
           <span style={{ color:T.gold, marginRight:5 }}>›</span>{tip}
         </div>
@@ -250,17 +256,17 @@ export default function RegionChapter({
           <img src={bg} alt="" aria-hidden style={{
             width:'100%', height:'100%',
             objectFit:'cover', objectPosition:'center 35%',
-            opacity: entered ? 0.09 : 0,
+            opacity: entered ? 0.06 : 0,
             transition:'opacity 1.6s ease',
             filter:'saturate(0.55) contrast(0.88)',
           }} />
-          {/* Soft vignette — very light so content reads clearly */}
+          {/* Minimal vignette — just enough to anchor edges */}
           <div style={{ position:'absolute', inset:0, background:`
             linear-gradient(to bottom,
-              rgba(10,10,10,0.55) 0%,
-              rgba(10,10,10,0.15) 15%,
-              rgba(10,10,10,0.15) 85%,
-              rgba(10,10,10,0.7) 100%)` }} />
+              rgba(10,10,10,0.4) 0%,
+              rgba(10,10,10,0.08) 12%,
+              rgba(10,10,10,0.08) 88%,
+              rgba(10,10,10,0.5) 100%)` }} />
         </div>
       )}
 
