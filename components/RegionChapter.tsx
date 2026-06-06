@@ -89,7 +89,211 @@ function useFade(threshold=0.08) {
   return { ref, vis };
 }
 
-// ── Inclusions strip (goes INTO the property tile via portal-style, but here we
+// ── Mobile hook ──────────────────────────────────────────────────────────────
+
+function useMobile() {
+  const [m, setM] = useState(false);
+  useEffect(() => {
+    const check = () => setM(window.innerWidth < 700);
+    check();
+    window.addEventListener('resize', check, { passive: true });
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return m;
+}
+
+// ── Mobile CSS ────────────────────────────────────────────────────────────────
+
+const MOBILE_BCC_CSS = `
+  /* ── Mobile BCC global ────────────────────────────────────────── */
+  @media (max-width: 699px) {
+    /* Bigger tap targets */
+    button { min-height: 44px; }
+
+    /* Nav safe area */
+    .bcc-nav { padding-left: max(16px, env(safe-area-inset-left)) !important; padding-right: max(16px, env(safe-area-inset-right)) !important; }
+
+    /* Inspire-input — single column, full padding */
+    .inspire-split { display:block !important; }
+    .inspire-form  { padding: 24px 20px 100px !important; max-width:100% !important; }
+
+    /* Property cards — full viewport width */
+    [data-card] { width: min(88vw, 380px) !important; }
+
+    /* Prevent horizontal overflow */
+    body { overflow-x: hidden; }
+  }
+`;
+
+// ── Mobile RegionChapter layout ───────────────────────────────────────────────
+
+function MobileRegionChapter({
+  chapterIndex, totalChapters, regionSlug, regionLabel, countryLabel,
+  nights, checkinDate, kbHighlights, kbTips, skeletonFindings,
+  selectedHotelName, selectedHotelIncludes, malariaFree,
+  seasonalNote, specialistNote, onRegionVisible, children,
+}: RegionChapterProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [entered,       setEntered]       = useState(false);
+  const [drawerOpen,    setDrawerOpen]    = useState(false);
+  const [drawerPeeked,  setDrawerPeeked]  = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setEntered(true); return; }
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        setEntered(true);
+        onRegionVisible?.(regionSlug);
+        // Peek drawer after region enters
+        setTimeout(() => { setDrawerPeeked(true); }, 600);
+      }
+    }, { threshold: 0.08, rootMargin: '-15% 0px -15% 0px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const hasMeta = kbHighlights.length > 0 || kbTips.length > 0 || !!seasonalNote || !!specialistNote;
+  const month   = checkinDate ? new Date(checkinDate).toLocaleString('en', { month: 'long' }) : null;
+  const warns   = skeletonFindings.filter(f => f.severity === 'warning' || f.severity === 'recommendation');
+
+  return (
+    <div ref={ref} style={{ position: 'relative', paddingBottom: hasMeta ? 0 : 0 }}>
+      <style suppressHydrationWarning>{MOBILE_BCC_CSS}</style>
+
+      {/* Chapter divider */}
+      {chapterIndex > 0 && (
+        <div style={{ padding: '32px 0 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1, height: '1px', background: \`linear-gradient(to right, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)\` }} />
+            <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 3, flexShrink: 0 }}>
+              <div style={{ width: 5, height: 5, background: T.gold, transform: 'rotate(45deg)', opacity: 0.8 }} />
+              <div style={{ fontSize: 8, letterSpacing: '0.45em', textTransform: 'uppercase' as const, color: T.gold, opacity: 0.7, whiteSpace: 'nowrap' as const }}>
+                {String(chapterIndex + 1).padStart(2, '0')} / {String(totalChapters).padStart(2, '0')} &nbsp;·&nbsp; {CHAPTER_TAG[regionSlug] ?? regionLabel} &nbsp;·&nbsp; {countryLabel}
+              </div>
+              <div style={{ width: 5, height: 5, background: T.gold, transform: 'rotate(45deg)', opacity: 0.8 }} />
+            </div>
+            <div style={{ flex: 1, height: '1px', background: \`linear-gradient(to left, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)\` }} />
+          </div>
+        </div>
+      )}
+
+      {chapterIndex === 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '0 2px' }}>
+          <div style={{ fontSize: 8, letterSpacing: '0.38em', textTransform: 'uppercase' as const, color: T.gold, opacity: 0.5, flexShrink: 0, whiteSpace: 'nowrap' as const }}>
+            {String(chapterIndex + 1).padStart(2, '0')} / {String(totalChapters).padStart(2, '0')} · {CHAPTER_TAG[regionSlug] ?? regionLabel}
+          </div>
+          <div style={{ flex: 1, height: '0.5px', background: T.borderGold, opacity: 0.3 }} />
+        </div>
+      )}
+
+      {/* Skeleton warnings — inline on mobile */}
+      {warns.slice(0, 1).map(f => {
+        const s = SEV[f.severity] ?? SEV.recommendation;
+        return (
+          <div key={f.id} style={{ margin: '0 0 12px', padding: '10px 14px', borderLeft: \`2px solid \${s.color}\`, background: s.bg, borderRadius: '0 8px 8px 0' }}>
+            <div style={{ fontSize: 10, color: s.color, fontWeight: 700, marginBottom: 2 }}>{s.icon} {f.title}</div>
+            <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.55 }}>{f.traveller_message}</div>
+          </div>
+        );
+      })}
+
+      {/* Main carousel content — full width */}
+      <div style={{ opacity: entered ? 1 : 0, transform: entered ? 'none' : 'translateY(12px)', transition: 'opacity 0.6s ease, transform 0.6s ease' }}>
+        {children}
+      </div>
+
+      {/* KB bottom drawer — peeks up after scroll */}
+      {hasMeta && (
+        <>
+          {/* Drawer backdrop */}
+          {drawerOpen && (
+            <div
+              onClick={() => setDrawerOpen(false)}
+              style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+            />
+          )}
+
+          {/* Drawer */}
+          <div style={{
+            position: 'fixed',
+            bottom: 0, left: 0, right: 0,
+            zIndex: 201,
+            background: 'rgba(12,10,16,0.98)',
+            border: \`0.5px solid \${T.borderGold}\`,
+            borderBottom: 'none',
+            borderRadius: '20px 20px 0 0',
+            paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))',
+            transform: drawerOpen ? 'translateY(0)' : drawerPeeked ? 'translateY(calc(100% - 72px))' : 'translateY(100%)',
+            transition: 'transform 0.38s cubic-bezier(0.22,1,0.36,1)',
+            maxHeight: '72vh',
+            display: 'flex', flexDirection: 'column' as const,
+          }}>
+            {/* Handle + header */}
+            <div
+              onClick={() => setDrawerOpen(v => !v)}
+              style={{ flexShrink: 0, padding: '14px 20px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.3em', textTransform: 'uppercase' as const, opacity: 0.75 }}>
+                  ✦ {CHAPTER_TAG[regionSlug] ?? regionLabel} · {nights}n{month ? \` · \${month}\` : ''}
+                </div>
+                {!drawerOpen && (
+                  <div style={{ fontSize: 11, color: T.textMid, marginTop: 3, lineHeight: 1.4, overflow: 'hidden', maxHeight: 32, WebkitMaskImage: 'linear-gradient(to right, black 70%, transparent)' }}>
+                    {kbHighlights[0] ?? seasonalNote ?? kbTips[0] ?? ''}
+                  </div>
+                )}
+              </div>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: \`0.5px solid \${T.border}\`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.textDim, transform: drawerOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s', flexShrink: 0 }}>
+                ↑
+              </div>
+            </div>
+
+            {/* Handle pill */}
+            <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, background: 'rgba(255,255,255,0.15)', borderRadius: 2 }} />
+
+            {/* Scrollable content */}
+            <div style={{ flex: 1, overflowY: 'auto' as const, padding: '0 20px 20px', WebkitOverflowScrolling: 'touch' as unknown as undefined }}>
+              {/* Seasonal note */}
+              {seasonalNote && month && (
+                <div style={{ marginBottom: 16, padding: '10px 14px', background: 'rgba(212,175,55,0.06)', border: \`0.5px solid \${T.borderGold}\`, borderRadius: 10 }}>
+                  <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 5 }}>✦ {month} in {regionLabel}</div>
+                  <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.7, fontStyle: 'italic' }}>{seasonalNote}</div>
+                </div>
+              )}
+
+              {/* KB highlights */}
+              {kbHighlights.slice(0, 3).map((h, i) => (
+                <div key={i} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < Math.min(kbHighlights.length, 3) - 1 ? \`0.5px solid \${T.border}\` : 'none' }}>
+                  <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, marginBottom: 5 }}>✦ Did you know</div>
+                  <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.72, fontStyle: 'italic' }}>{h}</div>
+                </div>
+              ))}
+
+              {/* Specialist note */}
+              {specialistNote && (
+                <div style={{ marginBottom: 14, borderLeft: \`2px solid rgba(212,175,55,0.4)\`, paddingLeft: 12 }}>
+                  <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, marginBottom: 4 }}>About this region</div>
+                  <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.7 }}>{specialistNote}</div>
+                </div>
+              )}
+
+              {/* KB tips */}
+              {kbTips.slice(0, 3).map((tip, i) => (
+                <div key={i} style={{ fontSize: 12, color: T.textMid, lineHeight: 1.65, padding: '6px 0', borderBottom: i < Math.min(kbTips.length, 3) - 1 ? \`0.5px solid \${T.border}\` : 'none' }}>
+                  <span style={{ color: T.gold, marginRight: 6 }}>›</span>{tip}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Inclusions strip
+ (goes INTO the property tile via portal-style, but here we
 //    export it so NestedPropertyCarousel can use it too) ─────────────────────
 export function InclusionPills({ includes, malariaFree, compact=false }: {
   includes:string[]; malariaFree:boolean; compact?:boolean;
@@ -227,12 +431,16 @@ function RightSidebar({ seasonalNote, kbTips, nights, checkinDate, regionLabel, 
 
 // ── Main RegionChapter ────────────────────────────────────────────────────────
 
-export default function RegionChapter({
-  chapterIndex, totalChapters, regionSlug, regionLabel, countryLabel,
-  nights, checkinDate, bgImageUrl, kbHighlights, kbTips, skeletonFindings,
-  selectedHotelName, selectedHotelIncludes, malariaFree,
-  seasonalNote, specialistNote, children,
-}: RegionChapterProps) {
+export default function RegionChapter(props: RegionChapterProps) {
+  const isMobile = useMobile();
+  if (isMobile) return <MobileRegionChapter {...props} />;
+
+  const {
+    chapterIndex, totalChapters, regionSlug, regionLabel, countryLabel,
+    nights, checkinDate, bgImageUrl, kbHighlights, kbTips, skeletonFindings,
+    selectedHotelName, selectedHotelIncludes, malariaFree,
+    seasonalNote, specialistNote, children,
+  } = props;
 
   const ref = useRef<HTMLDivElement>(null);
   const [entered, setEntered] = useState(false);
