@@ -2725,12 +2725,7 @@ const runBriefPlanner = (briefText: string) => {
   return (
     <>
       <style suppressHydrationWarning>{GLOBAL_CSS}</style>
-      <style suppressHydrationWarning>{`
-        body { background: #0e0c10 !important; }
-        .bcc-card { background: rgba(28,24,32,0.88) !important; }
-        .carousel-arrow-btn { background: #d4af37 !important; border-color: #d4af37 !important; color: #0a0a0a !important; font-weight: 700 !important; }
-        .transfer-select-btn { transition: all 0.2s; }
-      `}</style>
+
       {showValidation && <ValidationModal issues={validationIssues} onProceed={doCheckout} onBack={()=>setShowValidation(false)} />}
 
      {/* LANDING */}
