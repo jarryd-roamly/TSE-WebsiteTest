@@ -3219,7 +3219,6 @@ const runBriefPlanner = (briefText: string) => {
                   })()}
                 </RegionChapter>
               );
-              );
             })}
              {/* PropertyMiniSite overlay — launched from Explore button */}
             {miniSiteHotel && (
