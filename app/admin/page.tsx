@@ -934,7 +934,8 @@ function KnowledgeBase(){
       if(filterRegion!=='all')p.set('region_slug',filterRegion)
       if(filterImportance!=='all')p.set('guidance_importance',filterImportance)
       if(filterAuthor!=='all')p.set('created_by_email',filterAuthor)
-      const sess=sessionStorage.getItem('tse_session')??localStorage.getItem('tse_session')??'' const res=await fetch(`/api/kb?${p}`,{headers:{'Content-Type':'application/json','x-tse-session':sess}})
+      const sess=sessionStorage.getItem('tse_session')??localStorage.getItem('tse_session')??'' 
+        const res=await fetch(`/api/kb?${p}`,{headers:{'Content-Type':'application/json','x-tse-session':sess}})
       const data=await res.json()
       if(data.success){
         let filtered=data.entries??[]
