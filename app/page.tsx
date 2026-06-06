@@ -1587,11 +1587,15 @@ function buildTransferOptions(
     from: hub,
     to: dest,
     detail: isLowveld
-      ? 'Lowveld Shuttle · dep 09:00 arr ~10:35 · 20kg (hard cases OK)'
+      ? 'FedAir Lowveld Shuttle · dep 09:00 arr ~10:35 · 20kg (hard cases OK)'
       : isMadikwe
       ? 'Daily 10:00 & 13:00 · ~60 min · 20kg (hard cases OK)'
       : 'Daily 10:00 & 13:00 · ~55–65 min · 20kg (hard cases OK)',
-    note: 'OR Tambo Atlas Rd terminal · X Class: 32kg + hard cases (+25%)',
+    // Atlas Rd note only applies when departing FROM JNB (Madikwe / direct lodge service)
+    // Lowveld Shuttle departs FROM the lodge — no OR Tambo reference
+    note: isLowveld
+      ? 'X Class available: 32kg + hard cases (+25%)'
+      : 'OR Tambo Atlas Rd terminal · X Class: 32kg + hard cases (+25%)',
     noteColor: 'rgba(212,175,55,0.5)',
   });
 
@@ -1693,7 +1697,12 @@ function buildTransferOptions(
         icon: '\u2708',
         label: `${c.name} \u2192 Cape Town`,
         provider: `${exitRec?.label ?? ''} ${originHub}\u2192CPT via ${c.name}`.trim(),
-        duration: durStr((exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 150)) || '~3h 30m',
+        duration: (() => {
+          const exitMin = exitRec?.durationMin ?? 0;
+          const flightMin = meta?.duration_min ?? ({'MQP':160,'HDS':160,'SZK':165,'MUB':150,'VFA':180,'JNB':120} as any)[originHub] ?? 150;
+          const total = exitMin + flightMin;
+          return total ? `~${durStr(total)} + hotel transfer` : '~3h 30m';
+        })(),
         estimatedCostZAR: total,
         badges: i === 0
           ? [{text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'}, ...(isEst?[{text:'Est.',color:'rgba(255,255,255,0.3)'}]:[])]
@@ -1805,7 +1814,16 @@ function buildTransferOptions(
       });
     }
 
-    const totalMin = (exitRec2?.durationMin ?? 0) + (meta?.duration_min ?? 0) + arr.durationMin;
+    // Commercial flight duration: use live Duffel data or route-based fallback
+    // CPT→HDS/MQP/SZK ≈ 160min, CPT→MUB ≈ 150min, JNB→MQP/HDS ≈ 60min, JNB→MUB ≈ 130min
+    const commDurFallback: Record<string, number> = {
+      'CPT-MQP':160, 'CPT-HDS':160, 'CPT-SZK':165, 'CPT-MUB':150, 'CPT-VFA':180,
+      'JNB-MQP':60,  'JNB-HDS':60,  'JNB-SZK':75,  'JNB-MUB':130, 'JNB-VFA':105,
+      'MQP-VFA':110, 'MQP-CPT':160, 'HDS-CPT':160,  'MUB-CPT':150, 'MUB-JNB':130,
+      'VFA-CPT':180, 'VFA-MQP':110, 'BBK-VFA':20,
+    };
+    const commDur = meta?.duration_min ?? commDurFallback[routeKey] ?? 120;
+    const totalMin = (exitRec2?.durationMin ?? 0) + commDur + arr.durationMin;
     const badges: Array<{text:string;color:string}> = [];
     if (arr.recommended && i === 0) badges.push({text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'});
     if (arr.perCharter) badges.push({text:'Private charter',color:'#a78bfa'});
@@ -4109,83 +4127,42 @@ const runBriefPlanner = (briefText: string) => {
               </div>
             )}
 
-            {/* ── ARRIVAL TRANSFER: gateway → first region ─────────────── */}
+            {/* ── ARRIVAL TRANSFER: gateway airport → first region ─────── */}
             {(() => {
               const gateway = flightArrivalGateway || arrivalAirport || departureHubId || 'JNB';
               if (!gateway || !itinerary.cities[0]) return null;
               const firstSlug = CITY_TO_SLUG[itinerary.cities[0].city.toLowerCase().trim()] ?? '';
               if (!firstSlug) return null;
-              const legKey = `${gateway}→${firstSlug}`;
-              const leg = GATEWAY_LEGS[legKey];
-              if (!leg) return null;
+              // Cape Town as first city: show CityTransferStrip only (CPT→hotel handled there)
+              // All other first regions: use TransferCarousel with GATEWAY_LEGS fallback
+              if (firstSlug === 'cape-town') return null; // CityTransferStrip handles CPT arrival
+              const firstStay = cityStays[0];
+              const firstPool = hotelsByMargin.filter(h => h.subRegion === firstSlug);
+              const firstHotel = firstPool.find(h => String(h.id) === String(firstStay?.hotelId)) ?? firstPool[0];
+              const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
+              const legKey = `gateway-${gateway}-${firstSlug}`;
               return (
-                <div key="arrival-transfer" style={{ marginBottom:24 }}>
-                  {/* Divider */}
-                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                    <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.15)' }} />
-                    <div style={{ fontSize:10, color:'rgba(96,165,250,0.7)', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
-                      ✈ {leg.fromLabel} → {leg.toLabel}
-                    </div>
-                    <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.15)' }} />
-                  </div>
-                  {/* Card */}
-                  <div style={{ background:'rgba(10,12,18,0.90)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:12, overflow:'hidden' }}>
-                    {/* Header */}
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'11px 16px 9px', borderBottom:'0.5px solid rgba(255,255,255,0.05)' }}>
-                      <div>
-                        <div style={{ fontSize:13, fontWeight:600, color:T.text, fontFamily:"'Jost',sans-serif" }}>Getting there</div>
-                        <div style={{ fontSize:10, color:T.textDim }}>airport to lodge</div>
-                      </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.07)', borderRadius:20, padding:'4px 10px' }}>
-                        <span style={{ fontSize:9 }}>⏱</span>
-                        <span style={{ fontSize:11, fontWeight:600, color:T.text }}>{leg.duration}</span>
-                      </div>
-                    </div>
-                    {/* Legs */}
-                    <div style={{ padding:'12px 16px 8px' }}>
-                      {/* Parse the provider into visual legs */}
-                      {leg.provider.split(' + ').map((part, i) => {
-                        const isFedAir = /Federal Air/i.test(part);
-                        const isAirlink = /Airlink/i.test(part);
-                        const isFastjet = /Fastjet/i.test(part);
-                        const isCharter = /Wilderness Air|MackAir|charter/i.test(part);
-                        const badge = isFedAir?'FA':isAirlink?'4Z':isFastjet?'TC':isCharter?'WA':'✈';
-                        const badgeColor = isFedAir?'#1a3a6e':isAirlink?'#d4341a':isFastjet?'#f97316':isCharter?'#2d6a4f':'#374151';
-                        const route = part.match(/([A-Z]{3})→([A-Z]{3})/)?.[0] ?? '';
-                        const name = part.replace(/\s+[A-Z]{3}→[A-Z]{3}.*/, '').trim() || part;
-                        return (
-                          <div key={i} style={{ display:'flex', gap:10, alignItems:'flex-start', marginBottom: i < leg.provider.split(' + ').length-1 ? 10 : 6 }}>
-                            <div style={{ width:32, height:32, borderRadius:8, background:badgeColor, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:700, color:'#fff', letterSpacing:'0.04em', flexShrink:0, border:'0.5px solid rgba(255,255,255,0.15)' }}>{badge}</div>
-                            <div style={{ flex:1, paddingTop:2 }}>
-                              <div style={{ display:'flex', justifyContent:'space-between' }}>
-                                <span style={{ fontSize:12, fontWeight:600, color:T.text }}>{name}</span>
-                                {route && <span style={{ fontSize:11, fontWeight:600, color:'rgba(96,165,250,0.9)' }}>{route}</span>}
-                              </div>
-                              {isFedAir && <div style={{ fontSize:10, color:T.textMid, marginTop:2 }}>10:00 &amp; 13:00 daily · 55–65 min · 20kg soft bag</div>}
-                              {isCharter && <div style={{ fontSize:10, color:T.textMid, marginTop:2 }}>20kg soft bag · no hard cases · private airstrip</div>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {/* Lodge collection row */}
-                      <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
-                        <div style={{ width:32, height:32, borderRadius:8, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>🏠</div>
-                        <div style={{ flex:1, paddingTop:2 }}>
-                          <div style={{ fontSize:12, fontWeight:600, color:T.text }}>Lodge collection</div>
-                          <div style={{ fontSize:10, color:'rgba(74,222,128,0.75)', marginTop:2 }}>Complimentary · lodge vehicle meets at airstrip</div>
-                        </div>
-                      </div>
-                    </div>
-                    {/* AI note */}
-                    <div style={{ margin:'0 16px 12px', padding:'8px 12px', background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.1)', borderRadius:8, fontSize:11, color:'rgba(96,165,250,0.7)', lineHeight:1.6 }}>
-                      ⚑ {leg.aiNote}
-                    </div>
-                  </div>
-                </div>
+                <TransferCarousel
+                  key={legKey}
+                  fromSlug={gateway.toLowerCase()}
+                  toSlug={firstSlug}
+                  fromLabel={gateway}
+                  toLabel={itinerary.cities[0].city}
+                  fmt={fmt}
+                  kbEntries={kbEntries}
+                  selectedTransferId={selectedTransferIds[legKey] ?? null}
+                  onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))}
+                  destLodge={firstHotel?.name}
+                  pax={Math.max(adults + children, 1)}
+                  usdToZar={usdRate}
+                  commercialFares={transferFares}
+                  commercialMeta={transferMeta}
+                  originLodge={undefined}
+                />
               );
             })()}
 
-            {/* Per-destination sections */}
+                        {/* Per-destination sections */}
             {itinerary.cities.map((city, cityIdx) => {
               const cityName = city.city.toLowerCase().trim();
               const slug = CITY_TO_SLUG[cityName] ?? '';
@@ -4321,6 +4298,25 @@ const runBriefPlanner = (briefText: string) => {
                     fmt={fmt}
                     activities={activities}
                   />
+
+                  {/* Cape Town DEPARTURE transfer: hotel → CPT airport for onward flight */}
+                  {slug === 'cape-town' && cityIdx < itinerary.cities.length - 1 && cityXferOpts.length > 0 && (
+                    <div style={{ marginTop: 16 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
+                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+                        <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
+                          🚗 Hotel → Cape Town Airport
+                        </div>
+                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+                      </div>
+                      <div style={{ background:'rgba(8,7,12,0.96)', border:`0.5px solid rgba(74,222,128,0.18)`, borderRadius:10, padding:'12px 14px' }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:T.text, fontFamily:"'Cormorant Garamond',serif", marginBottom:4 }}>Private transfer to CPT</div>
+                        <div style={{ fontSize:10, color:T.textMid }}>30–45 min · Hotel → Cape Town International</div>
+                        <div style={{ fontSize:9.5, color:T.textDim, marginTop:3 }}>Driver meets at hotel · luggage assistance · same provider as arrival transfer</div>
+                        <div style={{ marginTop:8, fontSize:9, color:T.textDim, letterSpacing:'0.05em' }}>Allow 2h before departure · confirm timing with specialist</div>
+                      </div>
+                    </div>
+                  )}
 
                   {cityIdx < itinerary.cities.length-1 && (() => {
                     const nextCity = itinerary.cities[cityIdx+1];
