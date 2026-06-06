@@ -2,8 +2,24 @@
 // ALL Claude calls go through here. Nothing calls /api/claude directly.
 // Cost ceiling: plannerModel (Sonnet) for builds, chatModel (Haiku) for chat.
 // HANDOVER: Change models or token limits in EditionConfig, not here.
+//
+// KB CONTEXT: buildKBContext is now in app/lib/kb.ts.
+// The four-tier priority hierarchy (override → commercial → strong → advisory)
+// is enforced there. Import and use buildKBContext from kb.ts — never
+// re-implement KB injection here.
+// ─────────────────────────────────────────────────────────────────────────────
 
-import type { KBEntry, Itinerary, EditionConfig } from './types';
+import type { Itinerary, EditionConfig } from './types';
+import {
+  buildKBContext,
+  fetchKBForRegions,
+  fetchOverrideEntries,
+  type KBEntry,
+} from './kb';
+
+// Re-export buildKBContext so existing callers that import from aiGateway
+// don't break during the transition. Remove this once all callers are updated.
+export { buildKBContext } from './kb';
 
 // Default config — Safari Edition. Overridden by EDITION below.
 const DEFAULT_AI = {
@@ -12,30 +28,6 @@ const DEFAULT_AI = {
   maxPlanTokens: 1200,
   maxChatTokens: 400,
 };
-
-// ── KB Injection ──────────────────────────────────────────────────────────────
-// One canonical format. If the injection format changes, it changes here only.
-// Entries filtered by edition_id — an Edition only sees its own KB.
-export function buildKBContext(entries: KBEntry[], selectedIds: string[], editionId: string): string {
-  const active = entries.filter(e =>
-    selectedIds.includes(e.id) && e.active && e.edition_id === editionId
-  );
-  if (!active.length) return '';
-  const lines = [
-    '=== PRIORITY KNOWLEDGE BASE — USE OVER GENERAL KNOWLEDGE ===',
-    'Verified by our safari specialists. Prioritise over web search.\n',
-  ];
-  for (const e of active) {
-    lines.push(`--- ${e.title.toUpperCase()} ---`);
-    for (const [k, v] of Object.entries(e.structuredFields)) {
-      lines.push(`${k.replace(/_/g,' ').toUpperCase()}: ${v}`);
-    }
-    if (e.specialistNotes) lines.push(`SPECIALIST NOTES: ${e.specialistNotes}`);
-    lines.push('');
-  }
-  lines.push('=== END KNOWLEDGE BASE ===\n');
-  return lines.join('\n');
-}
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
 async function callAI(body: object): Promise<any[]> {
@@ -61,7 +53,8 @@ function parseJSON<T>(text: string): T | null {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-// Used by ALL three input modes (Socratic, Builder, My Brief)
+// Used by ALL three input modes (Socratic, Builder, My Brief).
+// kbContext is now built by buildKBContext from kb.ts — pass it in pre-built.
 // The prompt changes by mode — the JSON output schema is identical.
 export async function runPlannerEngine(params: {
   kbContext:    string;
@@ -92,12 +85,46 @@ Respond ONLY in this JSON (no markdown, no backticks):
   return parsed;
 }
 
+/**
+ * Build KB context and run the planner in one call.
+ * Convenience wrapper used by build-itinerary route.
+ * Fetches KB from Supabase, builds context with full priority hierarchy,
+ * then runs the planner.
+ */
+export async function runPlannerWithKB(params: {
+  promptBody:   string;
+  regions:      string[];
+  editionId?:   string;
+  ai?:          typeof DEFAULT_AI;
+}): Promise<Itinerary> {
+  const editionId = params.editionId ?? 'safari';
+
+  // Fetch KB entries for the journey's regions
+  const entries = await fetchKBForRegions(params.regions, editionId);
+
+  // Build context with full four-tier priority hierarchy
+  const kbContext = buildKBContext(entries, params.regions, editionId);
+
+  return runPlannerEngine({
+    kbContext,
+    promptBody: params.promptBody,
+    ai:         params.ai,
+  });
+}
+
 // Cheap factual Q&A — visa, weather, packing. Haiku, 400 tokens max.
-export async function answerFactual(question: string, city: string, ai = DEFAULT_AI): Promise<string> {
+export async function answerFactual(
+  question: string,
+  city:     string,
+  ai        = DEFAULT_AI
+): Promise<string> {
   const content = await callAI({
-    model: ai.chatModel,
+    model:      ai.chatModel,
     max_tokens: ai.maxChatTokens,
-    messages: [{ role: 'user', content: `Safari specialist. Answer warmly in 2 sentences max: "${question}". Context: ${city}.` }],
+    messages: [{
+      role:    'user',
+      content: `Safari specialist. Answer warmly in 2 sentences max: "${question}". Context: ${city}.`,
+    }],
   });
   return getText(content) || 'Happy to help with that.';
 }
@@ -113,27 +140,41 @@ export async function applyCreativeDiff(params: {
   const ai = params.ai ?? DEFAULT_AI;
   const ctx = JSON.stringify({
     cities: params.itinerary.cities.map(c => ({
-      city: c.city, country: c.country, nights: c.nights,
-      hotelRate: c.hotelRate, estimatedCost: c.estimatedCost,
-      flightCost: c.flightCost || 0, transferCost: c.transferCost || 0, activityCost: c.activityCost || 0,
+      city:          c.city,
+      country:       c.country,
+      nights:        c.nights,
+      hotelRate:     c.hotelRate,
+      estimatedCost: c.estimatedCost,
+      flightCost:    c.flightCost    || 0,
+      transferCost:  c.transferCost  || 0,
+      activityCost:  c.activityCost  || 0,
     })),
     totalEstimate: params.itinerary.totalEstimate,
   });
   const content = await callAI({
-    model: ai.chatModel,
+    model:      ai.chatModel,
     max_tokens: 600,
-    messages: [{ role: 'user', content: `Safari itinerary editor. Current: ${ctx}\nRequest: "${params.message}"\nBudget: R${Math.round(params.budget).toLocaleString()}, Nights: ${params.nights}\n\nReturn ONLY JSON diff (no markdown):\n{"reply":"1 sentence","cities":[ONLY_CHANGED_CITIES],"totalEstimate":NEW_TOTAL}\nOnly changed cities. Keep existing fields.` }],
+    messages: [{
+      role:    'user',
+      content: `Safari itinerary editor. Current: ${ctx}\nRequest: "${params.message}"\nBudget: R${Math.round(params.budget).toLocaleString()}, Nights: ${params.nights}\n\nReturn ONLY JSON diff (no markdown):\n{"reply":"1 sentence","cities":[ONLY_CHANGED_CITIES],"totalEstimate":NEW_TOTAL}\nOnly changed cities. Keep existing fields.`,
+    }],
   });
   const diff = parseJSON<any>(getText(content));
   return diff ?? { reply: getText(content) || 'Done.' };
 }
 
 // General specialist chat (floating drawer)
-export async function chatWithSpecialist(question: string, ai = DEFAULT_AI): Promise<string> {
+export async function chatWithSpecialist(
+  question: string,
+  ai        = DEFAULT_AI
+): Promise<string> {
   const content = await callAI({
-    model: ai.plannerModel,
+    model:      ai.plannerModel,
     max_tokens: Math.min(ai.maxPlanTokens, 600),
-    messages: [{ role: 'user', content: `You are a luxury safari specialist at The Safari Edition. Be warm, knowledgeable, concise. Question: ${question}` }],
+    messages: [{
+      role:    'user',
+      content: `You are a luxury safari specialist at The Safari Edition. Be warm, knowledgeable, concise. Question: ${question}`,
+    }],
   });
   return getText(content) || 'Happy to help.';
 }
