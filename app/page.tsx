@@ -1714,6 +1714,79 @@ function buildTransferOptions(
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  // GATEWAY DEPARTURE: last lodge → international gateway (JNB or CPT).
+  // toSlug is 'gateway-jnb' / 'gateway-cpt'. Real carrier options, no defer.
+  // ═══════════════════════════════════════════════════════════════════════
+  if (toSlug.startsWith('gateway-')) {
+    const gw = toSlug.replace('gateway-', '').toUpperCase(); // 'JNB' | 'CPT'
+    const originHub = originHubAirport(originLodge ?? '', fromSlug);
+    const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
+    const exitRec     = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
+    const exitZar     = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
+    const routeKey    = `${originHub}-${gw}`;
+    const liveFare    = commercialFareZarByRoute?.[routeKey] ?? null;
+    const fallback    = COMMERCIAL_FALLBACK_ZAR[gw] ?? (gw === 'CPT' ? 2800 : 3500);
+    const meta        = commercialMetaByRoute?.[routeKey];
+    const isEst       = liveFare == null;
+
+    // Carriers serving origin hub → gateway (real networks)
+    const gwCarriers: Array<{code:string;name:string;adjust:number}> = (() => {
+      if (originHub === gw) return [{ code:'', name:'', adjust:1 }]; // already at gateway
+      if (gw === 'CPT') {
+        if (['MQP','HDS','SZK'].includes(originHub)) { const c=[{code:'4Z',name:'Airlink',adjust:1.0},{code:'5Z',name:'CemAir',adjust:0.90}]; if(originHub==='MQP')c.push({code:'FS',name:'FlySafair',adjust:0.78}); return c; }
+        if (originHub === 'MUB') return [{code:'4Z',name:'Airlink',adjust:1.0}];
+        if (['VFA','LVI'].includes(originHub)) return [{code:'4Z',name:'Airlink',adjust:1.0},{code:'TC',name:'Fastjet',adjust:1.05}];
+        return [{code:'4Z',name:'Airlink',adjust:1.0},{code:'FS',name:'FlySafair',adjust:0.78},{code:'SA',name:'SAA',adjust:1.20}];
+      }
+      // gw === 'JNB'
+      if (['VFA','LVI'].includes(originHub)) return [{code:'TC',name:'Fastjet',adjust:0.92},{code:'4Z',name:'Airlink',adjust:1.0}];
+      if (originHub === 'MUB')               return [{code:'4Z',name:'Airlink',adjust:1.0},{code:'TC',name:'Fastjet',adjust:1.0}];
+      if (['MQP','HDS','SZK'].includes(originHub)) { const c=[{code:'4Z',name:'Airlink',adjust:1.0},{code:'5Z',name:'CemAir',adjust:0.90}]; if(originHub==='MQP')c.push({code:'FS',name:'FlySafair',adjust:0.78}); return c; }
+      return [{code:'4Z',name:'Airlink',adjust:1.0}];
+    })();
+
+    const gwLabel = gw === 'CPT' ? 'Cape Town International (CPT)' : 'O.R. Tambo International (JNB)';
+    const flightMinFallback: Record<string,number> = { 'MQP':110,'HDS':75,'SZK':75,'MUB':130,'VFA':105,'LVI':105 };
+
+    return gwCarriers.map((c, i) => {
+      const noFlight = c.code === ''; // already at gateway hub — exit transfer only
+      const fare  = noFlight ? 0 : Math.round((liveFare ?? fallback) * c.adjust);
+      const total = exitZar + Math.round(fare * pax);
+      const metaForThis = (!noFlight && meta && (meta.carrier === c.code)) ? meta : null;
+
+      const structured: StructuredLeg[] = [];
+      if (exitRec) { const ex = exitLeg(exitRec, noFlight ? gw : originHub); if (ex) structured.push(ex); }
+      if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code));
+
+      const exitMin   = exitRec?.durationMin ?? 0;
+      const flightMin = noFlight ? 0 : (meta?.duration_min ?? flightMinFallback[originHub] ?? 120);
+      const totalMin  = exitMin + flightMin;
+
+      const badges: Array<{text:string;color:string}> = [];
+      if (i === 0) badges.push({ text:'\u2726 Recommended', color:'rgba(212,175,55,0.9)' });
+      if (c.code === 'TC') badges.push({ text:'\u2708 Fastjet', color:'rgba(211,84,0,0.9)' });
+      if (exitRec?.mode === 'fedair') badges.push({ text:'\u2708 Federal Air charter included', color:'rgba(134,239,172,0.85)' });
+      if (isEst && !noFlight) badges.push({ text:'Est.', color:'rgba(255,255,255,0.3)' });
+
+      return {
+        id: i === 0 ? 'recommended' : `${c.code || 'xfer'}-${i}`,
+        mode: 'commercial' as TransferOption['mode'],
+        icon: '\u2708',
+        label: noFlight ? `Transfer to ${gwLabel}` : `${c.name} \u2192 ${gw}`,
+        provider: noFlight ? (exitRec?.label ?? 'Lodge transfer') : `${c.name} ${originHub}\u2192${gw}`,
+        duration: totalMin ? `~${durStr(totalMin)} door-to-door` : '',
+        estimatedCostZAR: total,
+        badges,
+        aiNote: noFlight
+          ? `Final transfer from your lodge to ${gwLabel}.`
+          : [`${c.name} ${originHub}\u2192${gw} for your international departure from ${gwLabel}.`, exitRec?.note, isEst ? 'Fare indicative.' : null].filter(Boolean).join(' '),
+        recommended: i === 0,
+        structuredLegs: structured,
+      };
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   // CASE 2: Standard inter-regional — EXIT + COMMERCIAL + ARRIVAL
   // ═══════════════════════════════════════════════════════════════════════
   const arrivalLastMiles = lastMileFor(destLodge ?? '', toSlug);
@@ -1738,7 +1811,119 @@ function buildTransferOptions(
   const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
   const exitRec2    = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
   const originHub   = originHubAirport(originLodge ?? '', fromSlug);
+  // ── Carriers serving a commercial hub-to-hub leg, Fastjet prioritised on its network ──
+  const carriersForRoute = (oHub: string, dHub: string): Array<{code:string;name:string;adjust:number}> => {
+    const key = `${oHub}-${dHub}`;
+    // Fastjet (TC) DIRECT routes — listed FIRST so they are the recommended option.
+    // MQP↔VFA confirmed direct (Fastjet 8802, daily exc. Thu, MQP–VFA 12:45–14:30).
+    const FASTJET_DIRECT = new Set([
+      'JNB-VFA','VFA-JNB','JNB-MUB','MUB-JNB','JNB-LVI','LVI-JNB',
+      'MQP-VFA','VFA-MQP',
+    ]);
+    if (FASTJET_DIRECT.has(key)) {
+      return [
+        { code:'TC', name:'Fastjet', adjust:0.92 },
+        { code:'4Z', name:'Airlink', adjust:1.0 },
+      ];
+    }
+    // Lowveld carriers (HDS/SZK have no Fastjet service)
+    if (['MQP','HDS','SZK'].includes(dHub) || ['MQP','HDS','SZK'].includes(oHub)) {
+      const c = [{ code:'4Z', name:'Airlink', adjust:1.0 }, { code:'5Z', name:'CemAir', adjust:0.90 }];
+      if (key.includes('MQP')) c.push({ code:'FS', name:'FlySafair', adjust:0.78 });
+      return c;
+    }
+    // Default — single carrier
+    return [{ code:'4Z', name:'Airlink', adjust:1.0 }];
+  };
 
+  // Recommended arrival last-mile (destHub → lodge). The arrival is the same regardless of carrier,
+  // so the meaningful choice axis is the CARRIER, not the arrival transfer.
+  const arrRec   = arrivalLastMiles.find(a => a.recommended) ?? arrivalLastMiles[0];
+  const destHubR = arrRec.fromAirport;
+  const needCommR = originHub !== destHubR;
+  const carriersR = needCommR ? carriersForRoute(originHub, destHubR) : [];
+
+  // Build the arrival structured-leg(s) for a given arrival record + destination hub.
+  const buildArrivalLegs = (arr: any, destHub: string): StructuredLeg[] => {
+    const out: StructuredLeg[] = [];
+    const isLowveld = ['MQP','HDS','SZK'].includes(destHub);
+    const isMadikweArr = toSlug === 'madikwe';
+    const isGBE = arr.fromAirport === 'GBE';
+    if (isGBE) {
+      out.push({ kind:'arrival', badge:'\u2708', name:'Charter — land at Gaborone (GBE)', from:'CPT / JNB', to:'GBE', detail:'Light aircraft · ~30 min from origin · lands Gaborone International', note:'Flat rate per charter up to 6 pax', noteColor:'rgba(212,175,55,0.5)' });
+      out.push({ kind:'road', badge:'\uD83D\uDEC2', name:'\u26A0 Road transfer + 2 border crossings', from:'Gaborone Airport (GBE)', to:'Madikwe Lodge', detail:'~28km road · Botswana exit + SA entry (Kopfontein/Derdepoort border posts)', note:'Allow 2–3 hours. Border hours: 07:00–20:00. Not recommended for tight connections or evening arrivals.', noteColor:'rgba(251,146,60,0.8)' });
+    } else if (arr.mode === 'fedair') {
+      out.push(fedairLeg(destHub, 'Lodge airstrip', isLowveld, isMadikweArr));
+    } else if (arr.mode === 'mackair') {
+      out.push({ kind:'arrival', badge:'MA', name:'Mack Air', from:destHub, to:'Camp airstrip', detail:'20kg soft bag · no hard cases · lands at camp', note:arr.note, noteColor:'rgba(74,222,128,0.6)' });
+    } else if (arr.mode === 'wilderness') {
+      out.push({ kind:'arrival', badge:'WA', name:'Wilderness Air', from:destHub, to:'Camp airstrip', detail:'Included in lodge rate · 20kg soft bag strictly enforced', note:'Do not charge separately', noteColor:'rgba(74,222,128,0.6)' });
+    } else if (arr.mode === 'road') {
+      out.push({ kind:'road', badge:'road', name:'Private road transfer', from:destHub, to:'Lodge', detail:`${arr.durationMin} min · no baggage restriction`, note:arr.note, noteColor:'rgba(255,255,255,0.35)' });
+    }
+    if (arr.mode === 'mackair' || arr.mode === 'wilderness') {
+      out.push({ kind:'info', badge:'bag', name:'20kg soft bag — strictly enforced on all charter legs', detail:'No hard-sided cases. Duffel bag rental at most camps.', noteColor:'rgba(251,191,36,0.7)' });
+    }
+    return out;
+  };
+
+  const commDurFallback: Record<string, number> = {
+    'CPT-MQP':160, 'CPT-HDS':160, 'CPT-SZK':165, 'CPT-MUB':150, 'CPT-VFA':180,
+    'JNB-MQP':60,  'JNB-HDS':60,  'JNB-SZK':75,  'JNB-MUB':130, 'JNB-VFA':105,
+    'MQP-VFA':110, 'MQP-CPT':160, 'HDS-CPT':160,  'MUB-CPT':150, 'MUB-JNB':130,
+    'VFA-CPT':180, 'VFA-MQP':110, 'BBK-VFA':20,   'VFA-JNB':105,
+  };
+
+  // ── If there is a real commercial leg with a carrier choice → options axis = CARRIER ──
+  if (needCommR && carriersR.length > 0) {
+    const destHub  = destHubR;
+    const routeKey = `${originHub}-${destHub}`;
+    const liveMeta = commercialMetaByRoute?.[routeKey];
+    const liveFare = commercialFareZarByRoute?.[routeKey] ?? null;
+    const fallback = COMMERCIAL_FALLBACK_ZAR[destHub] ?? 4000;
+    const isEst    = liveFare == null;
+    const exitZar  = exitRec2 ? lastMileZar(exitRec2, usdToZar, pax) : 0;
+    const arrZar   = lastMileZar(arrRec, usdToZar, pax);
+
+    return carriersR.map((c, i) => {
+      const fare  = Math.round((liveFare ?? fallback) * c.adjust);
+      const total = exitZar + Math.round(fare * pax) + arrZar;
+      // Only attach live Duffel times if the live carrier matches this option's carrier
+      const metaForThis = (liveMeta && (liveMeta.carrier === c.code)) ? liveMeta : null;
+
+      const structured: StructuredLeg[] = [];
+      if (exitRec2) { const ex = exitLeg(exitRec2, originHub); if (ex) structured.push(ex); }
+      structured.push(commercialLeg(originHub, destHub, metaForThis, c.name, c.code));
+      buildArrivalLegs(arrRec, destHub).forEach(l => structured.push(l));
+
+      const flightMin = liveMeta?.duration_min ?? commDurFallback[routeKey] ?? 120;
+      const totalMin  = (exitRec2?.durationMin ?? 0) + flightMin + (arrRec.durationMin ?? 0);
+
+      const badges: Array<{text:string;color:string}> = [];
+      if (i === 0) badges.push({ text:'\u2726 Recommended', color:'rgba(212,175,55,0.9)' });
+      if (c.code === 'TC') badges.push({ text:'\u2708 Fastjet', color:'rgba(211,84,0,0.9)' });
+      if (arrRec.mode === 'fedair') badges.push({ text:'\u2708 Federal Air charter included', color:'rgba(134,239,172,0.85)' });
+      if (isEst) badges.push({ text:'Est.', color:'rgba(255,255,255,0.3)' });
+
+      const routeDesc = `${c.name} ${originHub}\u2192${destHub}.`;
+
+      return {
+        id: i === 0 ? 'recommended' : `${c.code}-${i}`,
+        mode: 'commercial' as TransferOption['mode'],
+        icon: '\u2708',
+        label: `${c.name} \u2192 ${toLabel}`,
+        provider: `${c.name} ${originHub}\u2192${destHub}`,
+        duration: totalMin ? `~${durStr(totalMin)} door-to-door` : '',
+        estimatedCostZAR: total,
+        badges,
+        aiNote: [`Commercial: ${routeDesc}`, arrRec.note, isEst ? 'Fare indicative.' : null].filter(Boolean).join(' '),
+        recommended: i === 0,
+        structuredLegs: structured,
+      };
+    });
+  }
+
+  // ── Otherwise (charter/road only, no carrier choice) → options axis = arrival variant ──
   return arrivalLastMiles.map((arr, i) => {
     const destHub  = arr.fromAirport;
     const routeKey = `${originHub}-${destHub}`;
@@ -1754,105 +1939,31 @@ function buildTransferOptions(
     const commZar  = needComm ? Math.round((liveFare ?? fallback) * pax) : 0;
     const total    = exitZar + commZar + arrZar;
 
-    // ── Build structured legs ──────────────────────────────────────────
     const structured: StructuredLeg[] = [];
-
-    // EXIT: lodge → origin hub
-    if (exitRec2) {
-      const ex = exitLeg(exitRec2, originHub);
-      if (ex) structured.push(ex);
-    }
-
-    // COMMERCIAL: origin hub → dest hub
+    if (exitRec2) { const ex = exitLeg(exitRec2, originHub); if (ex) structured.push(ex); }
     if (needComm) {
       const hasLiveMeta = meta && (meta.carrier || meta.departing_at);
       const carrierCode = hasLiveMeta ? (meta.carrier ?? '4Z') : '4Z';
       const carrierName = AIRLINE_META[carrierCode]?.name ?? 'Airlink';
       structured.push(commercialLeg(originHub, destHub, meta, carrierName, carrierCode));
     }
+    buildArrivalLegs(arr, destHub).forEach(l => structured.push(l));
 
-    // ARRIVAL: dest hub → lodge
-    const isLowveld = ['MQP','HDS','SZK'].includes(destHub);
-    const isMadikweArr = toSlug === 'madikwe';
-    const isGBERoute  = (arr as any).fromAirport === 'GBE';
-
-    if (isGBERoute) {
-      // GBE → Madikwe: charter landing at Gaborone + road transfer with 2 border crossings
-      structured.push({
-        kind: 'arrival', badge: '✈', name: 'Charter — land at Gaborone (GBE)',
-        from: 'CPT / JNB', to: 'GBE',
-        detail: 'Light aircraft · ~30 min from origin · lands Gaborone International',
-        note: 'Flat rate per charter up to 6 pax',
-        noteColor: 'rgba(212,175,55,0.5)',
-      });
-      structured.push({
-        kind: 'road', badge: '🛂', name: '⚠ Road transfer + 2 border crossings',
-        from: 'Gaborone Airport (GBE)', to: 'Madikwe Lodge',
-        detail: '~28km road · Botswana exit + SA entry (Kopfontein/Derdepoort border posts)',
-        note: 'Allow 2–3 hours. Border hours: 07:00–20:00. Not recommended for tight connections or evening arrivals.',
-        noteColor: 'rgba(251,146,60,0.8)',
-      });
-    } else if (arr.mode === 'fedair') {
-      structured.push(fedairLeg(destHub, 'Lodge airstrip', isLowveld, isMadikweArr));
-    } else if (arr.mode === 'mackair') {
-      structured.push({
-        kind: 'arrival', badge: 'MA', name: 'Mack Air',
-        from: destHub, to: 'Camp airstrip',
-        detail: '20kg soft bag · no hard cases · lands at camp',
-        note: arr.note,
-        noteColor: 'rgba(74,222,128,0.6)',
-      });
-    } else if (arr.mode === 'wilderness') {
-      structured.push({
-        kind: 'arrival', badge: 'WA', name: 'Wilderness Air',
-        from: destHub, to: 'Camp airstrip',
-        detail: 'Included in lodge rate · 20kg soft bag strictly enforced',
-        note: 'Do not charge separately',
-        noteColor: 'rgba(74,222,128,0.6)',
-      });
-    } else if (arr.mode === 'road') {
-      structured.push({
-        kind: 'road', badge: 'road', name: 'Private road transfer',
-        from: destHub, to: 'Lodge',
-        detail: `${arr.durationMin} min · no baggage restriction`,
-        note: arr.note,
-        noteColor: 'rgba(255,255,255,0.35)',
-      });
-    }
-
-    // Charter baggage warning if any charter leg present
-    if (arr.mode === 'mackair' || arr.mode === 'wilderness') {
-      structured.push({
-        kind: 'info', badge: 'bag', name: '20kg soft bag — strictly enforced on all charter legs',
-        detail: 'No hard-sided cases. Duffel bag rental at most camps.',
-        noteColor: 'rgba(251,191,36,0.7)',
-      });
-    }
-
-    // Commercial flight duration: use live Duffel data or route-based fallback
-    // CPT→HDS/MQP/SZK ≈ 160min, CPT→MUB ≈ 150min, JNB→MQP/HDS ≈ 60min, JNB→MUB ≈ 130min
-    const commDurFallback: Record<string, number> = {
-      'CPT-MQP':160, 'CPT-HDS':160, 'CPT-SZK':165, 'CPT-MUB':150, 'CPT-VFA':180,
-      'JNB-MQP':60,  'JNB-HDS':60,  'JNB-SZK':75,  'JNB-MUB':130, 'JNB-VFA':105,
-      'MQP-VFA':110, 'MQP-CPT':160, 'HDS-CPT':160,  'MUB-CPT':150, 'MUB-JNB':130,
-      'VFA-CPT':180, 'VFA-MQP':110, 'BBK-VFA':20,
-    };
     const commDur = meta?.duration_min ?? commDurFallback[routeKey] ?? 120;
     const totalMin = (exitRec2?.durationMin ?? 0) + commDur + arr.durationMin;
+    const isGBERoute = arr.fromAirport === 'GBE';
     const badges: Array<{text:string;color:string}> = [];
     if (arr.recommended && i === 0) badges.push({text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'});
     if (arr.perCharter || isGBERoute) badges.push({text:'Private charter',color:'#a78bfa'});
-    if (arr.mode === 'fedair') badges.push({text:'✈ Federal Air charter included',color:'rgba(134,239,172,0.85)'});
-    if (isGBERoute) badges.push({text:'⚠ 2 border crossings required',color:'rgba(251,146,60,0.9)'});
+    if (arr.mode === 'fedair') badges.push({text:'\u2708 Federal Air charter included',color:'rgba(134,239,172,0.85)'});
+    if (isGBERoute) badges.push({text:'\u26A0 2 border crossings required',color:'rgba(251,146,60,0.9)'});
     if (isEst) badges.push({text:'Est.',color:'rgba(255,255,255,0.3)'});
 
     const airline = meta?.carrier ? (AIRLINE_META[meta.carrier]?.name ?? meta.carrier) : null;
     const depT = fmtT(meta?.departing_at);
     const arrT = fmtT(meta?.arriving_at);
     const commDesc = needComm
-      ? (airline && depT && arrT
-          ? `${airline} ${originHub} ${depT}\u2192${destHub} ${arrT}`
-          : `${originHub} \u2192 ${destHub}`)
+      ? (airline && depT && arrT ? `${airline} ${originHub} ${depT}\u2192${destHub} ${arrT}` : `${originHub} \u2192 ${destHub}`)
       : null;
 
     return {
@@ -2103,12 +2214,21 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
       background: 'rgba(8,7,12,0.96)',
       border: `0.5px solid ${isSelected ? `${T.gold}55` : 'rgba(212,175,55,0.12)'}`,
       borderRadius: 10,
-      overflow: 'hidden',
+      overflow: 'visible',
+      position: 'relative' as const,
       transition: 'border-color 0.25s ease',
       boxShadow: isSelected ? `0 0 0 1px ${T.gold}18, 0 4px 24px rgba(0,0,0,0.4)` : '0 2px 12px rgba(0,0,0,0.3)',
     }}>
 
-      {/* ── Top bar: label + duration + pagination ── */}
+      {/* ── Prominent option arrows (match property carousel) ── */}
+      {optionCount > 1 && activeIdx > 0 && (
+        <button onClick={onPrev} aria-label="Previous option" style={{ position:'absolute', left:-16, top:'50%', transform:'translateY(-50%)', zIndex:20, background:T.gold, border:`1px solid ${T.gold}`, color:'#0a0a0a', width:34, height:52, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 16px rgba(0,0,0,0.55)', fontWeight:700 }}>◂</button>
+      )}
+      {optionCount > 1 && activeIdx < optionCount - 1 && (
+        <button onClick={onNext} aria-label="Next option" style={{ position:'absolute', right:-16, top:'50%', transform:'translateY(-50%)', zIndex:20, background:T.gold, border:`1px solid ${T.gold}`, color:'#0a0a0a', width:34, height:52, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 16px rgba(0,0,0,0.55)', fontWeight:700 }}>▸</button>
+      )}
+
+      {/* ── Top bar: label + duration + page counter ── */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '10px 14px 9px',
@@ -2139,32 +2259,15 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Option counter + nav */}
           {optionCount > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button
-                onClick={onPrev} disabled={activeIdx === 0}
-                style={{
-                  background: 'none', border: 'none', padding: '0 4px',
-                  color: activeIdx === 0 ? 'rgba(255,255,255,0.15)' : `${T.gold}90`,
-                  cursor: activeIdx === 0 ? 'default' : 'pointer',
-                  fontSize: 14, lineHeight: 1, fontFamily: 'inherit',
-                }}
-              >‹</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{
-                fontSize: 9, color: T.textDim, letterSpacing: '0.08em',
-                fontFamily: "'Jost', sans-serif",
-                minWidth: 32, textAlign: 'center' as const,
+                fontSize: 9, color: T.gold, letterSpacing: '0.08em',
+                fontFamily: "'Jost', sans-serif", fontWeight: 700,
+                background: T.goldDim, border: `0.5px solid ${T.borderGold}`,
+                borderRadius: 20, padding: '3px 10px',
               }}>
-                {activeIdx + 1} / {optionCount}
+                {activeIdx + 1} of {optionCount} options
               </span>
-              <button
-                onClick={onNext} disabled={activeIdx === optionCount - 1}
-                style={{
-                  background: 'none', border: 'none', padding: '0 4px',
-                  color: activeIdx === optionCount - 1 ? 'rgba(255,255,255,0.15)' : `${T.gold}90`,
-                  cursor: activeIdx === optionCount - 1 ? 'default' : 'pointer',
-                  fontSize: 14, lineHeight: 1, fontFamily: 'inherit',
-                }}
-              >›</button>
             </div>
           )}
         </div>
@@ -2303,38 +2406,19 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
         </div>
       )}
 
-      {/* ── Cost + select row ── */}
+      {/* ── Select row (pricing removed — tallied in the journey total) ── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '9px 14px 11px',
         marginTop: 8,
         borderTop: `0.5px solid rgba(212,175,55,0.07)`,
       }}>
-        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 1 }}>
-          {cost > 0
-            ? <>
-                <span style={{
-                  fontSize: 13, fontWeight: 300, color: T.text,
-                  fontFamily: "'Cormorant Garamond', serif",
-                  letterSpacing: '0.01em',
-                }}>
-                  {fmt(cost)}
-                </span>
-                <span style={{
-                  fontSize: 9, color: T.textDim, letterSpacing: '0.06em',
-                  fontFamily: "'Jost', sans-serif",
-                }}>
-                  Indicative · confirmed by specialist
-                </span>
-              </>
-            : <span style={{
-                fontSize: 10, color: T.textDim,
-                fontFamily: "'Jost', sans-serif", letterSpacing: '0.05em',
-              }}>
-                Included · cost confirmed with journey
-              </span>
-          }
-        </div>
+        <span style={{
+          fontSize: 9, color: T.textDim, letterSpacing: '0.06em',
+          fontFamily: "'Jost', sans-serif",
+        }}>
+          Included in your journey · confirmed by specialist
+        </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {isSelected && (
@@ -2533,125 +2617,103 @@ function CityTransferStrip({ slug, destLabel, opts, selectedId, onSelect, fmt }:
 }
 
 
-function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, departureHubId, setDepartureHubId, showDepartureXfer, setShowDepartureXfer, flightSelected, departureGateway }: { lastCity:any; lastSlug:string; includeIntlFlight:boolean; fmt:(n:number)=>string; kbEntries:KBEntry[]; departureHubId:string; setDepartureHubId:(v:string)=>void; showDepartureXfer:boolean; setShowDepartureXfer:(v:boolean)=>void; flightSelected?:boolean; departureGateway?:string; }) {
-  // Readable airport names for the known departure gateways.
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPARTURE CARD
+// Gateway is derived from the selected international flight (departureGateway).
+// Shows REAL lodge→gateway transfer options via the same TransferCarousel engine
+// (Fastjet / Airlink / FedAir) — no "your specialist will confirm" placeholder.
+// ─────────────────────────────────────────────────────────────────────────────
+function DepartureCard({
+  lastCity, lastSlug, includeIntlFlight, fmt, kbEntries,
+  departureHubId, setDepartureHubId, flightSelected, departureGateway,
+  originLodge, usdToZar, commercialFares, commercialMeta, pax,
+  selectedTransferId, onSelectTransfer,
+}: {
+  lastCity:any; lastSlug:string; includeIntlFlight:boolean; fmt:(n:number)=>string; kbEntries:KBEntry[];
+  departureHubId:string; setDepartureHubId:(v:string)=>void; flightSelected?:boolean; departureGateway?:string;
+  originLodge?:string; usdToZar?:number; commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; pax?:number;
+  selectedTransferId?:string|null; onSelectTransfer?:(id:string)=>void;
+}) {
   const GATEWAY_LABEL: Record<string,string> = {
     JNB:'O.R. Tambo International (JNB)', CPT:'Cape Town International (CPT)',
     VFA:'Victoria Falls (VFA)', LVI:'Livingstone (LVI)', MUB:'Maun (MUB)',
     HDS:'Hoedspruit (HDS)', MQP:'Kruger Mpumalanga (MQP)', SZK:'Skukuza (SZK)', BBK:'Kasane (BBK)',
   };
-  // We "know" the departure point only once a flight is actually selected.
-  const knownGateway = flightSelected && departureGateway ? (GATEWAY_LABEL[departureGateway] ?? departureGateway) : null;
-  const hubs: {code:string; label:string; airport:string; note:string}[] = lastSlug === 'cape-town'
-    ? [{ code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Direct international departures to London, Amsterdam, Frankfurt, New York and more.' }]
-    : lastSlug === 'chobe-vic-falls'
-    ? [{ code:'VFA', label:'Victoria Falls', airport:'Victoria Falls Airport (VFA)', note:'Fastjet and Airlink to JNB daily. Short private transfer from your lodge to the airport.' },
-       { code:'JNB', label:'Johannesburg (via VFA)', airport:'O.R. Tambo International (JNB)', note:'Fly VFA→JNB, then connect internationally. Allow 3hrs for connection at O.R. Tambo.' }]
-    : lastSlug === 'masai-mara'
-    ? [{ code:'NBO', label:'Nairobi', airport:'Jomo Kenyatta International (NBO)', note:'45-min charter from Mara airstrip. Book early for peak season connections.' },
-       { code:'MBA', label:'Mombasa', airport:'Moi International (MBA)', note:'Alternative via scheduled carrier — useful if combining with coast.' }]
-    : lastSlug === 'okavango-delta'
-    ? [{ code:'JNB', label:'Johannesburg', airport:'O.R. Tambo International (JNB)', note:'Fly MackAir/Wilderness Air to Maun, then Airlink to JNB. Allow 4hrs total from camp.' },
-       { code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Maun to JNB then JNB to CPT. Good if ending your journey in Cape Town.' }]
-    : [{ code:'JNB', label:'Johannesburg', airport:'O.R. Tambo International (JNB)', note:'Main hub for onward international connections. Allow 3hr connection from bush charters.' },
-       { code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Domestic connection from JNB. Good option for guests ending in Cape Town.' }];
-  const selectedHub = hubs.find(h => h.code === departureHubId);
+
+  // PRIORITY: gateway comes from the selected international flight. Only fall back
+  // to a manual choice if no flight is selected and none has been chosen yet.
+  const resolvedGateway =
+    (flightSelected && departureGateway) ? departureGateway
+    : departureHubId || '';
+
+  // International airports we can route a real departure transfer to.
+  const INTL_GATEWAYS = new Set(['JNB','CPT']);
+  const gatewayForRouting = INTL_GATEWAYS.has(resolvedGateway) ? resolvedGateway : '';
+
+  // Hubs to offer ONLY when nothing is known yet (no flight selected, no choice made).
+  const fallbackHubs = lastSlug === 'cape-town'
+    ? [{ code:'CPT', label:'Cape Town International (CPT)', note:'Direct international departures to London, Amsterdam, Frankfurt, New York.' }]
+    : [{ code:'JNB', label:'O.R. Tambo International (JNB)', note:'Main hub — most international routes connect via JNB.' },
+       { code:'CPT', label:'Cape Town International (CPT)', note:'Good if your itinerary ends in or near Cape Town.' }];
+
   return (
     <div style={{ marginBottom:24, background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
       <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
-      <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:8 }}>
-        {knownGateway ? 'Your departure is confirmed' : departureHubId ? 'Departure set — final transfer below' : 'Where are you flying home from?'}
+
+      <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:6 }}>
+        {resolvedGateway
+          ? (flightSelected ? 'Departing on your selected international flight' : 'Departure airport set')
+          : 'Where are you flying home from?'}
       </div>
-      <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
-        {knownGateway
-          ? `Flying from ${knownGateway}. We'll time your final lodge transfer to match.`
-          : departureHubId
-            ? `Flying from ${GATEWAY_LABEL[departureHubId] ?? departureHubId}. Final lodge transfer options are below.`
-            : includeIntlFlight
-              ? 'Return flight included — Journey Specialist will confirm your final transfer.'
-              : "Select your departure airport — we'll arrange your final lodge-to-airport transfer."
-        }
+      <div style={{ fontSize:12, color:T.textDim, marginBottom:14, lineHeight:1.55 }}>
+        {resolvedGateway
+          ? `Flying from ${GATEWAY_LABEL[resolvedGateway] ?? resolvedGateway}. Choose how you'd like to reach the airport from your final lodge.`
+          : includeIntlFlight
+            ? 'Once you select your international flight above, your departure airport and transfer options appear here automatically.'
+            : "Select your departure airport — we'll show real transfer options from your final lodge."}
       </div>
-      {!includeIntlFlight && (<>
-        {/* Only show hub selector if not already set from inspire-input */}
-        {!departureHubId && (
-        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:selectedHub ? 14 : 0 }}>
-          {hubs.map(hub => {
-            const isSel = departureHubId === hub.code;
-            return (
-              <button key={hub.code} onClick={() => { setDepartureHubId(hub.code); setShowDepartureXfer(true); }} style={{ width:'100%', padding:'11px 14px', background:isSel?T.goldDim:T.surface, border:`1.5px solid ${isSel?T.gold:T.border}`, borderRadius:10, cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const, transition:'border-color 0.2s' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <div>
-                    <div style={{ fontSize:13, fontWeight:isSel?700:400, color:isSel?T.gold:T.text }}>{hub.airport}</div>
-                    <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{hub.note}</div>
-                  </div>
-                  <div style={{ fontSize:11, color:isSel?T.gold:T.textDim, background:isSel?T.goldDim:'rgba(255,255,255,0.05)', border:`0.5px solid ${isSel?T.borderGold:T.border}`, borderRadius:20, padding:'3px 10px', fontWeight:isSel?700:400, flexShrink:0, marginLeft:12 }}>{isSel ? '✓ Selected' : 'Select'}</div>
-                </div>
-              </button>
-            );
-          })}
+
+      {/* Manual selector ONLY when nothing is resolved yet */}
+      {!resolvedGateway && !includeIntlFlight && (
+        <div style={{ display:'flex', flexDirection:'column' as const, gap:8, marginBottom:4 }}>
+          {fallbackHubs.map(hub => (
+            <button key={hub.code} onClick={() => setDepartureHubId(hub.code)} style={{ width:'100%', padding:'11px 14px', background:T.surface, border:`1.5px solid ${T.border}`, borderRadius:10, cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const }}>
+              <div style={{ fontSize:13, fontWeight:400, color:T.text }}>{hub.label}</div>
+              <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{hub.note}</div>
+            </button>
+          ))}
         </div>
-        )}
-        {(showDepartureXfer || !!departureHubId) && selectedHub && (() => {
-          // REAL route data — derived from GATEWAY_LEGS / INTERNAL_LEGS, route-specific per hub
-          const hub = selectedHub.code;
-          // Scheduled/commercial routing leg (the realistic default)
-          const schedLeg = hub === 'CPT'
-            ? getInternalLeg(lastSlug, 'cape-town')
-            : hub === 'VFA'
-            ? getInternalLeg(lastSlug, 'chobe-vic-falls')
-            : (() => {
-                // lodge → JNB: reverse the inbound gateway leg for real provider/duration/cost
-                const g = GATEWAY_LEGS[`JNB→${lastSlug}`];
-                return g
-                  ? { fromLabel:g.toLabel, toLabel:'O.R. Tambo (JNB)', mode:'combo' as const, provider:g.provider.replace(/JNB→|OR Tambo/gi,'').trim()+' → JNB', duration:g.duration, estimatedCostZAR:g.estimatedCostZAR, aiNote:g.aiNote, bufferHours:3 }
-                  : getInternalLeg(lastSlug, 'cape-town');
-              })();
-          const charterCost = Math.round((schedLeg?.estimatedCostZAR ?? 8000) * 1.9);
-          const deptOpts = [
-            {
-              id:'scheduled', icon:'✈', label:'Scheduled routing', provider:schedLeg?.provider ?? `Lodge → ${selectedHub.airport}`,
-              duration:schedLeg?.duration ?? '~3h', estimatedCostZAR:schedLeg?.estimatedCostZAR ?? 8000,
-              note:schedLeg?.aiNote ?? `Real airline routing from your final lodge to ${selectedHub.airport}. Confirmed on your travel dates.`, recommended:true,
-            },
-            {
-              id:'charter', icon:'🛩', label:'Private light-aircraft charter', provider:`Direct charter → ${selectedHub.airport}`,
-              duration:'45–90 min flight', estimatedCostZAR:charterCost,
-              note:`Private charter direct to ${selectedHub.airport}. Flat rate up to 6 pax. Eliminates connection risk — best for early or same-day international departures.`, recommended:false,
-            },
-          ];
-          return (
-            <div style={{ marginTop:4 }}>
-              <div style={{ fontSize:11, color:T.gold, fontWeight:600, marginBottom:8 }}>Transfer options → {selectedHub.airport}</div>
-              <div style={{ display:'flex', gap:10, overflowX:'auto', scrollSnapType:'x mandatory' as any, WebkitOverflowScrolling:'touch' as any, scrollbarWidth:'none' as any, paddingBottom:4 }}>
-                {deptOpts.map(opt => {
-                  const isSel = opt.recommended;
-                  return (
-                    <div key={opt.id} style={{ flexShrink:0, width:'min(82vw, 340px)', scrollSnapAlign:'center', borderRadius:11, border:`1.5px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:T.surface, padding:'13px 15px' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                        <span style={{ fontSize:18 }}>{opt.icon}</span>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:13, fontWeight:700, color:isSel?T.gold:T.text }}>{opt.label}</div>
-                          <div style={{ fontSize:11, color:T.textDim }}>{opt.provider}</div>
-                        </div>
-                        {isSel && <div style={{ fontSize:9, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 7px', fontWeight:800 }}>✦ Rec.</div>}
-                      </div>
-                      <div style={{ fontSize:12, color:T.textMid, marginBottom:6 }}>{opt.duration}</div>
-                      <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{opt.note}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
-      </>)}
-      {includeIntlFlight && (<div style={{ fontSize:11, color:T.green }}>{knownGateway ? `✓ Return flight included from ${knownGateway} — final lodge-to-airport transfer arranged for you.` : '✓ Return flight included — your Journey Specialist handles all final transfers and airport timing.'}</div>)}
-      <div style={{ marginTop:12, fontSize:11, color:T.textDim, borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>💬 Your Journey Specialist will confirm all final logistics before travel.</div>
+      )}
+
+      {/* REAL transfer options — same engine as inter-region tiles */}
+      {gatewayForRouting && (
+        <div style={{ marginTop:4 }}>
+          <div style={{ fontSize:11, color:T.gold, fontWeight:600, marginBottom:10, letterSpacing:'0.04em' }}>
+            Transfer options → {GATEWAY_LABEL[gatewayForRouting]}
+          </div>
+          <TransferCarousel
+            fromSlug={lastSlug}
+            toSlug={`gateway-${gatewayForRouting.toLowerCase()}`}
+            fromLabel={lastCity.city}
+            toLabel={GATEWAY_LABEL[gatewayForRouting]}
+            fmt={fmt}
+            kbEntries={kbEntries}
+            selectedTransferId={selectedTransferId ?? null}
+            onSelect={id => onSelectTransfer?.(id)}
+            destLodge={undefined}
+            pax={pax ?? 2}
+            usdToZar={usdToZar}
+            commercialFares={commercialFares}
+            commercialMeta={commercialMeta}
+            originLodge={originLodge}
+          />
+        </div>
+      )}
+
+      <div style={{ marginTop:12, fontSize:11, color:T.textDim, borderTop:`0.5px solid ${T.border}`, paddingTop:10 }}>💬 Your Journey Specialist confirms final flight times and airport timing before travel.</div>
     </div>
   );
 }
-
 
 function LoginGate({ onUnlock }: { onUnlock: () => void }) {
   const [code, setCode] = useState('');
@@ -4792,8 +4854,31 @@ const runBriefPlanner = (briefText: string) => {
             {itinerary.cities.length > 0 && (() => {
               const lastCity = itinerary.cities[itinerary.cities.length - 1];
               const lastSlug = CITY_TO_SLUG[lastCity?.city?.toLowerCase().trim() ?? ''] ?? '';
+              const lastStay = cityStays[cityStays.length - 1];
+              const lastPool = hotelsByMargin.filter(h => h.subRegion === lastSlug);
+              const lastHotel = lastPool.find(h => String(h.id) === String(lastStay?.hotelId)) ?? lastPool[0];
+              const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
+              const depGw = (selectedFlightOffer && flightDepartureGateway) ? flightDepartureGateway : departureHubId;
+              const depKey = `depart-${depGw || 'tbd'}`;
               return (
-                <DepartureCard lastCity={lastCity} lastSlug={lastSlug} includeIntlFlight={includeIntlFlight} fmt={fmt} kbEntries={kbEntries} departureHubId={departureHubId} setDepartureHubId={setDepartureHubId} showDepartureXfer={showDepartureXfer} setShowDepartureXfer={setShowDepartureXfer} flightSelected={!!selectedFlightOffer} departureGateway={flightDepartureGateway} />
+                <DepartureCard
+                  lastCity={lastCity}
+                  lastSlug={lastSlug}
+                  includeIntlFlight={includeIntlFlight}
+                  fmt={fmt}
+                  kbEntries={kbEntries}
+                  departureHubId={departureHubId}
+                  setDepartureHubId={setDepartureHubId}
+                  flightSelected={!!selectedFlightOffer}
+                  departureGateway={flightDepartureGateway}
+                  originLodge={lastHotel?.name}
+                  usdToZar={usdRate}
+                  commercialFares={transferFares}
+                  commercialMeta={transferMeta}
+                  pax={Math.max(adults + children, 1)}
+                  selectedTransferId={selectedTransferIds[depKey] ?? null}
+                  onSelectTransfer={id => setSelectedTransferIds(prev => ({ ...prev, [depKey]: id }))}
+                />
               );
             })()}
 
