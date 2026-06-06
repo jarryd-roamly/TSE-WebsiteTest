@@ -272,7 +272,7 @@ const INTERNAL_LEGS: Record<string, InternalLeg & { road_viable?: boolean }> = {
   'cape-town→kruger-sabi-sand': { fromLabel:'Cape Town', toLabel:'Sabi Sand', mode:'scheduled', provider:'Airlink CPT→JNB + Federal Air JNB→Skukuza', duration:'~2h 45m', estimatedCostZAR:12000, aiNote:'Morning departure from CPT recommended to catch the afternoon game drive.', bufferHours:3, road_viable:false },
   'kruger-sabi-sand→okavango-delta': { fromLabel:'Sabi Sand', toLabel:'Okavango Delta', mode:'charter', provider:'Federal Air / Wilderness Air charter', duration:'~2h 15m', estimatedCostZAR:18000, aiNote:'Direct charter from Skukuza. Departs post-morning game drive (~10:00).', bufferHours:1.5, road_viable:false },
   'okavango-delta→chobe-vic-falls': { fromLabel:'Okavango Delta', toLabel:'Chobe / Victoria Falls', mode:'charter', provider:'Air Botswana / Wilderness Air', duration:'~1h 30m', estimatedCostZAR:9500, aiNote:'Afternoon departure post-morning activity recommended.', bufferHours:1.5, road_viable:false },
-  'kruger-sabi-sand→chobe-vic-falls': { fromLabel:'Sabi Sand', toLabel:'Victoria Falls', mode:'charter', provider:'Charter or scheduled via JNB', duration:'~2h 30m', estimatedCostZAR:14000, aiNote:'Journey Specialist confirms best routing based on travel dates.', bufferHours:2, road_viable:false },
+  'kruger-sabi-sand→chobe-vic-falls': { fromLabel:'Sabi Sand', toLabel:'Victoria Falls', mode:'scheduled', provider:'Federal Air → Airlink via JNB → Victoria Falls', duration:'~4h 30m', estimatedCostZAR:14000, aiNote:'Exit via Skukuza or Hoedspruit, connect through O.R. Tambo (JNB), fly Fastjet or Airlink to Victoria Falls. Allow 4.5hrs door-to-door. Journey Specialist confirms best routing.', bufferHours:4.5, road_viable:false },
   'kruger-sabi-sand→cape-town': { fromLabel:'Sabi Sand', toLabel:'Cape Town', mode:'scheduled', provider:'Federal Air Skukuza→JNB + Airlink JNB→CPT', duration:'~3h', estimatedCostZAR:12000, aiNote:'Allow 2hr connection at O.R. Tambo.', bufferHours:2.5, road_viable:false },
   'cape-town→okavango-delta': { fromLabel:'Cape Town', toLabel:'Okavango Delta', mode:'scheduled', provider:'Airlink CPT→JNB + Mack Air JNB→Maun', duration:'~4h', estimatedCostZAR:16500, aiNote:'Connect through Johannesburg. Afternoon arrival in Maun.', bufferHours:3.5, road_viable:false },
   'cape-town→madikwe':        { fromLabel:'Cape Town', toLabel:'Madikwe',         mode:'scheduled', provider:'Airlink CPT→JNB + 3.5hr private drive or 45min charter', duration:'~4h total', estimatedCostZAR:11000, aiNote:'Fly CPT→JNB, then 3.5hr private drive north or 45min charter to Madikwe airstrip.', bufferHours:4, road_viable:false },
@@ -1644,9 +1644,15 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
   const knownGateway = flightSelected && departureGateway ? (GATEWAY_LABEL[departureGateway] ?? departureGateway) : null;
   const hubs: {code:string; label:string; airport:string; note:string}[] = lastSlug === 'cape-town'
     ? [{ code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Direct international departures to London, Amsterdam, Frankfurt, New York and more.' }]
+    : lastSlug === 'chobe-vic-falls'
+    ? [{ code:'VFA', label:'Victoria Falls', airport:'Victoria Falls Airport (VFA)', note:'Fastjet and Airlink to JNB daily. Short private transfer from your lodge to the airport.' },
+       { code:'JNB', label:'Johannesburg (via VFA)', airport:'O.R. Tambo International (JNB)', note:'Fly VFA→JNB, then connect internationally. Allow 3hrs for connection at O.R. Tambo.' }]
     : lastSlug === 'masai-mara'
     ? [{ code:'NBO', label:'Nairobi', airport:'Jomo Kenyatta International (NBO)', note:'45-min charter from Mara airstrip. Book early for peak season connections.' },
        { code:'MBA', label:'Mombasa', airport:'Moi International (MBA)', note:'Alternative via scheduled carrier — useful if combining with coast.' }]
+    : lastSlug === 'okavango-delta'
+    ? [{ code:'JNB', label:'Johannesburg', airport:'O.R. Tambo International (JNB)', note:'Fly MackAir/Wilderness Air to Maun, then Airlink to JNB. Allow 4hrs total from camp.' },
+       { code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Maun to JNB then JNB to CPT. Good if ending your journey in Cape Town.' }]
     : [{ code:'JNB', label:'Johannesburg', airport:'O.R. Tambo International (JNB)', note:'Main hub for onward international connections. Allow 3hr connection from bush charters.' },
        { code:'CPT', label:'Cape Town', airport:'Cape Town International (CPT)', note:'Domestic connection from JNB. Good option for guests ending in Cape Town.' }];
   const selectedHub = hubs.find(h => h.code === departureHubId);
@@ -3106,8 +3112,10 @@ const runBriefPlanner = (briefText: string) => {
                   }}
                   onOwnFlightDetails={(details:any) => {
                     setOwnFlightDetails(details);
-                    setArrivalAirport(details.arrivalAirport);
-                    setArrivalTime(details.arrivalTime);
+                    setArrivalAirport(details.arrivalAirport || details.arrivalGateway || 'JNB');
+                    setArrivalTime(details.arrivalTime || details.arrivalDate || '');
+                    // Set checkin date from arrival if not already set
+                    if (!checkinDate && details.arrivalDate) setCheckinDate(details.arrivalDate);
                   }}
                   onDismissFlights={() => {
                     // Traveller chose "I'll book my own flights" — clear the selected
