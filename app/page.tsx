@@ -1907,11 +1907,12 @@ function buildTransferOptions(
 
       const routeDesc = `${c.name} ${originHub}\u2192${destHub}.`;
 
+      const destName = toSlug.replace(/-/g,' ').replace(/\b\w/g, ch => ch.toUpperCase());
       return {
         id: i === 0 ? 'recommended' : `${c.code}-${i}`,
         mode: 'commercial' as TransferOption['mode'],
         icon: '\u2708',
-        label: `${c.name} \u2192 ${toLabel}`,
+        label: `${c.name} \u2192 ${destName}`,
         provider: `${c.name} ${originHub}\u2192${destHub}`,
         duration: totalMin ? `~${durStr(totalMin)} door-to-door` : '',
         estimatedCostZAR: total,
