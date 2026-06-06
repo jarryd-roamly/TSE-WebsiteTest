@@ -1839,6 +1839,8 @@ const toggleTheme = (id: string) =>
   const [intlOrigin,  setIntlOrigin]  = useState('LHR');
   const [researchStep,setResearchStep]= useState(0);
   const [itinerary,   setItinerary]   = useState<Itinerary|null>(null);
+         const [skeletonId,  setSkeletonId]  = useState<string|null>(null);
+const [skeletonFindings, setSkeletonFindings] = useState<any[]>([]);
 
   const [cityStays, setCityStays] = useState<Array<{ hotelId:string|number; nights:number; prefs:{rooms:number;basis:number;flexibility:number} }>>([]);
   // [Transfers v2] Live Duffel commercial-leg fares, keyed by target airport, in ZAR per person.
@@ -2148,6 +2150,7 @@ const rankedCurated = useMemo(() => {
 
 const runEngine = async (request: any, mode: InputMode) => {
     setInputMode(mode); setScreen('inspire-research'); setResearchStep(0);
+         setSkeletonId(null); setSkeletonFindings([]);
     window.scrollTo({ top:0, behavior:'instant' });
     track('itinerary_viewed', edition.id, { mode, nights, adults, budget });
 
@@ -2173,6 +2176,36 @@ const runEngine = async (request: any, mode: InputMode) => {
           return { hotelId: match?.id ?? 0, nights: city.nights, prefs: { rooms:0, basis:0, flexibility:0 } };
         });
         setCityStays(mappedStays);
+               setCityStays(mappedStays);
+
+  // Fire skeleton engine — runs in background, does NOT block the builder screen.
+  // Results stored in state for BCC tip panel and Selection Load page.
+  fetch('/api/itinerary/skeleton', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      itinerary:      data.itinerary,
+      cityStays:      mappedStays,
+      checkinDate,
+      adults,
+      children,
+      infants,
+      nights,
+      budget,
+      flightIntent:   flightIntent ?? 'flexible',
+      selectedFlight: selectedFlightOffer ?? null,
+      theme:          selectedThemes[0] ?? undefined,
+      occasion:       selectedThemes.find(t => ['honeymoon','anniversary','family','babymoon'].includes(t)) ?? undefined,
+    }),
+  })
+    .then(r => r.json())
+    .then(sk => {
+      if (sk.success) {
+        setSkeletonId(sk.skeleton_id);
+        setSkeletonFindings(sk.findings ?? []);
+      }
+    })
+    .catch(() => { /* silent — skeleton is non-critical */ });
       } else {
         throw new Error(data.error || 'Empty response');
       }
