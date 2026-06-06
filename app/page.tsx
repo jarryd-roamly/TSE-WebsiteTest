@@ -2785,6 +2785,295 @@ const REGION_BG_IMAGES: Record<string,string> = {
   'masai-mara':      'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=1600&q=40',
 };
 
+// ── DATE RANGE PICKER ──────────────────────────────────────────────────────
+function DateRangePicker({
+  startDate, endDate, onRangeChange, T: theme
+}: {
+  startDate: string;
+  endDate: string;
+  onRangeChange: (start: string, end: string, nights: number) => void;
+  T: any;
+}) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const minDate = new Date(today); minDate.setDate(today.getDate() + 7);
+
+  const [open,        setOpen]        = useState(false);
+  const [hoverDate,   setHoverDate]   = useState<string>('');
+  const [selecting,   setSelecting]   = useState<'start'|'end'|null>(null);
+  const [viewYear,    setViewYear]    = useState(() => {
+    if (startDate) return new Date(startDate).getFullYear();
+    return new Date(minDate).getFullYear();
+  });
+  const [viewMonth,   setViewMonth]   = useState(() => {
+    if (startDate) return new Date(startDate).getMonth();
+    return new Date(minDate).getMonth();
+  });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false); setSelecting(null); setHoverDate('');
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  function fmt(iso: string) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  }
+  function toISO(d: Date) {
+    return d.toISOString().split('T')[0];
+  }
+  function nightsBetween(a: string, b: string) {
+    if (!a || !b) return 0;
+    return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
+  }
+
+  const nights = nightsBetween(startDate, endDate);
+  const hasRange = !!(startDate && endDate && nights > 0);
+
+  // Calendar grid
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const lastDay  = new Date(viewYear, viewMonth + 1, 0);
+  const startPad = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Mon-start
+  const totalCells = startPad + lastDay.getDate();
+  const rows = Math.ceil(totalCells / 7);
+  const cells: (Date|null)[] = [];
+  for (let i = 0; i < rows * 7; i++) {
+    const dayNum = i - startPad + 1;
+    if (dayNum < 1 || dayNum > lastDay.getDate()) cells.push(null);
+    else cells.push(new Date(viewYear, viewMonth, dayNum));
+  }
+
+  function handleDayClick(d: Date) {
+    const iso = toISO(d);
+    if (d < minDate) return;
+
+    if (!startDate || selecting === 'start' || (startDate && endDate)) {
+      // Start fresh
+      onRangeChange(iso, '', 0);
+      setSelecting('end');
+    } else {
+      // We have startDate, picking end
+      if (iso <= startDate) {
+        // Clicked before start — restart
+        onRangeChange(iso, '', 0);
+        setSelecting('end');
+      } else {
+        const n = nightsBetween(startDate, iso);
+        onRangeChange(startDate, iso, n);
+        setSelecting(null);
+        setOpen(false);
+        setHoverDate('');
+      }
+    }
+  }
+
+  function dayState(d: Date): 'past'|'start'|'end'|'in-range'|'hover-range'|'normal' {
+    if (d < minDate) return 'past';
+    const iso = toISO(d);
+    if (startDate && iso === startDate) return 'start';
+    if (endDate && iso === endDate) return 'end';
+    if (startDate && endDate && iso > startDate && iso < endDate) return 'in-range';
+    if (startDate && !endDate && hoverDate && iso > startDate && iso <= hoverDate) return 'hover-range';
+    return 'normal';
+  }
+
+  const DAYS = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y-1); }
+    else setViewMonth(m => m-1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y+1); }
+    else setViewMonth(m => m+1);
+  }
+  // Disable prev if we'd go before the min month
+  const canGoPrev = viewYear > minDate.getFullYear() || (viewYear === minDate.getFullYear() && viewMonth > minDate.getMonth());
+
+  const gold = theme.gold;
+  const goldDim = theme.goldDim;
+
+  // Display bar text
+  let displayLeft = 'Arrival date';
+  let displayRight = 'Departure date';
+  let displayLeftActive = selecting === 'start' || (!startDate && open);
+  let displayRightActive = selecting === 'end';
+  if (startDate) displayLeft = fmt(startDate);
+  if (endDate)   displayRight = fmt(endDate);
+
+  return (
+    <div ref={containerRef} style={{ position:'relative' }}>
+      {/* Trigger bar */}
+      <button
+        onClick={() => {
+          setOpen(o => !o);
+          if (!open) {
+            // Determine what we're selecting next
+            if (!startDate) setSelecting('start');
+            else if (!endDate) setSelecting('end');
+            else { setSelecting('start'); }
+            // Snap view to startDate month if set
+            if (startDate) {
+              const d = new Date(startDate);
+              setViewYear(d.getFullYear()); setViewMonth(d.getMonth());
+            } else {
+              setViewYear(minDate.getFullYear()); setViewMonth(minDate.getMonth());
+            }
+          }
+        }}
+        style={{
+          width:'100%', display:'flex', alignItems:'stretch',
+          background:'rgba(255,255,255,0.03)',
+          border:`0.5px solid ${open || hasRange ? gold : 'rgba(255,255,255,0.15)'}`,
+          borderRadius:10, overflow:'hidden', cursor:'pointer',
+          fontFamily:'inherit', transition:'border-color 0.15s', padding:0,
+        }}
+      >
+        {/* Left — arrival */}
+        <div style={{
+          flex:1, padding:'14px 16px', textAlign:'left' as const,
+          borderRight:`0.5px solid ${open||hasRange ? 'rgba(212,175,55,0.2)' : 'rgba(255,255,255,0.08)'}`,
+          background: displayLeftActive ? goldDim : 'transparent',
+          transition:'background 0.15s',
+        }}>
+          <div style={{ fontSize:9, letterSpacing:'0.2em', textTransform:'uppercase' as const, color:'rgba(245,240,232,0.4)', fontWeight:300, marginBottom:4 }}>Arrival</div>
+          <div style={{ fontSize:14, color: startDate ? gold : 'rgba(245,240,232,0.35)', fontWeight: startDate ? 400 : 200 }}>
+            {startDate ? fmt(startDate) : 'Select date'}
+          </div>
+        </div>
+        {/* Nights pill */}
+        <div style={{
+          display:'flex', alignItems:'center', justifyContent:'center',
+          padding:'0 12px', flexShrink:0,
+          background: hasRange ? goldDim : 'transparent',
+        }}>
+          {hasRange ? (
+            <div style={{ fontSize:11, color:gold, fontWeight:400, whiteSpace:'nowrap' as const, letterSpacing:'0.04em' }}>
+              {nights}n
+            </div>
+          ) : (
+            <div style={{ fontSize:16, color:'rgba(255,255,255,0.12)' }}>→</div>
+          )}
+        </div>
+        {/* Right — departure */}
+        <div style={{
+          flex:1, padding:'14px 16px', textAlign:'left' as const,
+          borderLeft:`0.5px solid ${open||hasRange ? 'rgba(212,175,55,0.2)' : 'rgba(255,255,255,0.08)'}`,
+          background: displayRightActive ? goldDim : 'transparent',
+          transition:'background 0.15s',
+        }}>
+          <div style={{ fontSize:9, letterSpacing:'0.2em', textTransform:'uppercase' as const, color:'rgba(245,240,232,0.4)', fontWeight:300, marginBottom:4 }}>Departure</div>
+          <div style={{ fontSize:14, color: endDate ? gold : 'rgba(245,240,232,0.35)', fontWeight: endDate ? 400 : 200 }}>
+            {endDate ? fmt(endDate) : 'Select date'}
+          </div>
+        </div>
+      </button>
+
+      {/* Calendar dropdown */}
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 6px)', left:0, right:0, zIndex:300,
+          background:'#1c1810', border:`0.5px solid ${gold}`,
+          borderRadius:14, padding:'20px 18px 16px',
+          boxShadow:'0 16px 56px rgba(0,0,0,0.7)',
+        }}>
+          {/* Prompt */}
+          <div style={{ fontSize:11, color: selecting==='end' ? gold : 'rgba(245,240,232,0.45)', textAlign:'center' as const, marginBottom:14, letterSpacing:'0.12em', fontWeight:200 }}>
+            {selecting === 'start' || !startDate ? '✦  Select your arrival date' :
+             selecting === 'end' ? '✦  Now select your departure date' :
+             `✦  ${nights} night${nights!==1?'s':''} selected`}
+          </div>
+
+          {/* Month navigation */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+            <button onClick={canGoPrev ? prevMonth : undefined}
+              style={{ background:'transparent', border:'none', cursor: canGoPrev ? 'pointer' : 'default', color: canGoPrev ? 'rgba(245,240,232,0.6)' : 'rgba(245,240,232,0.15)', fontSize:18, padding:'4px 8px', fontFamily:'inherit', lineHeight:1 }}>
+              ‹
+            </button>
+            <div style={{ fontSize:13, color:theme.text, fontWeight:300, letterSpacing:'0.1em' }}>
+              {MONTHS[viewMonth]} {viewYear}
+            </div>
+            <button onClick={nextMonth}
+              style={{ background:'transparent', border:'none', cursor:'pointer', color:'rgba(245,240,232,0.6)', fontSize:18, padding:'4px 8px', fontFamily:'inherit', lineHeight:1 }}>
+              ›
+            </button>
+          </div>
+
+          {/* Day headers */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', marginBottom:4 }}>
+            {DAYS.map(d => (
+              <div key={d} style={{ textAlign:'center' as const, fontSize:10, color:'rgba(245,240,232,0.3)', fontWeight:300, letterSpacing:'0.08em', padding:'4px 0' }}>{d}</div>
+            ))}
+          </div>
+
+          {/* Day cells */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px 0' }}>
+            {cells.map((d, i) => {
+              if (!d) return <div key={i} />;
+              const state = dayState(d);
+              const iso   = toISO(d);
+              const isStart = state === 'start';
+              const isEnd   = state === 'end';
+              const inRange = state === 'in-range' || state === 'hover-range';
+              const isPast  = state === 'past';
+              const isEndpoint = isStart || isEnd;
+
+              return (
+                <div
+                  key={i}
+                  onMouseEnter={() => { if (startDate && !endDate) setHoverDate(iso); }}
+                  onMouseLeave={() => setHoverDate('')}
+                  onMouseDown={e => { e.preventDefault(); if (!isPast) handleDayClick(d); }}
+                  style={{
+                    textAlign:'center' as const,
+                    padding:'7px 0',
+                    cursor: isPast ? 'default' : 'pointer',
+                    background: isEndpoint ? gold : inRange ? 'rgba(212,175,55,0.12)' : 'transparent',
+                    borderRadius: isStart ? '6px 0 0 6px' : isEnd ? '0 6px 6px 0' : 0,
+                    transition:'background 0.08s',
+                  }}
+                >
+                  <div style={{
+                    width:30, height:30, lineHeight:'30px',
+                    margin:'0 auto',
+                    borderRadius: isEndpoint ? '50%' : 4,
+                    background: isEndpoint ? gold : 'transparent',
+                    fontSize:13,
+                    fontWeight: isEndpoint ? 500 : 300,
+                    color: isEndpoint ? '#0e0c08' : isPast ? 'rgba(245,240,232,0.18)' : inRange ? gold : theme.text,
+                    transition:'all 0.08s',
+                  }}>
+                    {d.getDate()}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Clear link */}
+          {(startDate || endDate) && (
+            <div style={{ marginTop:14, textAlign:'center' as const }}>
+              <button
+                onMouseDown={e => { e.preventDefault(); onRangeChange('','',0); setSelecting('start'); }}
+                style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:11, color:'rgba(245,240,232,0.28)', fontFamily:'inherit', letterSpacing:'0.1em', padding:'4px 8px' }}
+              >
+                Clear dates
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── CITY TYPEAHEAD ─────────────────────────────────────────────────────────
 function CityTypeahead({
   value, onChange, options, T: theme
@@ -3939,47 +4228,19 @@ const runBriefPlanner = (briefText: string) => {
 
         {/* ── 5. DATES ───────────────────────────────────────────────── */}
         <div style={{ marginBottom:44 }}>
-          <SectionLabel text="When are you travelling?" sub="Set both dates and nights updates automatically" />
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
-            <div>
-              <div style={{ fontSize:10, fontWeight:300, letterSpacing:'0.18em', color:'rgba(245,240,232,0.5)', textTransform:'uppercase', marginBottom:6 }}>Arrival date</div>
-              <input type="date" value={checkinDate} onChange={e => {
-                setCheckinDate(e.target.value);
-                // Auto-calculate nights if checkout also set
-                if (windowEnd && e.target.value) {
-                  const d1 = new Date(e.target.value);
-                  const d2 = new Date(windowEnd);
-                  const diff = Math.round((d2.getTime()-d1.getTime())/(1000*60*60*24));
-                  if (diff > 0 && diff <= 30) setNights(diff);
-                }
-              }} style={{ width:'100%', background:'rgba(255,255,255,0.03)', border:`0.5px solid ${checkinDate?T.gold:'rgba(255,255,255,0.15)'}`, color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit' }} />
-            </div>
-            <div>
-              <div style={{ fontSize:10, fontWeight:300, letterSpacing:'0.18em', color:'rgba(245,240,232,0.5)', textTransform:'uppercase', marginBottom:6 }}>Departure date</div>
-              <input type="date" value={windowEnd} min={checkinDate || undefined} onChange={e => {
-                setWindowEnd(e.target.value);
-                // Auto-calculate nights
-                if (checkinDate && e.target.value) {
-                  const d1 = new Date(checkinDate);
-                  const d2 = new Date(e.target.value);
-                  const diff = Math.round((d2.getTime()-d1.getTime())/(1000*60*60*24));
-                  if (diff > 0 && diff <= 30) setNights(diff);
-                }
-              }} style={{ width:'100%', background:'rgba(255,255,255,0.03)', border:`0.5px solid ${windowEnd?T.gold:'rgba(255,255,255,0.15)'}`, color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit' }} />
-            </div>
-          </div>
-          {checkinDate && windowEnd && (() => {
-            const d1 = new Date(checkinDate);
-            const d2 = new Date(windowEnd);
-            const diff = Math.round((d2.getTime()-d1.getTime())/(1000*60*60*24));
-            return diff > 0 ? (
-              <div style={{ fontSize:12, color:T.gold, fontWeight:400, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'8px 14px' }}>
-                ✦ {diff} night{diff!==1?'s':''} — {checkinDate} to {windowEnd}
-              </div>
-            ) : null;
-          })()}
+          <SectionLabel text="When are you travelling?" sub="Tap arrival then departure — nights calculated automatically" />
+          <DateRangePicker
+            startDate={checkinDate}
+            endDate={windowEnd}
+            onRangeChange={(start, end, n) => {
+              setCheckinDate(start);
+              setWindowEnd(end);
+              if (n > 0) setNights(n);
+            }}
+            T={T}
+          />
           {!checkinDate && (
-            <div style={{ fontSize:11, color:'rgba(245,240,232,0.32)', fontWeight:200 }}>
+            <div style={{ marginTop:10, fontSize:11, color:'rgba(245,240,232,0.32)', fontWeight:200 }}>
               Dates not required — your specialist can work with a flexible window
             </div>
           )}
