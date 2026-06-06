@@ -87,7 +87,7 @@ const GATEWAY_LEGS: Record<string, { fromLabel:string; toLabel:string; provider:
   'JNB→okavango-delta':   { fromLabel:'Johannesburg (JNB)', toLabel:'Okavango Delta',    provider:'Airlink or Fastjet JNB→Maun + Wilderness Air/MackAir to camp', duration:'~4h', estimatedCostZAR:9200, aiNote:'Fly Airlink (4Z) or Fastjet (TC) from OR Tambo to Maun (MUB). Then Wilderness Air or Mack Air light aircraft to your camp airstrip. 20kg soft bag limit on charter leg — strictly enforced.' },
   'JNB→madikwe':          { fromLabel:'Johannesburg (JNB)', toLabel:'Madikwe Reserve',   provider:'Federal Air JNB→Madikwe airstrip', duration:'~1h 15m', estimatedCostZAR:3200, aiNote:'Federal Air flies direct to Madikwe airstrip from OR Tambo Atlas Rd terminal. Daily at 10:00 & 13:00. Lodge vehicle meets on airstrip.' },
   'JNB→chobe-vic-falls':  { fromLabel:'Johannesburg (JNB)', toLabel:'Victoria Falls',    provider:'Airlink (4Z) or Fastjet (TC) JNB→VFA', duration:'~2h', estimatedCostZAR:6500, aiNote:'Direct Airlink or Fastjet from OR Tambo to Victoria Falls International (VFA). Multiple daily departures. Lodge transfer from VFA on arrival.' },
-  'JNB→cape-town':        { fromLabel:'Johannesburg (JNB)', toLabel:'Cape Town',         provider:'Airlink or FlySafair JNB→CPT', duration:'~2h', estimatedCostZAR:2800, aiNote:'Multiple daily flights OR Tambo → Cape Town International. Hotel transfer or Uber on arrival (~25min to V&A Waterfront).' },
+  'JNB→cape-town':        { fromLabel:'Johannesburg (JNB)', toLabel:'Cape Town',         provider:'Airlink / FlySafair / SAA JNB→CPT', duration:'~2h', estimatedCostZAR:2800, aiNote:'Multiple daily flights OR Tambo → Cape Town International. Airlink and FlySafair most frequent. ~30 min private transfer CPT → V&A Waterfront or Atlantic Seaboard on arrival.' },
   'CPT→kruger-sabi-sand': { fromLabel:'Cape Town (CPT)', toLabel:'Kruger / Sabi Sand',   provider:'Airlink CPT→JNB + Federal Air JNB→SZK', duration:'~2h 45m', estimatedCostZAR:8500, aiNote:'Morning departure from Cape Town recommended. Connect at OR Tambo — allow 2hrs. Federal Air from Atlas Rd terminal to Skukuza airstrip.' },
   'CPT→madikwe':          { fromLabel:'Cape Town (CPT)', toLabel:'Madikwe Reserve',      provider:'Airlink CPT→JNB + Federal Air JNB→Madikwe', duration:'~2h 45m', estimatedCostZAR:7200, aiNote:'Connect via OR Tambo. Allow 2hrs at JNB. Federal Air direct to Madikwe airstrip.' },
   'CPT→okavango-delta':   { fromLabel:'Cape Town (CPT)', toLabel:'Okavango Delta',       provider:'Airlink CPT→JNB + Airlink/Fastjet JNB→Maun + charter to camp', duration:'~5h 30m', estimatedCostZAR:12000, aiNote:'Full travel day. Fly CPT→JNB, connect JNB→MUB (Maun), then light aircraft to camp. 20kg soft bag limit on final leg.' },
@@ -282,18 +282,131 @@ const COMMERCIAL_FALLBACK_ZAR: Record<string, number> = {
 };
 
 const INTERNAL_LEGS: Record<string, InternalLeg & { road_viable?: boolean }> = {
-  'cape-town→kruger-sabi-sand': { fromLabel:'Cape Town', toLabel:'Sabi Sand', mode:'scheduled', provider:'Airlink CPT→JNB + Federal Air JNB→Skukuza', duration:'~2h 45m', estimatedCostZAR:12000, aiNote:'Morning departure from CPT recommended to catch the afternoon game drive.', bufferHours:3, road_viable:false },
-  'kruger-sabi-sand→okavango-delta': { fromLabel:'Sabi Sand', toLabel:'Okavango Delta', mode:'scheduled', provider:'Federal Air SZK→JNB + Airlink/Fastjet JNB→Maun + Wilderness Air/MackAir to camp', duration:'~6h 30m door-to-door', estimatedCostZAR:22000, aiNote:'Exit Sabi Sand via Federal Air to O.R. Tambo. Connect JNB→MUB (Maun) via Airlink or Fastjet — allow 2hrs at O.R. Tambo. Then Wilderness Air or Mack Air charter to your camp. Full travel day. Depart post-morning drive (~10:00), arrive camp ~17:00.', bufferHours:6, road_viable:false },
-  'okavango-delta→chobe-vic-falls': { fromLabel:'Okavango Delta', toLabel:'Chobe / Victoria Falls', mode:'charter', provider:'Air Botswana / Wilderness Air', duration:'~1h 30m', estimatedCostZAR:9500, aiNote:'Afternoon departure post-morning activity recommended.', bufferHours:1.5, road_viable:false },
-  'kruger-sabi-sand→chobe-vic-falls': { fromLabel:'Sabi Sand', toLabel:'Victoria Falls', mode:'scheduled', provider:'Federal Air → Airlink via JNB → Victoria Falls', duration:'~4h 30m', estimatedCostZAR:14000, aiNote:'Exit via Skukuza or Hoedspruit, connect through O.R. Tambo (JNB), fly Fastjet or Airlink to Victoria Falls. Allow 4.5hrs door-to-door. Journey Specialist confirms best routing.', bufferHours:4.5, road_viable:false },
-  'kruger-sabi-sand→cape-town': { fromLabel:'Sabi Sand', toLabel:'Cape Town', mode:'scheduled', provider:'Federal Air Skukuza→JNB + Airlink JNB→CPT', duration:'~3h', estimatedCostZAR:12000, aiNote:'Allow 2hr connection at O.R. Tambo.', bufferHours:2.5, road_viable:false },
-  'cape-town→okavango-delta': { fromLabel:'Cape Town', toLabel:'Okavango Delta', mode:'scheduled', provider:'Airlink CPT→JNB + Mack Air JNB→Maun', duration:'~4h', estimatedCostZAR:16500, aiNote:'Connect through Johannesburg. Afternoon arrival in Maun.', bufferHours:3.5, road_viable:false },
-  'cape-town→madikwe':        { fromLabel:'Cape Town', toLabel:'Madikwe',         mode:'scheduled', provider:'Airlink CPT→JNB + 3.5hr private drive or 45min charter', duration:'~4h total', estimatedCostZAR:11000, aiNote:'Fly CPT→JNB, then 3.5hr private drive north or 45min charter to Madikwe airstrip.', bufferHours:4, road_viable:false },
-  'kruger-sabi-sand→madikwe': { fromLabel:'Sabi Sand', toLabel:'Madikwe',         mode:'scheduled', provider:'Federal Air + Airlink JNB connection', duration:'~3h', estimatedCostZAR:9500, aiNote:'Connect via O.R. Tambo. Allow 2hr connection.', bufferHours:3, road_viable:false },
-  'madikwe→cape-town':        { fromLabel:'Madikwe', toLabel:'Cape Town',         mode:'scheduled', provider:'Road to JNB (3.5hr) + Airlink JNB→CPT', duration:'~4h total', estimatedCostZAR:11000, aiNote:'Early morning departure from Madikwe to catch morning flights from JNB.', bufferHours:4, road_viable:false },
-  'cape-town→chobe-vic-falls': { fromLabel:'Cape Town', toLabel:'Victoria Falls', mode:'scheduled', provider:'Airlink CPT→JNB + Air Zimbabwe or Fastjet JNB→VFA', duration:'~3h 30m', estimatedCostZAR:13500, aiNote:'Morning departure from CPT. Connect at O.R. Tambo — allow 2hr. Afternoon arrival at VFA.', bufferHours:3.5, road_viable:false },
-  'chobe-vic-falls→kruger-sabi-sand': { fromLabel:'Victoria Falls', toLabel:'Sabi Sand', mode:'charter', provider:'Charter VFA→Skukuza or scheduled VFA→JNB→Skukuza', duration:'~3h', estimatedCostZAR:15000, aiNote:'Specialist confirms best routing. VFA→JNB scheduled + Federal Air JNB→Skukuza most reliable.', bufferHours:3, road_viable:false },
-       
+  // ── CPT departures ──────────────────────────────────────────────────────
+  'cape-town→kruger-sabi-sand': {
+    fromLabel:'Cape Town', toLabel:'Sabi Sand', mode:'scheduled',
+    provider:'Airlink/CemAir CPT→HDS or CPT→MQP + FedAir Lowveld Shuttle to lodge',
+    duration:'~3h 30m', estimatedCostZAR:11500,
+    aiNote:'CPT→HDS Airlink 2x daily 07:00/13:00 (2h45) or CPT→MQP Airlink 2–3x daily 07:00 (2h40). FedAir Lowveld Shuttle HDS/MQP→lodge. Avoids JNB entirely. HDS for Timbavati/Klaserie/northern Sabi. MQP for Singita/Londolozi/southern Sabi.',
+    bufferHours:3, road_viable:false },
+  'cape-town→okavango-delta': {
+    fromLabel:'Cape Town', toLabel:'Okavango Delta', mode:'scheduled',
+    provider:'Airlink CPT→MUB direct (only nonstop) + Wilderness Air / Mack Air to camp',
+    duration:'~3h total + charter to camp', estimatedCostZAR:16500,
+    aiNote:'Airlink 4Z314 CPT→MUB dep 10:35 arr 13:05 daily. ONLY nonstop CPT–MUB. Book early — fills Jun–Sep. Wilderness Air or Mack Air charter to camp (15–45 min).',
+    bufferHours:3.5, road_viable:false },
+  'cape-town→chobe-vic-falls': {
+    fromLabel:'Cape Town', toLabel:'Victoria Falls', mode:'scheduled',
+    provider:'Airlink CPT→VFA direct daily or CPT→JNB→VFA',
+    duration:'~3h direct', estimatedCostZAR:13500,
+    aiNote:'Option 1 (preferred): Airlink CPT→VFA direct dep ~07:30 arr ~10:25. Option 2: CPT→JNB + Airlink JNB→VFA dep 11:35 arr 13:20 — allow 2h at OR Tambo.',
+    bufferHours:3, road_viable:false },
+  'cape-town→madikwe': {
+    fromLabel:'Cape Town', toLabel:'Madikwe', mode:'combo',
+    provider:'CPT→JNB (any carrier) + FedAir JNB→Madikwe or road',
+    duration:'~4h total', estimatedCostZAR:11000,
+    aiNote:'Fly CPT→JNB (from 06:00). FedAir dep JNB 10:00 or 13:00 from Atlas Rd terminal. Same-day achievable on early CPT departure catching 13:00 FedAir. Road: JNB→Madikwe 4.5–5.5hrs — practical for excess-luggage guests.',
+    bufferHours:4, road_viable:true },
+  // ── Kruger departures ───────────────────────────────────────────────────
+  'kruger-sabi-sand→cape-town': {
+    fromLabel:'Sabi Sand', toLabel:'Cape Town', mode:'scheduled',
+    provider:'FedAir Lowveld Shuttle to HDS/MQP/SZK + direct commercial to CPT',
+    duration:'~3h 30m', estimatedCostZAR:11500,
+    aiNote:'FedAir Lowveld Shuttle dep lodge ~09:00 arr MQP 10:35. Direct: HDS→CPT Airlink 2x daily (08:00/14:00, 2h45), SZK→CPT Airlink 2x daily, MQP→CPT Airlink 2–3x daily + FlySafair Tue/Sat. Routing via JNB only if direct unavailable.',
+    bufferHours:3, road_viable:false },
+  'kruger-sabi-sand→okavango-delta': {
+    fromLabel:'Sabi Sand', toLabel:'Okavango Delta', mode:'scheduled',
+    provider:'FedAir Lowveld Shuttle to MQP + Airlink/CemAir MQP→JNB + Airlink JNB→MUB + charter to camp',
+    duration:'~7h door-to-door (full travel day)', estimatedCostZAR:22000,
+    aiNote:'FedAir lodge→MQP dep 09:00 arr 10:35. MQP→JNB Airlink/CemAir multiple daily (~1h). JNB→MUB Airlink dep ~10:00 arr ~12:10. Wilderness Air/Mack Air to camp. Maun overnight strongly recommended.',
+    bufferHours:7, road_viable:false },
+  'kruger-sabi-sand→chobe-vic-falls': {
+    fromLabel:'Sabi Sand', toLabel:'Victoria Falls', mode:'scheduled',
+    provider:'FedAir to MQP + Airlink MQP→VFA direct Mon/Wed/Fri/Sun',
+    duration:'~3h door-to-door', estimatedCostZAR:14000,
+    aiNote:'Option 1 (Mon/Wed/Fri/Sun): FedAir lodge→MQP dep 09:00, Airlink 4Z476 MQP→VFA dep 11:35 arr 13:25 (1h50 direct). Option 2 (other days): MQP→JNB + Airlink JNB→VFA dep 11:35 arr 13:20 — allow 2h at OR Tambo.',
+    bufferHours:3, road_viable:false },
+  'kruger-sabi-sand→madikwe': {
+    fromLabel:'Sabi Sand', toLabel:'Madikwe', mode:'scheduled',
+    provider:'FedAir Lowveld Shuttle to MQP + Airlink MQP→JNB + FedAir JNB→Madikwe',
+    duration:'~4h door-to-door', estimatedCostZAR:10500,
+    aiNote:'FedAir lodge→MQP dep 09:00 arr 10:35. MQP→JNB Airlink/CemAir multiple daily. FedAir JNB→Madikwe dep 13:00 arr 14:00. Allow 2h at OR Tambo.',
+    bufferHours:4, road_viable:false },
+  // ── Okavango departures ─────────────────────────────────────────────────
+  'okavango-delta→cape-town': {
+    fromLabel:'Okavango Delta', toLabel:'Cape Town', mode:'scheduled',
+    provider:'Wilderness Air / Mack Air to MUB + Airlink MUB→CPT direct',
+    duration:'~3h 30m + charter exit', estimatedCostZAR:16500,
+    aiNote:'AM charter exit to MUB (arr ~09:00–10:00). Airlink 4Z314 reverse MUB→CPT dep ~13:30 arr ~16:00 (2h30). ONLY direct MUB→CPT — if missed, route MUB→JNB→CPT.',
+    bufferHours:4, road_viable:false },
+  'okavango-delta→kruger-sabi-sand': {
+    fromLabel:'Okavango Delta', toLabel:'Sabi Sand', mode:'scheduled',
+    provider:'Charter to MUB + Airlink MUB→JNB + FedAir / Airlink JNB→Lowveld',
+    duration:'~7h door-to-door', estimatedCostZAR:22000,
+    aiNote:'AM charter to MUB. Airlink/Air Botswana MUB→JNB dep ~12:00 arr ~14:10. JNB→Lowveld: FedAir dep 13:30 arr ~15:00 (lodge direct), or Airlink JNB→HDS/MQP multiple daily. Maun overnight removes all connection risk.',
+    bufferHours:7, road_viable:false },
+  'okavango-delta→chobe-vic-falls': {
+    fromLabel:'Okavango Delta', toLabel:'Victoria Falls', mode:'charter',
+    provider:'Wilderness Air / Mack Air to BBK + Mack Air MKB302 BBK→VFA',
+    duration:'~3h same-day via Kasane', estimatedCostZAR:9500,
+    aiNote:'PREFERRED: AM charter to Kasane (BBK) arr ~09:00. Mack Air MKB302 dep BBK 12:00 arr VFA 12:20 (20 min). Same-day achievable — only reliable option. JNB routing requires overnight.',
+    bufferHours:3, road_viable:false },
+  'okavango-delta→madikwe': {
+    fromLabel:'Okavango Delta', toLabel:'Madikwe', mode:'scheduled',
+    provider:'Charter to MUB + Airlink MUB→JNB + FedAir JNB→Madikwe (overnight JNB required)',
+    duration:'~5h + JNB overnight', estimatedCostZAR:18000,
+    aiNote:'AM charter to MUB. Airlink MUB→JNB dep ~12:00. Morning JNB→MUB flights depart before FedAir lands from Madikwe — same-day not possible. Overnight JNB standard.',
+    bufferHours:5, road_viable:false },
+  // ── Vic Falls departures ────────────────────────────────────────────────
+  'chobe-vic-falls→cape-town': {
+    fromLabel:'Victoria Falls', toLabel:'Cape Town', mode:'scheduled',
+    provider:'Airlink VFA→CPT direct or VFA→JNB→CPT',
+    duration:'~3h direct', estimatedCostZAR:13500,
+    aiNote:'Airlink VFA→CPT direct dep ~14:20 arr ~17:30 (~3h). Or VFA→JNB dep 14:00 arr 15:45 + JNB→CPT — allow 2.5h at OR Tambo.',
+    bufferHours:3, road_viable:false },
+  'chobe-vic-falls→kruger-sabi-sand': {
+    fromLabel:'Victoria Falls', toLabel:'Sabi Sand', mode:'scheduled',
+    provider:'Airlink VFA→MQP direct Mon/Wed/Fri/Sun + FedAir lodge hop',
+    duration:'~3h door-to-door', estimatedCostZAR:15000,
+    aiNote:'Airlink 4Z476 VFA→MQP dep 13:35 arr 15:25 (1h50 direct) Mon/Wed/Fri/Sun. FedAir Lowveld Shuttle MQP→lodge. Other days: VFA→JNB + FedAir/Airlink JNB→Lowveld next morning.',
+    bufferHours:3, road_viable:false },
+  'chobe-vic-falls→okavango-delta': {
+    fromLabel:'Victoria Falls / Chobe', toLabel:'Okavango Delta', mode:'charter',
+    provider:'Mack Air MKB301 VFA→BBK + Wilderness Air / Mack Air BBK→Delta camp',
+    duration:'~3h same-day via Kasane', estimatedCostZAR:9500,
+    aiNote:'Mack Air MKB301 VFA→BBK dep 12:00 arr 12:20 (20 min). Wilderness Air or Mack Air charter BBK→camp. Same-day achievable — only reliable option for this crossing.',
+    bufferHours:3, road_viable:false },
+  'chobe-vic-falls→madikwe': {
+    fromLabel:'Victoria Falls', toLabel:'Madikwe', mode:'scheduled',
+    provider:'VFA→JNB + FedAir JNB→Madikwe (overnight JNB required)',
+    duration:'~4h + JNB overnight', estimatedCostZAR:16000,
+    aiNote:'VFA→JNB dep 14:00 arr 15:45. FedAir JNB→Madikwe dep next day 10:00 or 13:00. Same-day not feasible. Private FedAir charter only same-day option.',
+    bufferHours:4, road_viable:false },
+  // ── Madikwe departures ──────────────────────────────────────────────────
+  'madikwe→cape-town': {
+    fromLabel:'Madikwe', toLabel:'Cape Town', mode:'combo',
+    provider:'FedAir Madikwe→JNB + any carrier JNB→CPT',
+    duration:'~3h 30m', estimatedCostZAR:11000,
+    aiNote:'FedAir dep MWD 11:15 arr JNB 12:15 or dep 14:30 arr 15:30. JNB→CPT Airlink/FlySafair/SAA multiple daily from ~12:00 (2h). Same-day achievable on 11:15 departure.',
+    bufferHours:3.5, road_viable:true },
+  'madikwe→kruger-sabi-sand': {
+    fromLabel:'Madikwe', toLabel:'Sabi Sand', mode:'combo',
+    provider:'FedAir Madikwe→JNB + FedAir/Airlink JNB→Lowveld',
+    duration:'~3h 30m', estimatedCostZAR:10500,
+    aiNote:'FedAir dep MWD 11:15 arr JNB 12:15. FedAir dep JNB 13:30 arr lodge ~15:00, or Airlink JNB→HDS/MQP multiple daily. Same-day Madikwe→Kruger achievable.',
+    bufferHours:3.5, road_viable:false },
+  'madikwe→chobe-vic-falls': {
+    fromLabel:'Madikwe', toLabel:'Victoria Falls', mode:'combo',
+    provider:'FedAir Madikwe→JNB + Airlink JNB→VFA (overnight JNB recommended)',
+    duration:'~4h + overnight', estimatedCostZAR:16000,
+    aiNote:'FedAir dep MWD 11:15 arr JNB 12:15. Airlink JNB→VFA dep 11:35 — too tight. Overnight JNB standard recommendation.',
+    bufferHours:4, road_viable:false },
+  'madikwe→okavango-delta': {
+    fromLabel:'Madikwe', toLabel:'Okavango Delta', mode:'combo',
+    provider:'FedAir Madikwe→JNB + Airlink JNB→MUB (overnight JNB required)',
+    duration:'~5h + overnight', estimatedCostZAR:18000,
+    aiNote:'FedAir dep MWD 11:15 arr JNB 12:15. JNB→MUB Airlink dep ~10:00 — departs before FedAir lands. Overnight Johannesburg is standard.',
+    bufferHours:5, road_viable:false },
 };
 
 function getInternalLeg(fromSlug: string, toSlug: string): InternalLeg | null {
@@ -1443,101 +1556,222 @@ function buildTransferOptions(
   commercialMetaByRoute?: Record<string, any>,
   originLodge?: string,
 ): TransferOption[] {
-  // Cape Town arrival: CityTransferStrip handles the hotel transfer last-mile.
-  // The inter-regional commercial flight INTO CPT is still built here — do not bail out.
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const fmtT = (iso?: string) => {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
+    catch { return ''; }
+  };
+  const durStr = (min?: number) => min
+    ? `${Math.floor(min/60)}h${min%60?` ${min%60}m`:''}`
+    : null;
 
+  // ── Cape Town as DESTINATION: commercial flight arrives CPT, city transfer handled by CityTransferStrip ──
+  // We still build the commercial leg card (e.g. Sabi Sand → CPT) so the tile shows.
+  // Last mile = none (CityTransferStrip covers CPT airport → hotel separately).
+  if (toSlug === 'cape-town') {
+    const originHub = originHubAirport(originLodge ?? '', fromSlug);
+    const routeKey  = `${originHub}-CPT`;
+    const liveFare  = commercialFareZarByRoute?.[routeKey];
+    const fallback  = COMMERCIAL_FALLBACK_ZAR['CPT'] ?? 2800;
+    const meta      = commercialMetaByRoute?.[routeKey];
+
+    // Exit leg (lodge → origin hub)
+    const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
+    const exitRec     = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
+    const exitZar     = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
+    const commercialZar = Math.round((liveFare ?? fallback) * pax);
+    const isEst       = liveFare == null;
+
+    const airline   = meta?.carrier ?? null;
+    const depT      = fmtT(meta?.departing_at);
+    const arrT      = fmtT(meta?.arriving_at);
+    const stops     = typeof meta?.stops === 'number' ? (meta.stops===0?'direct':`${meta.stops} stop`) : '';
+    const durH      = durStr(meta?.duration_min) ?? '';
+    const flightDesc = airline
+      ? [airline, (depT&&arrT)?`${depT}\u2192${arrT}`:null, stops, durH].filter(Boolean).join(' \u00b7 ')
+      : `${originHub} \u2192 CPT`;
+
+    // Build one option per carrier we know serves this route
+    // Primary: live Duffel result; secondaries: known carriers with adjusted fare
+    const carriers: Array<{code:string;name:string;adjust:number}> = [];
+    if (originHub === 'MQP' || originHub === 'HDS' || originHub === 'SZK') {
+      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
+      carriers.push({code:'5Z',name:'CemAir', adjust:0.90});
+      if (originHub === 'MQP') carriers.push({code:'FS',name:'FlySafair',adjust:0.75});
+    } else if (originHub === 'MUB') {
+      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
+    } else if (originHub === 'VFA' || originHub === 'LVI') {
+      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
+      carriers.push({code:'TC',name:'Fastjet',adjust:1.05});
+    } else {
+      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
+      carriers.push({code:'FS',name:'FlySafair',adjust:0.75});
+    }
+
+    const options: TransferOption[] = carriers.map((c, i) => {
+      const adjFare = Math.round((liveFare ?? fallback) * c.adjust);
+      const totalZar = exitZar + Math.round(adjFare * pax);
+      const chainParts = [
+        exitRec ? exitRec.label : null,
+        `${c.name} ${originHub}\u2192CPT`,
+      ].filter(Boolean);
+
+      return {
+        id: i === 0 ? 'recommended' : `${c.code}-${i}`,
+        mode: 'commercial' as TransferOption['mode'],
+        icon: '\u2708',
+        label: `${c.name} \u2192 Cape Town`,
+        provider: chainParts.join('  \u2192  '),
+        duration: durStr((exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 150)) ?? '~3h 30m',
+        estimatedCostZAR: totalZar,
+        badges: i === 0
+          ? [{text:'\u2726 Recommended', color:T.gold}, ...(isEst?[{text:'Est.',color:T.textDim}]:[]) ]
+          : isEst ? [{text:'Est.',color:T.textDim}] : [],
+        aiNote: i === 0 && meta
+          ? `Live fare: ${flightDesc}. Airport \u2192 hotel transfer handled separately.`
+          : `${c.name} ${originHub}\u2192CPT. Indicative fare${i>0?' \u00b7 '+Math.round((1-c.adjust)*100)+'% below Airlink':''}. Airport transfer handled separately.`,
+        recommended: i === 0,
+      };
+    });
+
+    return options;
+  }
+
+  // ── Standard inter-regional: EXIT + COMMERCIAL + ARRIVAL ─────────────────
   const arrivalLastMiles = lastMileFor(destLodge ?? '', toSlug);
+
+  // If no last-mile data, fall back to INTERNAL_LEGS static entry
   if (!arrivalLastMiles.length) {
     const leg = getInternalLeg(fromSlug, toSlug);
     if (!leg) return [];
-    return [{ id:'recommended', mode:leg.mode==='charter'?'charter':leg.mode==='road'?'road':'commercial',
-      icon: leg.mode==='charter'?'✈':leg.mode==='road'?'🚗':'🛫',
-      label: leg.mode==='charter'?'Private Charter':leg.mode==='road'?'Road Transfer':'Commercial Flight',
-      provider: leg.provider, duration: leg.duration, estimatedCostZAR: leg.estimatedCostZAR,
-      badges:[{text:'✦ Recommended',color:T.gold}], aiNote: leg.aiNote, recommended:true }];
+    return [{
+      id: 'recommended',
+      mode: leg.mode === 'charter' ? 'charter' : leg.mode === 'road' ? 'road' : 'commercial' as TransferOption['mode'],
+      icon: leg.mode === 'charter' ? '\u2708' : leg.mode === 'road' ? '\uD83D\uDE97' : '\uD83D\uDEEB',
+      label: leg.provider,
+      provider: leg.provider,
+      duration: leg.duration,
+      estimatedCostZAR: leg.estimatedCostZAR,
+      badges: [{text:'\u2726 Recommended', color:T.gold}],
+      aiNote: leg.aiNote,
+      recommended: true,
+    }];
   }
 
-  const iconFor = (m: string) => m==='charter'?'✈':m==='road'?'🚗':m==='mackair'||m==='wilderness'||m==='fedair'?'🛩':'🛫';
-  const fmtT = (iso?: string) => { if (!iso) return ''; try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } };
-  const durStr = (min?: number) => min ? `${Math.floor(min/60)}h${min%60?` ${min%60}m`:''}` : null;
-
-  // EXIT leg: origin lodge -> origin hub. Cape Town origin = none (fly direct from CPT).
+  // EXIT leg from origin
   const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
-  const exitRec = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
-  const originHub = originHubAirport(originLodge ?? '', fromSlug);
+  const exitRec     = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
+  const originHub   = originHubAirport(originLodge ?? '', fromSlug);
 
-  // One transfer OPTION per arrival last-mile (e.g. FedAir vs charter into Madikwe).
+  // Build one option per arrival last-mile
   return arrivalLastMiles.map((arr, i) => {
-    const destHub = arr.fromAirport;                 // commercial flight LANDS here
-    const routeKey = `${originHub}-${destHub}`;       // e.g. "MUB-JNB"
+    const destHub   = arr.fromAirport;
+    const routeKey  = `${originHub}-${destHub}`;
+    const needComm  = originHub !== destHub;
 
-    // COMMERCIAL hub->hub fare (per person). Live Duffel by route, else fallback by dest hub.
-    const liveFare = commercialFareZarByRoute?.[routeKey];
-    const fallback = COMMERCIAL_FALLBACK_ZAR[destHub] ?? 4000;
-    const needCommercial = originHub !== destHub;     // same hub => no commercial leg
-    const commercialPerPax = needCommercial ? (liveFare ?? fallback) : 0;
-    const isEstimate = needCommercial && liveFare == null;
+    const liveFare  = needComm ? (commercialFareZarByRoute?.[routeKey] ?? null) : null;
+    const fallback  = needComm ? (COMMERCIAL_FALLBACK_ZAR[destHub] ?? 4000) : 0;
+    const isEst     = needComm && liveFare == null;
 
-    // EXIT leg cost (origin lodge -> origin hub), per the recommended exit option.
-    const exitZar = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
-    // ARRIVAL leg cost (dest hub -> dest lodge).
-    const arrivalZar = lastMileZar(arr, usdToZar, pax);
-    // COMMERCIAL cost in ZAR for all pax.
-    const commercialZar = Math.round(commercialPerPax * pax);
+    const meta      = commercialMetaByRoute?.[routeKey];
+    const exitZar   = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
+    const arrZar    = lastMileZar(arr, usdToZar, pax);
+    const commZar   = needComm ? Math.round((liveFare ?? fallback) * pax) : 0;
+    const totalZar  = exitZar + commZar + arrZar;
 
-    const totalZar = exitZar + commercialZar + arrivalZar;
+    // Build commercial descriptor with live Duffel data where available
+    const airline   = meta?.carrier ?? null;
+    const depT      = fmtT(meta?.departing_at);
+    const arrT      = fmtT(meta?.arriving_at);
+    const stops     = typeof meta?.stops === 'number' ? (meta.stops===0?'Nonstop':`${meta.stops} stop`) : '';
+    const durH      = durStr(meta?.duration_min) ?? '';
 
-    // Commercial flight descriptor from meta.
-    const meta = commercialMetaByRoute?.[routeKey];
-    const airline = meta?.carrier ? String(meta.carrier).replace(/ Airways$/,'') : null;
-    const depT = fmtT(meta?.departing_at), arrT = fmtT(meta?.arriving_at);
-    const stops = meta?.stops, durH = durStr(meta?.duration_min);
-    const flightBits = [airline, (depT&&arrT)?`${depT}→${arrT}`:null,
-      (typeof stops==='number')?(stops===0?'direct':`${stops} stop${stops>1?'s':''}`):null, durH].filter(Boolean);
-    const commercialLine = needCommercial ? (flightBits.length ? flightBits.join(' · ') : `${originHub}→${destHub}`) : null;
+    // For the commercial line, use live data if available — else use origin/dest hub codes
+    const commercialLine = needComm
+      ? (airline && depT && arrT
+          ? `${airline} ${originHub} ${depT}\u2192${destHub} ${arrT}${stops?' \u00b7 '+stops:''}${durH?' \u00b7 '+durH:''}`
+          : `${originHub} \u2192 ${destHub}`)
+      : null;
 
-    // Build the full chain descriptor: "MackAir lodge→MUB  ·  Airlink MUB→JNB  ·  FedAir JNB→Madikwe"
-    const chainBits = [
-      exitRec ? `${exitRec.label}` : null,
-      commercialLine,
-      arr.label,
-    ].filter(Boolean);
-    const chainLine = chainBits.join('  →  ');
+    // Exit leg label (use the actual lastMile label, not hardcoded text)
+    const exitLabel = exitRec?.label ?? null;
+
+    // Arrival leg label (from the LastMile — correct airport is embedded in the note)
+    // Replace generic "JNB → Lodge" with correct departure airport
+    const arrLabelFixed = arr.label
+      .replace(/JNB\s*(?:→|->)\s*Lodge/i, `${destHub} \u2192 Lodge`)
+      .replace(/JNB\s*(?:→|->)\s*Madikwe/i, `${destHub} \u2192 Madikwe`);
+
+    const chainParts = [exitLabel, commercialLine, arrLabelFixed].filter(Boolean);
+    const chainLine  = chainParts.join('  \u2192  ');
+
+    const totalMin  = (exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 0) + arr.durationMin;
 
     const badges: Array<{text:string;color:string}> = [];
-    if (arr.recommended) badges.push({ text:'✦ Recommended', color:T.gold });
-    if (arr.perCharter)  badges.push({ text:'Private charter', color:'#a78bfa' });
-    if (isEstimate)      badges.push({ text:'Est. — confirmed by specialist', color:T.textDim });
+    if (arr.recommended && i === 0) badges.push({text:'\u2726 Recommended', color:T.gold});
+    if (arr.perCharter) badges.push({text:'Private charter', color:'#a78bfa'});
+    if (isEst) badges.push({text:'Est. \u00b7 confirmed at booking', color:T.textDim});
 
-    const totalMin = (exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 0) + arr.durationMin;
+    // aiNote: use the LastMile note for the arrival leg, prepend commercial detail
+    const noteBase = arr.note ?? '';
+    const aiNote   = [
+      commercialLine ? `Commercial leg: ${commercialLine}.` : null,
+      noteBase,
+      isEst ? 'Commercial fare indicative until dates confirmed.' : null,
+    ].filter(Boolean).join(' ');
 
     return {
       id: arr.recommended ? 'recommended' : `${arr.mode}-${i}`,
       mode: (arr.mode==='charter'?'charter':arr.mode==='road'?'road':'commercial') as TransferOption['mode'],
-      icon: iconFor(arr.mode),
-      label: arr.label,
+      icon: arr.mode==='charter' ? '\u2708' : arr.mode==='road' ? '\uD83D\uDE97' : '\uD83D\uDEEB',
+      label: arrLabelFixed,
       provider: chainLine,
-      duration: totalMin ? `~${durStr(totalMin)} total door-to-door` : `${arr.durationMin} min final leg`,
+      duration: totalMin ? `~${durStr(totalMin)} total door-to-door` : arr.durationMin ? `~${durStr(arr.durationMin)} final leg` : '',
       estimatedCostZAR: totalZar,
       badges,
-      aiNote: `${commercialLine ? `Commercial leg: ${commercialLine}. ` : ''}${arr.note ?? ''}${isEstimate ? ' Commercial fare estimated until dates confirmed.' : ''}`.trim(),
+      aiNote,
       recommended: !!arr.recommended,
     };
   });
 }
 
 
+
+
+
 // ── AIRLINE METADATA for logo badges ─────────────────────────────────────────
 const AIRLINE_META: Record<string,{name:string;code:string;color:string}> = {
-  'FA':    {name:'Federal Air', code:'FA', color:'#1a3a6e'},
-  'FedAir':{name:'Federal Air', code:'FA', color:'#1a3a6e'},
-  '4Z':    {name:'Airlink',     code:'4Z', color:'#d4341a'},
-  'Airlink':{name:'Airlink',   code:'4Z', color:'#d4341a'},
-  'FA203': {name:'Federal Air', code:'FA', color:'#1a3a6e'},
-  'TC':    {name:'Fastjet',     code:'TC', color:'#f97316'},
-  'Fastjet':{name:'Fastjet',   code:'TC', color:'#f97316'},
-  'WA':    {name:'Wilderness Air', code:'WA', color:'#2d6a4f'},
-  'MA':    {name:'Mack Air',   code:'MA', color:'#5e3a1a'},
+  // FedAir
+  'FA':         {name:'Federal Air',    code:'FA', color:'#1a3a6e'},
+  'FedAir':     {name:'Federal Air',    code:'FA', color:'#1a3a6e'},
+  'Federal Air':{name:'Federal Air',    code:'FA', color:'#1a3a6e'},
+  // Airlink
+  '4Z':         {name:'Airlink',        code:'4Z', color:'#c0392b'},
+  'Airlink':    {name:'Airlink',        code:'4Z', color:'#c0392b'},
+  // CemAir
+  '5Z':         {name:'CemAir',         code:'5Z', color:'#2c3e50'},
+  'CemAir':     {name:'CemAir',         code:'5Z', color:'#2c3e50'},
+  // FlySafair
+  'FA_FS':      {name:'FlySafair',      code:'FS', color:'#e67e22'},
+  'FlySafair':  {name:'FlySafair',      code:'FS', color:'#e67e22'},
+  'FS':         {name:'FlySafair',      code:'FS', color:'#e67e22'},
+  // Fastjet
+  'TC':         {name:'Fastjet',        code:'TC', color:'#d35400'},
+  'Fastjet':    {name:'Fastjet',        code:'TC', color:'#d35400'},
+  // SAA
+  'SA':         {name:'SAA',            code:'SA', color:'#1a5276'},
+  'SAA':        {name:'SAA',            code:'SA', color:'#1a5276'},
+  // Air Botswana
+  'BP':         {name:'Air Botswana',   code:'BP', color:'#1e8449'},
+  'Air Botswana':{name:'Air Botswana',  code:'BP', color:'#1e8449'},
+  // Kenya Airways
+  'KQ':         {name:'Kenya Airways',  code:'KQ', color:'#922b21'},
+  // Charter operators
+  'WA':         {name:'Wilderness Air', code:'WA', color:'#1d6a54'},
+  'Wilderness Air':{name:'Wilderness Air',code:'WA',color:'#1d6a54'},
+  'MA':         {name:'Mack Air',       code:'MA', color:'#5d4037'},
+  'Mack Air':   {name:'Mack Air',       code:'MA', color:'#5d4037'},
 };
 
 function AirlineBadge({ code, size=28 }: { code:string; size?:number }) {
@@ -1612,14 +1846,23 @@ function buildTransferLegs(opt: any, meta?: any): TransferLeg[] {
       });
 
     } else if (isFedAir) {
-      const fRoute = routeStr || (from ? from : 'JNB → Lodge');
-      // FedAir: correct policy — standard 20kg hard cases OK, X Class for 32kg
+      // Extract the actual hub airport from the chain part (e.g. "MQP → Lodge", "HDS → Lodge")
+      // Never hardcode JNB — use whatever airport is in the provider string
+      const hubMatch = p.match(/\b(JNB|CPT|MQP|HDS|SZK|MUB|VFA|BBK)\b/i);
+      const hubCode  = hubMatch?.[1]?.toUpperCase() ?? 'JNB';
+      // Detect service type from the chain text
+      const isLowveld  = /Lowveld|Shuttle|flt\s*3|dep\s*09:00|MQP|HDS|SZK/i.test(p);
+      const isMadikwe  = /Madikwe|MAD|MWD/i.test(p);
+      const destLabel  = isMadikwe ? 'Madikwe' : 'Lodge airstrip';
+      const schedDetail = isLowveld
+        ? 'FedAir Lowveld Shuttle · dep 09:00 arr ~10:35 · 20kg (hard cases OK)'
+        : 'Daily 10:00 & 13:00 · ~60 min · 20kg (hard cases OK)';
       legs.push({
         type: 'airline', badge: 'FA',
         primary: 'Federal Air',
-        route: fRoute,
-        detail: 'Daily 10:00 & 13:00 · ~55–65 min · Standard 20kg (hard cases OK)',
-        note: 'Atlas Rd terminal, OR Tambo · X Class available for 32kg + large cases (+25%)',
+        route: `${hubCode} → ${destLabel}`,
+        detail: schedDetail,
+        note: 'Atlas Rd terminal, OR Tambo · X Class: 32kg + hard cases (+25%)',
         noteColor: T.textDim,
       });
 
@@ -1632,9 +1875,13 @@ function buildTransferLegs(opt: any, meta?: any): TransferLeg[] {
         : isAirlink ? '4Z' : isCemAir ? '5Z' : isFlySafair ? 'FA'
         : isFastjet ? 'TC' : isSAA ? 'SA' : isAirBots ? 'BP' : '✈';
 
+      // For live Duffel data, pull origin/dest from meta.origin/meta.destination
+      // The regex on the provider string is unreliable for mid-chain parts
+      const liveOrigin = (meta?.origin ?? from ?? '').toString().toUpperCase().slice(0,3);
+      const liveDest   = (meta?.destination ?? to ?? '').toString().toUpperCase().slice(0,3);
       const liveRoute = hasLive && depTime && arrTime
-        ? `${from || '?'} ${depTime}  →  ${to || '?'} ${arrTime}`
-        : routeStr;
+        ? `${liveOrigin || '?'} ${depTime}  →  ${liveDest || '?'} ${arrTime}`
+        : (liveOrigin && liveDest) ? `${liveOrigin} → ${liveDest}` : routeStr;
 
       const liveDetail = hasLive
         ? [stops, durStr, 'Economy'].filter(Boolean).join(' · ')
@@ -1677,6 +1924,16 @@ function buildTransferLegs(opt: any, meta?: any): TransferLeg[] {
         detail: '20kg soft bag · no hard cases · private airstrip',
         note: 'Lands directly at camp airstrip',
         noteColor: T.green,
+      });
+
+    } else if (/airport.*transfer|transfer.*hotel|hotel.*transfer/i.test(p)) {
+      // CPT last-mile: airport to hotel road transfer
+      legs.push({
+        type: 'road', badge: '🚗',
+        primary: 'Airport transfer to hotel',
+        detail: '30–45 min · CPT → hotel · private vehicle',
+        note: 'Driver meets at arrivals · luggage assistance included',
+        noteColor: T.textDim,
       });
 
     } else if (isLodge) {
@@ -2082,17 +2339,31 @@ function TransferCarousel({
   }
 
   const cur = options[activeIdx] ?? options[0];
-  const routeKey = Object.keys(commercialMeta??{}).find(k => cur.provider?.includes(k.split('-')[0]) && cur.provider?.includes(k.split('-')[1]));
+
+  // Derive the correct routeKey from the provider string's airport codes
+  // e.g. provider "FedAir ...  →  Airlink MQP→CPT  →  ..." → routeKey "MQP-CPT"
+  const routeKey = (() => {
+    const airports = (cur.provider ?? '').match(/\b(JNB|CPT|MQP|HDS|SZK|MUB|VFA|BBK|LVI|GBE)\b/gi)?.map(a => a.toUpperCase()) ?? [];
+    // routeKey is origin_hub-dest_hub — the two COMMERCIAL airports (skip lodge-side codes)
+    const origin = originHubAirport(originLodge ?? '', fromSlug);
+    const destHub = airports.find(a => a !== origin && ['CPT','JNB','MQP','HDS','SZK','MUB','VFA','BBK','LVI'].includes(a)) ?? '';
+    return destHub ? `${origin}-${destHub}` : '';
+  })();
   const liveMeta = routeKey ? (commercialMeta??{})[routeKey] : undefined;
   const legs = buildTransferLegs(cur, liveMeta);
+
+  // FIX 6: auto-select the active option as user scrolls — updates grandTotal immediately
+  useEffect(() => {
+    if (ready && cur) onSelect(cur.id);
+  }, [activeIdx, ready]); // eslint-disable-line
 
   return (
     <div style={{ marginBottom:24 }}>
       <TransferHeader fromLabel={fromLabel} toLabel={toLabel}/>
       {!ready ? (
-        <div style={{ background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.12)', borderRadius:12, padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
+        <div style={{ background:'rgba(212,175,55,0.04)', border:`0.5px solid ${T.gold}18`, borderRadius:10, padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
           <div className="spinner" style={{width:14,height:14,borderWidth:2}}/>
-          <div style={{fontSize:12,color:'rgba(96,165,250,0.6)'}}>Checking transfer options…</div>
+          <div style={{fontSize:11, color:T.textDim, fontFamily:"'Jost',sans-serif", letterSpacing:'0.04em'}}>Checking live fares…</div>
         </div>
       ) : (
         <JourneyCardBody
@@ -2635,7 +2906,7 @@ useEffect(() => {
     for (let i = 0; i < itinerary.cities.length - 1; i++) {
       const fromSlug = CITY_TO_SLUG[itinerary.cities[i].city.toLowerCase().trim()] ?? '';
       const toSlug   = CITY_TO_SLUG[itinerary.cities[i+1].city.toLowerCase().trim()] ?? '';
-      if (!fromSlug || !toSlug || toSlug === 'cape-town') continue; // CPT dest handled separately
+      if (!fromSlug || !toSlug) continue;
       const originHub = originHubAirport(lodgeFor(fromSlug, i), fromSlug);
       const destHub   = defaultCommercialTarget(lodgeFor(toSlug, i+1), toSlug);
       if (!originHub || !destHub || originHub === destHub) continue; // same hub = no commercial leg
