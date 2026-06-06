@@ -3221,9 +3221,22 @@ const toggleTheme = (id: string) =>
     14: 490000,
     21: 735000,
   };
+
+  // Per-night spend basis: average luxury lodge all-in (accommodation + domestic flights + transfers)
+  // Adult: ~R18,000/night. Child uplift: ~40% (separate bed/room share + child activity fees).
+  // Infants (<2): no meaningful cost addition — ignore.
+  const AVG_NIGHTLY_PER_ADULT = 18000;
+  const CHILD_UPLIFT_FACTOR   = 0.40; // fraction of adult nightly rate per child
+
   useEffect(() => {
-    if (BUDGET_DEFAULTS[nights]) setBudget(BUDGET_DEFAULTS[nights]);
-  }, [nights]);
+    // Base budget: nights × adults × per-night rate, snapped to nearest R10k
+    const base = nights * adults * AVG_NIGHTLY_PER_ADULT;
+    const childAdd = nights * children * AVG_NIGHTLY_PER_ADULT * CHILD_UPLIFT_FACTOR;
+    const raw = base + childAdd;
+    // Snap to nearest R10,000, minimum R80,000
+    const snapped = Math.max(80000, Math.round(raw / 10000) * 10000);
+    setBudget(snapped);
+  }, [nights, adults, children]);
   const [origin,      setOrigin]      = useState('JNB');
   const [intlOrigin,  setIntlOrigin]  = useState('LHR');
   const [researchStep,setResearchStep]= useState(0);
@@ -4274,7 +4287,8 @@ const runBriefPlanner = (briefText: string) => {
             <SectionLabel text="Total budget" noMargin />
             <div style={{ textAlign:'right' as const }}>
               <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:38, fontWeight:300, color:T.gold, lineHeight:1 }}>{fmt(budget)}</div>
-              {adults>0 && <div style={{ fontSize:11, color:'rgba(245,240,232,0.28)', marginTop:4, fontWeight:200, letterSpacing:'0.06em' }}>approx {fmt(Math.round(budget/adults))} per person</div>}
+              {adults>0 && <div style={{ fontSize:11, color:'rgba(245,240,232,0.28)', marginTop:4, fontWeight:200, letterSpacing:'0.06em' }}>approx {fmt(Math.round(budget/(adults + children)))} per person</div>}
+              {children>0 && <div style={{ fontSize:10, color:'rgba(212,175,55,0.45)', marginTop:2, fontWeight:200, letterSpacing:'0.06em' }}>includes {children} child{children>1?'ren':''} — adjusted for family accommodation</div>}
             </div>
           </div>
           <div style={{ paddingTop:18 }}>
@@ -4289,7 +4303,8 @@ const runBriefPlanner = (briefText: string) => {
           </div>
         </div>
 
-        {/* ── DEPARTURE AIRPORT ─────────────────────────────────────── */}
+        {/* ── DEPARTURE AIRPORT — only when flights not yet confirmed ── */}
+        {(flightIntent === 'flexible' || !flightIntent) && (
         <div style={{ marginBottom:44 }}>
           <SectionLabel text="Flying home from?" sub="We'll arrange your final lodge-to-airport transfer to match" />
           <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -4312,6 +4327,7 @@ const runBriefPlanner = (briefText: string) => {
             })}
           </div>
         </div>
+        )}
 
         <InputDivider />
 
