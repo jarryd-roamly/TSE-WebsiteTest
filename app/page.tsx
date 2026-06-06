@@ -1535,7 +1535,21 @@ function DateSelector({ checkinDate, setCheckinDate, dateMode, setDateMode, flex
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSFER CAROUSEL
 // ─────────────────────────────────────────────────────────────────────────────
-type TransferOption = { id:string; mode:'road'|'commercial'|'charter'|'combo'|'boat'; icon:string; label:string; provider:string; duration:string; estimatedCostZAR:number; badges:Array<{text:string;color:string}>; aiNote:string; recommended:boolean; };
+// Structured leg data passed alongside the provider string.
+// buildTransferLegs reads from structuredLegs when present — avoids all string parsing.
+type StructuredLeg = {
+  kind:    'exit'|'commercial'|'arrival'|'road'|'info';
+  badge:   string;           // airline IATA code, 'road', 'charter', 'info'
+  name:    string;           // "Airlink", "Federal Air", "Private transfer"
+  from?:   string;           // IATA e.g. "CPT"
+  to?:     string;           // IATA e.g. "MQP" or label "Lodge airstrip"
+  depTime?: string;          // "08:30"
+  arrTime?: string;          // "11:07"
+  detail?: string;           // schedule / baggage info
+  note?:   string;           // secondary line
+  noteColor?: string;
+};
+type TransferOption = { id:string; mode:'road'|'commercial'|'charter'|'combo'|'boat'; icon:string; label:string; provider:string; duration:string; estimatedCostZAR:number; badges:Array<{text:string;color:string}>; aiNote:string; recommended:boolean; structuredLegs?: StructuredLeg[]; };
 
 // [Transfers v2] Build options from the property-aware transfers module.
 //   Each option = COMMERCIAL leg (Duffel fare if supplied, else estimated fallback)
@@ -1556,19 +1570,81 @@ function buildTransferOptions(
   commercialMetaByRoute?: Record<string, any>,
   originLodge?: string,
 ): TransferOption[] {
-  // ── Helpers ───────────────────────────────────────────────────────────────
+
   const fmtT = (iso?: string) => {
     if (!iso) return '';
     try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
     catch { return ''; }
   };
-  const durStr = (min?: number) => min
-    ? `${Math.floor(min/60)}h${min%60?` ${min%60}m`:''}`
-    : null;
+  const durStr = (min?: number) =>
+    min ? `${Math.floor(min/60)}h${min%60?` ${min%60}m`:''}` : '';
 
-  // ── Cape Town as DESTINATION: commercial flight arrives CPT, city transfer handled by CityTransferStrip ──
-  // We still build the commercial leg card (e.g. Sabi Sand → CPT) so the tile shows.
-  // Last mile = none (CityTransferStrip covers CPT airport → hotel separately).
+  // ── Helper: build a structured FedAir leg ───────────────────────────────
+  const fedairLeg = (hub: string, dest: string, isLowveld: boolean, isMadikwe: boolean): StructuredLeg => ({
+    kind: 'arrival',
+    badge: 'FA',
+    name: 'Federal Air',
+    from: hub,
+    to: dest,
+    detail: isLowveld
+      ? 'Lowveld Shuttle · dep 09:00 arr ~10:35 · 20kg (hard cases OK)'
+      : isMadikwe
+      ? 'Daily 10:00 & 13:00 · ~60 min · 20kg (hard cases OK)'
+      : 'Daily 10:00 & 13:00 · ~55–65 min · 20kg (hard cases OK)',
+    note: 'OR Tambo Atlas Rd terminal · X Class: 32kg + hard cases (+25%)',
+    noteColor: 'rgba(212,175,55,0.5)',
+  });
+
+  // ── Helper: build a structured commercial leg from meta or codes ─────────
+  const commercialLeg = (originHub: string, destHub: string, meta: any, carrierName: string, carrierCode: string): StructuredLeg => {
+    const depT = fmtT(meta?.departing_at);
+    const arrT = fmtT(meta?.arriving_at);
+    const hasLive = meta && (meta.carrier || meta.departing_at);
+    const stops = typeof meta?.stops === 'number' ? (meta.stops===0?'Nonstop':`${meta.stops} stop`) : '';
+    const dur   = durStr(meta?.duration_min);
+    return {
+      kind: 'commercial',
+      badge: hasLive ? (meta.carrier ?? carrierCode) : carrierCode,
+      name: hasLive ? (AIRLINE_META[meta.carrier]?.name ?? meta.carrier ?? carrierName) : carrierName,
+      from: originHub,
+      to: destHub,
+      depTime: depT || undefined,
+      arrTime: arrT || undefined,
+      detail: hasLive
+        ? [stops, dur, 'Economy · 20kg checked'].filter(Boolean).join(' · ')
+        : 'Economy · 20kg checked · fare confirmed at booking',
+      note: hasLive ? undefined : 'Indicative fare · Duffel live pricing on confirmed dates',
+      noteColor: 'rgba(212,175,55,0.4)',
+    };
+  };
+
+  // ── Helper: exit leg ─────────────────────────────────────────────────────
+  const exitLeg = (lm: any, fromHub: string): StructuredLeg | null => {
+    if (!lm) return null;
+    if (lm.mode === 'fedair') {
+      return fedairLeg(lm.fromAirport, fromHub, false, false);
+    }
+    if (lm.mode === 'mackair' || lm.mode === 'wilderness') {
+      return {
+        kind: 'exit',
+        badge: lm.mode === 'mackair' ? 'MA' : 'WA',
+        name: lm.mode === 'mackair' ? 'Mack Air' : 'Wilderness Air',
+        from: 'Lodge',
+        to: lm.fromAirport,
+        detail: lm.mode === 'wilderness'
+          ? 'Included in lodge rate · 20kg soft bag strictly enforced'
+          : '20kg soft bag · no hard cases · private airstrip',
+        note: lm.note,
+        noteColor: 'rgba(74,222,128,0.6)',
+      };
+    }
+    return null;
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CASE 1: Cape Town as destination — commercial leg only, no last-mile
+  // CityTransferStrip handles CPT airport → hotel separately.
+  // ═══════════════════════════════════════════════════════════════════════
   if (toSlug === 'cape-town') {
     const originHub = originHubAirport(originLodge ?? '', fromSlug);
     const routeKey  = `${originHub}-CPT`;
@@ -1576,168 +1652,189 @@ function buildTransferOptions(
     const fallback  = COMMERCIAL_FALLBACK_ZAR['CPT'] ?? 2800;
     const meta      = commercialMetaByRoute?.[routeKey];
 
-    // Exit leg (lodge → origin hub)
     const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
     const exitRec     = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
     const exitZar     = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
-    const commercialZar = Math.round((liveFare ?? fallback) * pax);
     const isEst       = liveFare == null;
 
-    const airline   = meta?.carrier ?? null;
-    const depT      = fmtT(meta?.departing_at);
-    const arrT      = fmtT(meta?.arriving_at);
-    const stops     = typeof meta?.stops === 'number' ? (meta.stops===0?'direct':`${meta.stops} stop`) : '';
-    const durH      = durStr(meta?.duration_min) ?? '';
-    const flightDesc = airline
-      ? [airline, (depT&&arrT)?`${depT}\u2192${arrT}`:null, stops, durH].filter(Boolean).join(' \u00b7 ')
-      : `${originHub} \u2192 CPT`;
-
-    // Build one option per carrier we know serves this route
-    // Primary: live Duffel result; secondaries: known carriers with adjusted fare
-    const carriers: Array<{code:string;name:string;adjust:number}> = [];
-    if (originHub === 'MQP' || originHub === 'HDS' || originHub === 'SZK') {
-      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
-      carriers.push({code:'5Z',name:'CemAir', adjust:0.90});
-      if (originHub === 'MQP') carriers.push({code:'FS',name:'FlySafair',adjust:0.75});
+    // Carriers that serve this route direct to CPT
+    const carrierMatrix: Array<{code:string;name:string;adjust:number}> = [];
+    if (['MQP','HDS','SZK'].includes(originHub)) {
+      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
+      carrierMatrix.push({code:'5Z',name:'CemAir',adjust:0.90});
+      if (originHub === 'MQP') carrierMatrix.push({code:'FS',name:'FlySafair',adjust:0.75});
     } else if (originHub === 'MUB') {
-      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
-    } else if (originHub === 'VFA' || originHub === 'LVI') {
-      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
-      carriers.push({code:'TC',name:'Fastjet',adjust:1.05});
+      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
+    } else if (['VFA','LVI'].includes(originHub)) {
+      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
+      carrierMatrix.push({code:'TC',name:'Fastjet',adjust:1.05});
     } else {
-      carriers.push({code:'4Z',name:'Airlink',adjust:1.0});
-      carriers.push({code:'FS',name:'FlySafair',adjust:0.75});
+      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
+      carrierMatrix.push({code:'FS',name:'FlySafair',adjust:0.75});
+      carrierMatrix.push({code:'SA',name:'SAA',adjust:1.20});
     }
 
-    const options: TransferOption[] = carriers.map((c, i) => {
-      const adjFare = Math.round((liveFare ?? fallback) * c.adjust);
-      const totalZar = exitZar + Math.round(adjFare * pax);
-      const chainParts = [
-        exitRec ? exitRec.label : null,
-        `${c.name} ${originHub}\u2192CPT`,
-      ].filter(Boolean);
+    return carrierMatrix.map((c, i) => {
+      const fare     = Math.round((liveFare ?? fallback) * c.adjust);
+      const total    = exitZar + Math.round(fare * pax);
+      const useMeta  = i === 0 ? meta : null; // only first option gets live Duffel times
+      const commLeg  = commercialLeg(originHub, 'CPT', useMeta, c.name, c.code);
+
+      const structured: StructuredLeg[] = [];
+      if (exitRec) {
+        const ex = exitLeg(exitRec, originHub);
+        if (ex) structured.push(ex);
+      }
+      structured.push(commLeg);
 
       return {
         id: i === 0 ? 'recommended' : `${c.code}-${i}`,
         mode: 'commercial' as TransferOption['mode'],
         icon: '\u2708',
         label: `${c.name} \u2192 Cape Town`,
-        provider: chainParts.join('  \u2192  '),
-        duration: durStr((exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 150)) ?? '~3h 30m',
-        estimatedCostZAR: totalZar,
+        provider: `${exitRec?.label ?? ''} ${originHub}\u2192CPT via ${c.name}`.trim(),
+        duration: durStr((exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 150)) || '~3h 30m',
+        estimatedCostZAR: total,
         badges: i === 0
-          ? [{text:'\u2726 Recommended', color:T.gold}, ...(isEst?[{text:'Est.',color:T.textDim}]:[]) ]
-          : isEst ? [{text:'Est.',color:T.textDim}] : [],
+          ? [{text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'}, ...(isEst?[{text:'Est.',color:'rgba(255,255,255,0.3)'}]:[])]
+          : isEst ? [{text:'Est.',color:'rgba(255,255,255,0.3)'}] : [],
         aiNote: i === 0 && meta
-          ? `Live fare: ${flightDesc}. Airport \u2192 hotel transfer handled separately.`
-          : `${c.name} ${originHub}\u2192CPT. Indicative fare${i>0?' \u00b7 '+Math.round((1-c.adjust)*100)+'% below Airlink':''}. Airport transfer handled separately.`,
+          ? `Live fare loaded. ${c.name} ${originHub}\u2192CPT. Airport transfer to hotel handled separately by CityTransferStrip.`
+          : `${c.name} ${originHub}\u2192CPT${i>0?` \u00b7 ~${Math.round((1-c.adjust)*100)}% below Airlink`:''}. Fare indicative. Airport transfer handled separately.`,
         recommended: i === 0,
+        structuredLegs: structured,
       };
     });
-
-    return options;
   }
 
-  // ── Standard inter-regional: EXIT + COMMERCIAL + ARRIVAL ─────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // CASE 2: Standard inter-regional — EXIT + COMMERCIAL + ARRIVAL
+  // ═══════════════════════════════════════════════════════════════════════
   const arrivalLastMiles = lastMileFor(destLodge ?? '', toSlug);
 
-  // If no last-mile data, fall back to INTERNAL_LEGS static entry
   if (!arrivalLastMiles.length) {
     const leg = getInternalLeg(fromSlug, toSlug);
     if (!leg) return [];
     return [{
       id: 'recommended',
-      mode: leg.mode === 'charter' ? 'charter' : leg.mode === 'road' ? 'road' : 'commercial' as TransferOption['mode'],
-      icon: leg.mode === 'charter' ? '\u2708' : leg.mode === 'road' ? '\uD83D\uDE97' : '\uD83D\uDEEB',
+      mode: (leg.mode === 'charter' ? 'charter' : leg.mode === 'road' ? 'road' : 'commercial') as TransferOption['mode'],
+      icon: '\u2708',
       label: leg.provider,
       provider: leg.provider,
       duration: leg.duration,
       estimatedCostZAR: leg.estimatedCostZAR,
-      badges: [{text:'\u2726 Recommended', color:T.gold}],
+      badges: [{text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'}],
       aiNote: leg.aiNote,
       recommended: true,
     }];
   }
 
-  // EXIT leg from origin
   const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
-  const exitRec     = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
+  const exitRec2    = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
   const originHub   = originHubAirport(originLodge ?? '', fromSlug);
 
-  // Build one option per arrival last-mile
   return arrivalLastMiles.map((arr, i) => {
-    const destHub   = arr.fromAirport;
-    const routeKey  = `${originHub}-${destHub}`;
-    const needComm  = originHub !== destHub;
+    const destHub  = arr.fromAirport;
+    const routeKey = `${originHub}-${destHub}`;
+    const needComm = originHub !== destHub;
 
-    const liveFare  = needComm ? (commercialFareZarByRoute?.[routeKey] ?? null) : null;
-    const fallback  = needComm ? (COMMERCIAL_FALLBACK_ZAR[destHub] ?? 4000) : 0;
-    const isEst     = needComm && liveFare == null;
+    const liveFare = needComm ? (commercialFareZarByRoute?.[routeKey] ?? null) : null;
+    const fallback = needComm ? (COMMERCIAL_FALLBACK_ZAR[destHub] ?? 4000) : 0;
+    const isEst    = needComm && liveFare == null;
+    const meta     = commercialMetaByRoute?.[routeKey];
 
-    const meta      = commercialMetaByRoute?.[routeKey];
-    const exitZar   = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
-    const arrZar    = lastMileZar(arr, usdToZar, pax);
-    const commZar   = needComm ? Math.round((liveFare ?? fallback) * pax) : 0;
-    const totalZar  = exitZar + commZar + arrZar;
+    const exitZar  = exitRec2 ? lastMileZar(exitRec2, usdToZar, pax) : 0;
+    const arrZar   = lastMileZar(arr, usdToZar, pax);
+    const commZar  = needComm ? Math.round((liveFare ?? fallback) * pax) : 0;
+    const total    = exitZar + commZar + arrZar;
 
-    // Build commercial descriptor with live Duffel data where available
-    const airline   = meta?.carrier ?? null;
-    const depT      = fmtT(meta?.departing_at);
-    const arrT      = fmtT(meta?.arriving_at);
-    const stops     = typeof meta?.stops === 'number' ? (meta.stops===0?'Nonstop':`${meta.stops} stop`) : '';
-    const durH      = durStr(meta?.duration_min) ?? '';
+    // ── Build structured legs ──────────────────────────────────────────
+    const structured: StructuredLeg[] = [];
 
-    // For the commercial line, use live data if available — else use origin/dest hub codes
-    const commercialLine = needComm
+    // EXIT: lodge → origin hub
+    if (exitRec2) {
+      const ex = exitLeg(exitRec2, originHub);
+      if (ex) structured.push(ex);
+    }
+
+    // COMMERCIAL: origin hub → dest hub
+    if (needComm) {
+      const hasLiveMeta = meta && (meta.carrier || meta.departing_at);
+      const carrierCode = hasLiveMeta ? (meta.carrier ?? '4Z') : '4Z';
+      const carrierName = AIRLINE_META[carrierCode]?.name ?? 'Airlink';
+      structured.push(commercialLeg(originHub, destHub, meta, carrierName, carrierCode));
+    }
+
+    // ARRIVAL: dest hub → lodge
+    const isLowveld = ['MQP','HDS','SZK'].includes(destHub);
+    const isMadikweArr = toSlug === 'madikwe';
+    if (arr.mode === 'fedair') {
+      structured.push(fedairLeg(destHub, 'Lodge airstrip', isLowveld, isMadikweArr));
+    } else if (arr.mode === 'mackair') {
+      structured.push({
+        kind: 'arrival', badge: 'MA', name: 'Mack Air',
+        from: destHub, to: 'Camp airstrip',
+        detail: '20kg soft bag · no hard cases · lands at camp',
+        note: arr.note,
+        noteColor: 'rgba(74,222,128,0.6)',
+      });
+    } else if (arr.mode === 'wilderness') {
+      structured.push({
+        kind: 'arrival', badge: 'WA', name: 'Wilderness Air',
+        from: destHub, to: 'Camp airstrip',
+        detail: 'Included in lodge rate · 20kg soft bag strictly enforced',
+        note: 'Do not charge separately',
+        noteColor: 'rgba(74,222,128,0.6)',
+      });
+    } else if (arr.mode === 'road') {
+      structured.push({
+        kind: 'road', badge: 'road', name: 'Private road transfer',
+        from: destHub, to: 'Lodge',
+        detail: `${arr.durationMin} min · no baggage restriction`,
+        note: arr.note,
+        noteColor: 'rgba(255,255,255,0.35)',
+      });
+    }
+
+    // Charter baggage warning if any charter leg present
+    if (arr.mode === 'mackair' || arr.mode === 'wilderness') {
+      structured.push({
+        kind: 'info', badge: 'bag', name: '20kg soft bag — strictly enforced on all charter legs',
+        detail: 'No hard-sided cases. Duffel bag rental at most camps.',
+        noteColor: 'rgba(251,191,36,0.7)',
+      });
+    }
+
+    const totalMin = (exitRec2?.durationMin ?? 0) + (meta?.duration_min ?? 0) + arr.durationMin;
+    const badges: Array<{text:string;color:string}> = [];
+    if (arr.recommended && i === 0) badges.push({text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'});
+    if (arr.perCharter) badges.push({text:'Private charter',color:'#a78bfa'});
+    if (isEst) badges.push({text:'Est.',color:'rgba(255,255,255,0.3)'});
+
+    const airline = meta?.carrier ? (AIRLINE_META[meta.carrier]?.name ?? meta.carrier) : null;
+    const depT = fmtT(meta?.departing_at);
+    const arrT = fmtT(meta?.arriving_at);
+    const commDesc = needComm
       ? (airline && depT && arrT
-          ? `${airline} ${originHub} ${depT}\u2192${destHub} ${arrT}${stops?' \u00b7 '+stops:''}${durH?' \u00b7 '+durH:''}`
+          ? `${airline} ${originHub} ${depT}\u2192${destHub} ${arrT}`
           : `${originHub} \u2192 ${destHub}`)
       : null;
 
-    // Exit leg label (use the actual lastMile label, not hardcoded text)
-    const exitLabel = exitRec?.label ?? null;
-
-    // Arrival leg label (from the LastMile — correct airport is embedded in the note)
-    // Replace generic "JNB → Lodge" with correct departure airport
-    const arrLabelFixed = arr.label
-      .replace(/JNB\s*(?:→|->)\s*Lodge/i, `${destHub} \u2192 Lodge`)
-      .replace(/JNB\s*(?:→|->)\s*Madikwe/i, `${destHub} \u2192 Madikwe`);
-
-    const chainParts = [exitLabel, commercialLine, arrLabelFixed].filter(Boolean);
-    const chainLine  = chainParts.join('  \u2192  ');
-
-    const totalMin  = (exitRec?.durationMin ?? 0) + (meta?.duration_min ?? 0) + arr.durationMin;
-
-    const badges: Array<{text:string;color:string}> = [];
-    if (arr.recommended && i === 0) badges.push({text:'\u2726 Recommended', color:T.gold});
-    if (arr.perCharter) badges.push({text:'Private charter', color:'#a78bfa'});
-    if (isEst) badges.push({text:'Est. \u00b7 confirmed at booking', color:T.textDim});
-
-    // aiNote: use the LastMile note for the arrival leg, prepend commercial detail
-    const noteBase = arr.note ?? '';
-    const aiNote   = [
-      commercialLine ? `Commercial leg: ${commercialLine}.` : null,
-      noteBase,
-      isEst ? 'Commercial fare indicative until dates confirmed.' : null,
-    ].filter(Boolean).join(' ');
-
     return {
       id: arr.recommended ? 'recommended' : `${arr.mode}-${i}`,
-      mode: (arr.mode==='charter'?'charter':arr.mode==='road'?'road':'commercial') as TransferOption['mode'],
-      icon: arr.mode==='charter' ? '\u2708' : arr.mode==='road' ? '\uD83D\uDE97' : '\uD83D\uDEEB',
-      label: arrLabelFixed,
-      provider: chainLine,
-      duration: totalMin ? `~${durStr(totalMin)} total door-to-door` : arr.durationMin ? `~${durStr(arr.durationMin)} final leg` : '',
-      estimatedCostZAR: totalZar,
+      mode: (arr.mode==='charter'||arr.mode==='mackair'||arr.mode==='wilderness'?'charter':arr.mode==='road'?'road':'commercial') as TransferOption['mode'],
+      icon: '\u2708',
+      label: arr.label,
+      provider: arr.label,
+      duration: totalMin ? `~${durStr(totalMin)} door-to-door` : '',
+      estimatedCostZAR: total,
       badges,
-      aiNote,
+      aiNote: [commDesc ? `Commercial: ${commDesc}.` : null, arr.note, isEst ? 'Fare indicative.' : null].filter(Boolean).join(' '),
       recommended: !!arr.recommended,
+      structuredLegs: structured,
     };
   });
 }
-
-
-
 
 
 // ── AIRLINE METADATA for logo badges ─────────────────────────────────────────
@@ -1798,186 +1895,125 @@ interface TransferLeg {
   noteColor?: string;
 }
 
-function buildTransferLegs(opt: any, meta?: any): TransferLeg[] {
+function buildTransferLegs(opt: any, _meta?: any): TransferLeg[] {
+  // ── STRUCTURED PATH: use pre-built legs when available ────────────────────
+  // This is the correct path for all options built by the new buildTransferOptions.
+  // No string parsing — data comes from typed StructuredLeg objects.
+  if (opt.structuredLegs && opt.structuredLegs.length > 0) {
+    return (opt.structuredLegs as StructuredLeg[]).map(sl => {
+      // ── Info / baggage warnings ─────────────────────────────────────────
+      if (sl.kind === 'info') {
+        return {
+          type: 'info' as const,
+          badge: sl.badge === 'bag' ? '\u26A0' : '\u25C8',
+          primary: sl.name,
+          detail: sl.detail,
+          noteColor: sl.noteColor ?? 'rgba(251,191,36,0.7)',
+        };
+      }
+
+      // ── Road transfers ──────────────────────────────────────────────────
+      if (sl.kind === 'road' || sl.badge === 'road') {
+        return {
+          type: 'road' as const,
+          badge: '\uD83D\uDE97',
+          primary: sl.name,
+          route: sl.from && sl.to ? `${sl.from} \u2192 ${sl.to}` : undefined,
+          detail: sl.detail,
+          note: sl.note,
+          noteColor: sl.noteColor ?? 'rgba(255,255,255,0.35)',
+        };
+      }
+
+      // ── Charter operators (Mack Air, Wilderness Air) ────────────────────
+      if (sl.badge === 'MA' || sl.badge === 'WA') {
+        return {
+          type: 'charter' as const,
+          badge: sl.badge,
+          primary: sl.name,
+          route: sl.from && sl.to ? `${sl.from} \u2192 ${sl.to}` : undefined,
+          detail: sl.detail,
+          note: sl.note,
+          noteColor: sl.noteColor ?? 'rgba(74,222,128,0.6)',
+        };
+      }
+
+      // ── All scheduled airlines (FedAir, Airlink, CemAir, FlySafair, etc) ─
+      // Route: show departure time → arrival time when available, else IATA codes
+      const routeDisplay = sl.depTime && sl.arrTime
+        ? `${sl.from ?? ''} ${sl.depTime}  \u2192  ${sl.to ?? ''} ${sl.arrTime}`
+        : sl.from && sl.to ? `${sl.from} \u2192 ${sl.to}` : undefined;
+
+      return {
+        type: 'airline' as const,
+        badge: sl.badge,
+        primary: sl.name,
+        route: routeDisplay,
+        detail: sl.detail,
+        note: sl.note,
+        noteColor: sl.noteColor ?? 'rgba(212,175,55,0.45)',
+      };
+    });
+  }
+
+  // ── LEGACY FALLBACK PATH: parse provider string ───────────────────────────
+  // Only reached for GATEWAY_LEGS / INTERNAL_LEGS fallback entries that
+  // don't have structuredLegs. Kept for safety but should rarely fire.
   const legs: TransferLeg[] = [];
   const provider = opt.provider ?? '';
-  const aiNote   = opt.aiNote   ?? '';
+  const parts = provider.split(/\s{1,4}\u2192\s{1,4}|\s*->\s*/);
 
-  const parts = provider.split(/\s{1,4}→\s{1,4}|\s*->\s*/);
-
-  const hasLive   = meta && (meta.carrier || meta.departing_at);
-  const carrier   = meta?.carrier ?? '';
-  const depTime   = meta?.departing_at  ? new Date(meta.departing_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
-  const arrTime   = meta?.arriving_at   ? new Date(meta.arriving_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
-  const stops     = typeof meta?.stops === 'number' ? (meta.stops===0?'Nonstop':`${meta.stops} stop${meta.stops>1?'s':''}`) : '';
-  const durMin    = meta?.duration_min;
-  const durStr    = durMin ? `${Math.floor(durMin/60)}h${durMin%60?` ${durMin%60}m`:''}` : '';
-
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i].trim();
-    if (!p) continue;
-
-    const isFedAir    = /FedAir|Federal Air/i.test(p);
-    const isAirlink   = /Airlink/i.test(p);
-    const isCemAir    = /CemAir/i.test(p);
-    const isFlySafair = /FlySafair/i.test(p);
-    const isFastjet   = /Fastjet/i.test(p);
-    const isSAA       = /\bSAA\b|South African Airways/i.test(p);
-    const isAirBots   = /Air Botswana/i.test(p);
-    const isMackAir   = /Mack Air/i.test(p);
-    const isWilderness= /Wilderness Air/i.test(p);
-    const isCharter   = isMackAir || isWilderness || /charter|light aircraft/i.test(p);
-    const isRoad      = /road|private.?transfer|vehicle|drive/i.test(p) && !isFedAir;
-    const isLodge     = /lodge|camp|collection|airstrip/i.test(p);
-
-    const routeMatch = p.match(/([A-Z]{3})\s*(?:→|->)?\s*([A-Z]{3})/);
-    const from = routeMatch?.[1] ?? '';
-    const to   = routeMatch?.[2] ?? '';
-    const routeStr = from && to ? `${from} → ${to}` : '';
+  for (const p of parts) {
+    if (!p.trim()) continue;
+    const isFedAir     = /FedAir|Federal Air/i.test(p);
+    const isAirlink    = /Airlink/i.test(p);
+    const isCemAir     = /CemAir/i.test(p);
+    const isFlySafair  = /FlySafair/i.test(p);
+    const isFastjet    = /Fastjet/i.test(p);
+    const isSAA        = /\bSAA\b/i.test(p);
+    const isMackAir    = /Mack Air/i.test(p);
+    const isWilderness = /Wilderness Air/i.test(p);
+    const isRoad       = /road|private.*transfer/i.test(p) && !isFedAir;
 
     if (isRoad) {
-      legs.push({
-        type: 'road', badge: '🚗',
-        primary: 'Private road transfer',
-        route: routeStr || undefined,
-        detail: opt.duration ? `${opt.duration} · Luggage assistance included` : 'Luggage assistance included',
-        note: 'No baggage restriction · driver meets at arrivals',
-        noteColor: T.textDim,
-      });
-
+      legs.push({ type:'road', badge:'\uD83D\uDE97', primary:'Private road transfer', detail:'Luggage assistance included' });
     } else if (isFedAir) {
-      // Extract the actual hub airport from the chain part (e.g. "MQP → Lodge", "HDS → Lodge")
-      // Never hardcode JNB — use whatever airport is in the provider string
-      const hubMatch = p.match(/\b(JNB|CPT|MQP|HDS|SZK|MUB|VFA|BBK)\b/i);
-      const hubCode  = hubMatch?.[1]?.toUpperCase() ?? 'JNB';
-      // Detect service type from the chain text
-      const isLowveld  = /Lowveld|Shuttle|flt\s*3|dep\s*09:00|MQP|HDS|SZK/i.test(p);
-      const isMadikwe  = /Madikwe|MAD|MWD/i.test(p);
-      const destLabel  = isMadikwe ? 'Madikwe' : 'Lodge airstrip';
-      const schedDetail = isLowveld
-        ? 'FedAir Lowveld Shuttle · dep 09:00 arr ~10:35 · 20kg (hard cases OK)'
-        : 'Daily 10:00 & 13:00 · ~60 min · 20kg (hard cases OK)';
+      const hub = p.match(/\b(JNB|MQP|HDS|SZK|MUB|VFA|BBK)\b/i)?.[1]?.toUpperCase() ?? 'JNB';
+      const isLowveld = /MQP|HDS|SZK|Lowveld/i.test(p);
       legs.push({
-        type: 'airline', badge: 'FA',
-        primary: 'Federal Air',
-        route: `${hubCode} → ${destLabel}`,
-        detail: schedDetail,
-        note: 'Atlas Rd terminal, OR Tambo · X Class: 32kg + hard cases (+25%)',
-        noteColor: T.textDim,
+        type:'airline', badge:'FA', primary:'Federal Air',
+        route:`${hub} \u2192 Lodge airstrip`,
+        detail: isLowveld ? 'Lowveld Shuttle · dep 09:00 · 20kg (hard cases OK)' : 'Daily 10:00 & 13:00 · 20kg (hard cases OK)',
+        note:'OR Tambo Atlas Rd terminal · X Class: 32kg + hard cases (+25%)',
       });
-
-    } else if (isAirlink || isCemAir || isFlySafair || isFastjet || isSAA || isAirBots || (hasLive && i === 1)) {
-      const name = hasLive && carrier
-        ? (AIRLINE_META[carrier]?.name ?? carrier)
-        : isAirlink ? 'Airlink' : isCemAir ? 'CemAir' : isFlySafair ? 'FlySafair'
-        : isFastjet ? 'Fastjet' : isSAA ? 'SAA' : isAirBots ? 'Air Botswana' : 'Scheduled airline';
-      const code = hasLive && carrier ? carrier
-        : isAirlink ? '4Z' : isCemAir ? '5Z' : isFlySafair ? 'FA'
-        : isFastjet ? 'TC' : isSAA ? 'SA' : isAirBots ? 'BP' : '✈';
-
-      // For live Duffel data, pull origin/dest from meta.origin/meta.destination
-      // The regex on the provider string is unreliable for mid-chain parts
-      const liveOrigin = (meta?.origin ?? from ?? '').toString().toUpperCase().slice(0,3);
-      const liveDest   = (meta?.destination ?? to ?? '').toString().toUpperCase().slice(0,3);
-      const liveRoute = hasLive && depTime && arrTime
-        ? `${liveOrigin || '?'} ${depTime}  →  ${liveDest || '?'} ${arrTime}`
-        : (liveOrigin && liveDest) ? `${liveOrigin} → ${liveDest}` : routeStr;
-
-      const liveDetail = hasLive
-        ? [stops, durStr, 'Economy'].filter(Boolean).join(' · ')
-        : durStr ? `${durStr} · Economy · 20kg checked` : 'Economy · 20kg checked';
-
-      legs.push({
-        type: 'airline', badge: code,
-        primary: name + (hasLive && meta.flight_no ? `  ${meta.flight_no}` : ''),
-        route: liveRoute || undefined,
-        detail: liveDetail,
-        note: hasLive ? undefined : 'Indicative fare · confirmed at booking via Duffel',
-        noteColor: T.textDim,
-      });
-
     } else if (isMackAir) {
-      legs.push({
-        type: 'charter', badge: 'MA',
-        primary: 'Mack Air',
-        route: routeStr || undefined,
-        detail: 'Light aircraft · private airstrip · 20kg soft bag (no hard cases)',
-        note: 'Part of the experience — lands directly at camp airstrip',
-        noteColor: T.green,
-      });
-
+      legs.push({ type:'charter', badge:'MA', primary:'Mack Air', detail:'20kg soft bag · no hard cases' });
     } else if (isWilderness) {
+      legs.push({ type:'charter', badge:'WA', primary:'Wilderness Air', detail:'Included in lodge rate · 20kg soft bag' });
+    } else if (isAirlink || isCemAir || isFlySafair || isFastjet || isSAA) {
+      const code = isAirlink?'4Z':isCemAir?'5Z':isFlySafair?'FS':isFastjet?'TC':isSAA?'SA':'4Z';
+      const name = AIRLINE_META[code]?.name ?? code;
+      const rm   = p.match(/([A-Z]{3})\s*\u2192\s*([A-Z]{3})/);
       legs.push({
-        type: 'charter', badge: 'WA',
-        primary: 'Wilderness Air',
-        route: routeStr || undefined,
-        detail: 'Included in lodge rate · 20kg soft bag strictly enforced',
-        note: 'Do not charge separately — transfer is included',
-        noteColor: T.green,
+        type:'airline', badge:code, primary:name,
+        route: rm ? `${rm[1]} \u2192 ${rm[2]}` : undefined,
+        detail:'Economy · 20kg checked',
+        note:'Indicative fare · confirmed at booking',
       });
-
-    } else if (isCharter) {
-      legs.push({
-        type: 'charter', badge: '✈',
-        primary: 'Light aircraft charter',
-        route: routeStr || undefined,
-        detail: '20kg soft bag · no hard cases · private airstrip',
-        note: 'Lands directly at camp airstrip',
-        noteColor: T.green,
-      });
-
-    } else if (/airport.*transfer|transfer.*hotel|hotel.*transfer/i.test(p)) {
-      // CPT last-mile: airport to hotel road transfer
-      legs.push({
-        type: 'road', badge: '🚗',
-        primary: 'Airport transfer to hotel',
-        detail: '30–45 min · CPT → hotel · private vehicle',
-        note: 'Driver meets at arrivals · luggage assistance included',
-        noteColor: T.textDim,
-      });
-
-    } else if (isLodge) {
-      legs.push({
-        type: 'lodge', badge: '🏠',
-        primary: 'Lodge collection',
-        detail: 'Complimentary · lodge vehicle meets at airstrip',
-        note: '5–20 min to main lodge',
-        noteColor: T.green,
-      });
-
     } else {
-      const clean = p.replace(/\s*(CPT|JNB|SZK|MUB|VFA|HDS|MQP|BBK|LVI|GBE)\s*/g, m => m.trim() + ' ').trim();
-      if (clean.length > 2) {
-        legs.push({ type: 'info', badge: '◈', primary: clean });
+      const clean = p.trim();
+      if (clean.length > 2 && !/^\s*$/.test(clean)) {
+        legs.push({ type:'info', badge:'\u25C8', primary:clean, noteColor:'rgba(255,255,255,0.4)' });
       }
     }
   }
 
-  // Fallback
   if (!legs.length) {
-    legs.push({
-      type: 'airline', badge: '✈',
-      primary: opt.label || (parts[0]?.trim() ?? 'Transfer'),
-      route: opt.provider,
-      detail: opt.duration,
-      note: opt.aiNote,
-    });
-  }
-
-  // Charter baggage note — soft bag only (NOT FedAir)
-  const hasCharter = legs.some(l => l.type === 'charter');
-  if (hasCharter) {
-    legs.push({
-      type: 'info', badge: '⚑',
-      primary: '20kg soft bag — strictly enforced on all charter legs',
-      detail: 'No hard-sided cases permitted. Duffel bag rental available at most camps.',
-      noteColor: T.amber,
-    });
+    legs.push({ type:'airline', badge:'\u2708', primary:opt.label || 'Transfer', detail:opt.duration });
   }
 
   return legs;
 }
-
 // ── TransferHeader ─────────────────────────────────────────────────────────────
 // Replaces the plain blue rule with a gold editorial chapter header.
 
@@ -2015,7 +2051,11 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
   onPrev: () => void; onNext: () => void; isSelected: boolean; onSelect?: () => void;
   fmt: (n: number) => string; cost: number;
 }) {
-  const durDisplay = duration.replace(/~|total\s*door-to-door|door-to-door/gi, '').trim();
+  // Clean duration: remove qualifiers, fix "0h" display artifact
+  const durDisplay = duration
+    .replace(/~|total\s*door-to-door|door-to-door/gi, '')
+    .replace(/\b0h\s*/g, '')   // remove "0h" prefix (renders as "oh" in some fonts)
+    .trim();
   const isRec = badges.some(b => b.text.toLowerCase().includes('recommended'));
 
   // Determine option label for header
@@ -2126,10 +2166,10 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
                   ? (
                     <div style={{
                       width: 30, height: 30, borderRadius: 5,
-                      background: 'rgba(212,175,55,0.06)',
-                      border: `0.5px solid ${T.gold}30`,
+                      background: 'rgba(251,146,60,0.06)',
+                      border: '0.5px solid rgba(251,146,60,0.2)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 11, color: T.amber, flexShrink: 0,
+                      fontSize: 12, color: 'rgba(251,146,60,0.8)', flexShrink: 0,
                     }}>
                       {leg.badge}
                     </div>
@@ -2154,8 +2194,8 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
                   alignItems: 'baseline', gap: 6,
                 }}>
                   <span style={{
-                    fontSize: isInfo ? 10 : 12, fontWeight: isInfo ? 500 : 600,
-                    color: isInfo ? T.amber : T.text,
+                    fontSize: isInfo ? 9.5 : 12, fontWeight: isInfo ? 400 : 600,
+                    color: isInfo ? 'rgba(251,146,60,0.8)' : T.text,
                     lineHeight: 1.25,
                     fontFamily: isInfo ? "'Jost', sans-serif" : "'Cormorant Garamond', serif",
                     letterSpacing: isInfo ? '0.02em' : '0.01em',
