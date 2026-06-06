@@ -150,6 +150,20 @@ select option { background:#1a1a1a; }
 .trust-pill { display:inline-flex; align-items:center; gap:4px; background:rgba(74,222,128,0.08); border:0.5px solid rgba(74,222,128,0.25); border-radius:20px; padding:3px 10px; font-size:11px; color:${T.green}; font-weight:600; }
 .fun-fact   { background:rgba(212,175,55,0.06); border:0.5px solid rgba(212,175,55,0.14); border-radius:8px; padding:9px 13px; font-size:12px; color:rgba(212,175,55,0.82); line-height:1.55; margin-top:10px; }
 .city-card  { background:${T.surface}; border:0.5px solid ${T.border}; border-radius:13px; padding:16px; margin-bottom:12px; }
+
+/* ── MOBILE BCC OVERRIDES ─────────────────────────────────────────── */
+@media (max-width: 699px) {
+  body { overflow-x:hidden; }
+  .inspire-split  { display:block !important; }
+  .inspire-panel  { display:none !important; }
+  .inspire-form   { padding:20px 18px 100px !important; max-width:100% !important; }
+  [data-card]     { width:min(88vw,360px) !important; }
+  [data-act-card] { width:min(80vw,260px) !important; }
+  button, [role=button] { min-height:44px; }
+}
+@media (max-width: 480px) {
+  [data-card] { width:min(92vw,340px) !important; }
+}
 .inter-transfer { background:rgba(96,165,250,0.05); border:0.5px solid rgba(96,165,250,0.18); border-radius:9px; padding:9px 13px; margin:7px 0; cursor:pointer; transition:background 0.15s; }
 .inter-transfer:hover { background:rgba(96,165,250,0.1); }
 
