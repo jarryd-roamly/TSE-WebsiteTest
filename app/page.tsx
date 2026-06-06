@@ -2040,6 +2040,76 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
 }
 
 
+// ── The JourneyCard component ────────────────────────────────────────────────
+function TransferCarousel({
+  fromSlug, toSlug, fromLabel, toLabel,
+  fmt, kbEntries, selectedTransferId, onSelect,
+  destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge
+}: {
+  fromSlug:string; toSlug:string; fromLabel:string; toLabel:string;
+  fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null;
+  onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number;
+  commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; originLodge?:string;
+}) {
+  const options = useMemo(()=>buildTransferOptions(fromSlug,toSlug,destLodge,pax??2,usdToZar??18.62,commercialFares,commercialMeta,originLodge),[fromSlug,toSlug,destLodge,pax,usdToZar,commercialFares,commercialMeta,originLodge]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [ready, setReady] = useState(false);
+
+  useEffect(()=>{
+    const t = setTimeout(()=>{
+      setReady(true);
+      const rec = options.find(o=>o.recommended);
+      if (rec && !selectedTransferId) onSelect(rec.id);
+    }, 500);
+    return ()=>clearTimeout(t);
+  },[]);
+
+  if (!options.length) {
+    const leg = getInternalLeg(fromSlug, toSlug);
+    if (!leg) return null;
+    const fallbackLegs = buildTransferLegs(
+      {label:leg.fromLabel+' → '+leg.toLabel, provider:leg.provider, aiNote:leg.aiNote, duration:leg.duration, badges:[], recommended:true},
+      undefined
+    );
+    return (
+      <div style={{ marginBottom:24 }}>
+        <TransferHeader fromLabel={fromLabel} toLabel={toLabel}/>
+        <JourneyCardBody legs={fallbackLegs} duration={leg.duration} aiNote={leg.aiNote}
+          badges={[]} optionCount={1} activeIdx={0} onPrev={()=>{}} onNext={()=>{}}
+          isSelected fmt={fmt} cost={leg.estimatedCostZAR} />
+      </div>
+    );
+  }
+
+  const cur = options[activeIdx] ?? options[0];
+  const routeKey = Object.keys(commercialMeta??{}).find(k => cur.provider?.includes(k.split('-')[0]) && cur.provider?.includes(k.split('-')[1]));
+  const liveMeta = routeKey ? (commercialMeta??{})[routeKey] : undefined;
+  const legs = buildTransferLegs(cur, liveMeta);
+
+  return (
+    <div style={{ marginBottom:24 }}>
+      <TransferHeader fromLabel={fromLabel} toLabel={toLabel}/>
+      {!ready ? (
+        <div style={{ background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.12)', borderRadius:12, padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
+          <div className="spinner" style={{width:14,height:14,borderWidth:2}}/>
+          <div style={{fontSize:12,color:'rgba(96,165,250,0.6)'}}>Checking transfer options…</div>
+        </div>
+      ) : (
+        <JourneyCardBody
+          legs={legs} duration={cur.duration} aiNote={cur.aiNote}
+          badges={cur.badges} optionCount={options.length} activeIdx={activeIdx}
+          onPrev={()=>setActiveIdx(i=>Math.max(0,i-1))}
+          onNext={()=>setActiveIdx(i=>Math.min(options.length-1,i+1))}
+          isSelected={selectedTransferId===cur.id || (!selectedTransferId && cur.recommended)}
+          onSelect={()=>onSelect(cur.id)}
+          fmt={fmt} cost={cur.estimatedCostZAR}
+        />
+      )}
+    </div>
+  );
+}
+
+
 function CityTransferStrip({ slug, destLabel, opts, selectedId, onSelect, fmt }: { slug:string; destLabel:string; opts:CityTransferOption[]; selectedId:string|undefined; onSelect:(id:string)=>void; fmt:(n:number)=>string; }) {
   const [idx, setIdx] = useState(0);
   const stripRef = useRef<HTMLDivElement>(null);
