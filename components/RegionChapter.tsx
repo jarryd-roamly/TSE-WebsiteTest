@@ -55,14 +55,28 @@ const CHAPTER_TAG: Record<string,string> = {
 };
 
 const INCLUSION_LABELS: Record<string,{icon:string;label:string}> = {
-  all_meals:      {icon:'🍽',label:'All meals'},
-  game_drives:    {icon:'🐘',label:'Game drives'},
-  mokoro:         {icon:'🛶',label:'Mokoro'},
-  local_drinks:   {icon:'🍷',label:'Local drinks'},
-  premium_drinks: {icon:'🥂',label:'Premium drinks'},
-  laundry:        {icon:'👕',label:'Laundry'},
-  park_fees:      {icon:'🌿',label:'Park fees'},
+  all_meals:      {icon:'meals',label:'All meals'},
+  game_drives:    {icon:'safari',label:'Game drives'},
+  mokoro:         {icon:'boat',label:'Mokoro'},
+  local_drinks:   {icon:'drinks',label:'Local drinks'},
+  premium_drinks: {icon:'drinks',label:'Premium drinks'},
+  laundry:        {icon:'laundry',label:'Laundry'},
+  park_fees:      {icon:'leaf',label:'Park fees'},
 };
+
+// Clean, consistent monochrome line icons (replaces inconsistent emoji)
+function IncIcon({ kind, color }: { kind:string; color:string }) {
+  const common = { width:12, height:12, viewBox:'0 0 24 24', fill:'none', stroke:color, strokeWidth:2, strokeLinecap:'round' as const, strokeLinejoin:'round' as const };
+  switch (kind) {
+    case 'meals':   return <svg {...common}><path d="M4 3v7a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V3"/><path d="M6 12v9"/><path d="M18 3c-1.5 1-2.5 3-2.5 6 0 2 .5 3 2.5 3v9"/></svg>;
+    case 'safari':  return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M2 12h3M19 12h3M12 2v3M12 19v3"/></svg>;
+    case 'boat':    return <svg {...common}><path d="M3 14l1.5 5h15L21 14"/><path d="M5 14V8a7 7 0 0 1 14 0v6"/><path d="M12 3v4"/></svg>;
+    case 'drinks':  return <svg {...common}><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3Z"/><path d="M12 13v6M9 21h6"/></svg>;
+    case 'laundry': return <svg {...common}><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="13" r="4"/></svg>;
+    case 'leaf':    return <svg {...common}><path d="M11 20A7 7 0 0 1 4 13c0-5 5-9 16-9 0 7-4 13-9 13Z"/><path d="M4 20c2-4 5-6 9-7"/></svg>;
+    default:        return <svg {...common}><circle cx="12" cy="12" r="9"/></svg>;
+  }
+}
 
 const SEV: Record<string,{color:string;bg:string;icon:string}> = {
   block:          {color:T.red,   bg:'rgba(248,113,113,0.08)',icon:'⚠'},
@@ -311,8 +325,8 @@ export function InclusionPills({ includes, malariaFree, compact=false }: {
         </span>
       )}
       {!isRoomOnly && shown.map(k => (
-        <span key={k} style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'2px 8px' }}>
-          {INCLUSION_LABELS[k].icon} {compact ? '' : INCLUSION_LABELS[k].label}
+        <span key={k} style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:10, color:T.green, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'3px 9px' }}>
+          <IncIcon kind={INCLUSION_LABELS[k].icon} color={T.green} />{compact ? '' : INCLUSION_LABELS[k].label}
         </span>
       ))}
       {malariaFree && (
