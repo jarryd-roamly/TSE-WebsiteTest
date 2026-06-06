@@ -29,8 +29,7 @@ import { lastMileFor, lastMileZar, defaultCommercialTarget,
 import SafariCinematicResearch from '@/components/SafariCinematicResearch'
 import LandingHero from '@/components/LandingHero';
 import JourneyLoadingScreen from '@/components/JourneyLoadingScreen';
-import RegionChapter, { PropertyMiniSite } from '@/components/RegionChapter';
-import type { SkeletonFinding } from '@/components/RegionChapter';
+import { PropertyMiniSite } from '@/components/RegionChapter';
 import JourneyConfirmation from '@/components/JourneyConfirmation';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
@@ -3101,60 +3100,8 @@ const runBriefPlanner = (briefText: string) => {
               const cityXferOpts = isCityDest ? (CITY_TRANSFERS[slug] ?? []) : [];
               const selCityXferId = cityTransferIds[slug];
 
-        // KB data for this region
-              const regionKB = kbEntries.filter((e:any) =>
-                e.status === 'active' &&
-                e.region_slug === slug &&
-                e.claim_type !== 'commercial' &&
-                !e.internal_only
-              );
-              const regionEntry   = regionKB.find((e:any) => e.entry_type === 'region');
-              const kbHighlights  = regionEntry?.highlights ?? [];
-              const kbTips        = regionEntry?.tips ?? [];
-
-              // Seasonal note for this region + travel month
-              const seasonalNote: string | undefined = (() => {
-                if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
-                const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
-                return (regionEntry.seasonal_notes as any)[m] ?? undefined;
-              })();
-
-              // Skeleton findings for this region
-              const regionFindings: SkeletonFinding[] = skeletonFindings.filter((f:any) =>
-                !f.traveller_flagged
-              );
-
-              // Selected hotel for inclusions
-              const selectedHotel = safePool.find(h => String(h.id) === String(currentStay.hotelId));
-              const selectedIncludes: string[] = (selectedHotel as any)?.rate_includes ?? [];
-              const hotelMalariaFree = selectedHotel?.malariaFree ?? false;
-
-              // Specialist note from skeleton findings
-              const specialistNote = regionFindings
-                .filter(f => f.severity === 'recommendation' || f.severity === 'confirmed')
-                .map(f => f.traveller_message)
-                .find(Boolean);
-
               return (
-                <RegionChapter
-                  key={cityIdx}
-                  chapterIndex={cityIdx}
-                  totalChapters={itinerary.cities.length}
-                  regionSlug={slug}
-                  regionLabel={destLabel}
-                  countryLabel={city.country}
-                  nights={currentStay.nights}
-                  checkinDate={checkinDate}
-                  bgImageUrl={regionImageMap[slug]}
-                  kbHighlights={kbHighlights}
-                  kbTips={kbTips}
-                  skeletonFindings={regionFindings}
-                  selectedHotelName={selectedHotel?.name}
-                  selectedHotelIncludes={selectedIncludes}
-                  malariaFree={hotelMalariaFree}
-                  seasonalNote={seasonalNote}
-                  specialistNote={specialistNote}
-                >
+                <div key={cityIdx}>
                   {/* [V6-3] Auto airport transfer for Cape Town & Vic Falls */}
                   {isCityDest && cityXferOpts.length > 0 && (
                     <CityTransferStrip slug={slug} destLabel={destLabel} opts={cityXferOpts} selectedId={selCityXferId} onSelect={id => setCityTransferIds(prev => ({ ...prev, [slug]: id }))} fmt={fmt} />
@@ -3217,7 +3164,7 @@ const runBriefPlanner = (briefText: string) => {
                       <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} originLodge={originHotel?.name} />
                     );
                   })()}
-                </RegionChapter>
+                </div>
               );
             })}
              {/* PropertyMiniSite overlay — launched from Explore button */}
@@ -3267,16 +3214,7 @@ const runBriefPlanner = (briefText: string) => {
               <div>
                 <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>Package total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights</div>
                 <div style={{ fontSize:24, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>{fmt(grandTotal)}</div>
-                {(() => {
-                  const actCost = itinerary.cities.reduce((sum,city) => {
-                    const sl = CITY_TO_SLUG[city.city.toLowerCase().trim()]??'';
-                    const sel = selectedActivities[sl]??[];
-                    return sum + activities.filter(a=>sel.includes(String(a.id))).reduce((s,a)=>s+Math.round(a.netRate*M.activities),0);
-                  },0);
-                  return actCost > 0 ? (
-                    <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>Lodges & transfers: {fmt(grandTotal - actCost)} · Activities: {fmt(actCost)}</div>
-                  ) : <div style={{ fontSize:10, color:T.textDim, marginTop:2 }}>Lodges, transfers & activities</div>;
-                })()}
+
               </div>
               <button className="btn-gold" style={{ padding:'14px 28px', fontSize:15, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
                 {checkoutLoading ? 'Saving…' : (                   <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1 }}>                     <span>Validate & Firm up my choices →</span>                     <span style={{ fontSize:10, fontWeight:400, opacity:0.7, letterSpacing:'0.05em' }}>Price the journey</span>                   </span>                 )}
