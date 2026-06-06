@@ -101,8 +101,8 @@ export async function GET(req: NextRequest) {
 
   // Non-admin sessions can only see non-commercial, non-internal entries
   // (same as the RLS policy — belt-and-suspenders)
-  const isAdmin   = true
-  const isEdition = true
+const isAdmin   = session && canAdmin(session.role)
+  const isEdition = session && canWrite(session.role)
 
   const cols = isAdmin ? INTERNAL_COLUMNS : PUBLIC_COLUMNS;
   const supabase = db(false);
