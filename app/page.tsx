@@ -81,6 +81,18 @@ const REGIONS = [
   { id: 'inspire-me', label: 'Inspire Me',           icon: '✨', slug: null               },
 ];
 
+// Gateway airport → first region arrival transfer legs
+const GATEWAY_LEGS: Record<string, { fromLabel:string; toLabel:string; provider:string; duration:string; estimatedCostZAR:number; aiNote:string }> = {
+  'JNB→kruger-sabi-sand': { fromLabel:'Johannesburg (JNB)', toLabel:'Kruger / Sabi Sand', provider:'Federal Air JNB→SZK (Atlas Rd terminal)', duration:'~1h 30m', estimatedCostZAR:3800, aiNote:'Federal Air departs OR Tambo Atlas Rd terminal daily at 10:00 & 13:00. Lands directly on the lodge airstrip — no road transfer. 20kg soft bag; hard cases welcome on X class.' },
+  'JNB→okavango-delta':   { fromLabel:'Johannesburg (JNB)', toLabel:'Okavango Delta',    provider:'Airlink or Fastjet JNB→Maun + Wilderness Air/MackAir to camp', duration:'~4h', estimatedCostZAR:9200, aiNote:'Fly Airlink (4Z) or Fastjet (TC) from OR Tambo to Maun (MUB). Then Wilderness Air or Mack Air light aircraft to your camp airstrip. 20kg soft bag limit on charter leg — strictly enforced.' },
+  'JNB→madikwe':          { fromLabel:'Johannesburg (JNB)', toLabel:'Madikwe Reserve',   provider:'Federal Air JNB→Madikwe airstrip', duration:'~1h 15m', estimatedCostZAR:3200, aiNote:'Federal Air flies direct to Madikwe airstrip from OR Tambo Atlas Rd terminal. Daily at 10:00 & 13:00. Lodge vehicle meets on airstrip.' },
+  'JNB→chobe-vic-falls':  { fromLabel:'Johannesburg (JNB)', toLabel:'Victoria Falls',    provider:'Airlink (4Z) or Fastjet (TC) JNB→VFA', duration:'~2h', estimatedCostZAR:6500, aiNote:'Direct Airlink or Fastjet from OR Tambo to Victoria Falls International (VFA). Multiple daily departures. Lodge transfer from VFA on arrival.' },
+  'JNB→cape-town':        { fromLabel:'Johannesburg (JNB)', toLabel:'Cape Town',         provider:'Airlink or FlySafair JNB→CPT', duration:'~2h', estimatedCostZAR:2800, aiNote:'Multiple daily flights OR Tambo → Cape Town International. Hotel transfer or Uber on arrival (~25min to V&A Waterfront).' },
+  'CPT→kruger-sabi-sand': { fromLabel:'Cape Town (CPT)', toLabel:'Kruger / Sabi Sand',   provider:'Airlink CPT→JNB + Federal Air JNB→SZK', duration:'~2h 45m', estimatedCostZAR:8500, aiNote:'Morning departure from Cape Town recommended. Connect at OR Tambo — allow 2hrs. Federal Air from Atlas Rd terminal to Skukuza airstrip.' },
+  'CPT→madikwe':          { fromLabel:'Cape Town (CPT)', toLabel:'Madikwe Reserve',      provider:'Airlink CPT→JNB + Federal Air JNB→Madikwe', duration:'~2h 45m', estimatedCostZAR:7200, aiNote:'Connect via OR Tambo. Allow 2hrs at JNB. Federal Air direct to Madikwe airstrip.' },
+  'CPT→okavango-delta':   { fromLabel:'Cape Town (CPT)', toLabel:'Okavango Delta',       provider:'Airlink CPT→JNB + Airlink/Fastjet JNB→Maun + charter to camp', duration:'~5h 30m', estimatedCostZAR:12000, aiNote:'Full travel day. Fly CPT→JNB, connect JNB→MUB (Maun), then light aircraft to camp. 20kg soft bag limit on final leg.' },
+};
+
 const CITY_TO_SLUG: Record<string, string> = {
   'kruger':'kruger-sabi-sand','sabi sand':'kruger-sabi-sand','kruger / sabi sand':'kruger-sabi-sand',
   'sabi sands':'kruger-sabi-sand','okavango':'okavango-delta','okavango delta':'okavango-delta',
@@ -102,8 +114,9 @@ const CITY_TRANSFERS: Record<string, CityTransferOption[]> = {
     { id:'shuttle',      icon:'🚌', label:'Shared shuttle',       provider:'Backpacker Bus / Myciti',           duration:'45–75 min', estimatedCostZAR:850,   note:'Budget option. Shared with other passengers, scheduled times only.', recommended:false },
   ],
   'chobe-vic-falls': [
-    { id:'private-car',  icon:'🚗', label:'Private transfer',    provider:'Private vehicle from VFA airport',  duration:'15–20 min', estimatedCostZAR:1800,  note:'Victoria Falls Airport is 20 minutes from town. Private vehicle recommended — minimal public options.', recommended:true },
-    { id:'helicopter',   icon:'🚁', label:'Helicopter arrival',  provider:'Helicopter direct from airstrip',   duration:'8 min',     estimatedCostZAR:9500,  note:'Arrive in style — aerial views of the Falls on approach. Unforgettable first moment.', recommended:false },
+    { id:'airlink-vfa-jnb',  icon:'🛫', label:'Airlink VFA → JNB',     provider:'Lodge transfer to VFA + Airlink (4Z) VFA→JNB', duration:'~3h 30m total', estimatedCostZAR:8500, note:'Airlink (4Z) operates daily VFA→JNB — multiple departures. Lodge vehicle to airport (~35min). Connects to international flights at OR Tambo. Allow 3hrs at JNB for international connections.', recommended:true },
+    { id:'fastjet-vfa-jnb',  icon:'🛫', label:'Fastjet VFA → JNB',     provider:'Lodge transfer to VFA + Fastjet (TC) VFA→JNB',  duration:'~3h 30m total', estimatedCostZAR:6800, note:'Fastjet (TC) operates VFA→JNB — check schedule for your dates. Budget carrier, reliable on this route. Lodge vehicle to VFA (~35min). Allow 3hrs at JNB for international connections.', recommended:false },
+    { id:'helicopter-vfa',   icon:'🚁', label:'Helicopter to VFA + Airlink', provider:'Helicopter lodge→VFA + Airlink VFA→JNB', duration:'~3h',           estimatedCostZAR:18000, note:'Spectacular aerial views of Victoria Falls on departure. Connects to Airlink VFA→JNB. Premium upgrade — worth every cent.', recommended:false },
   ],
   'masai-mara': [
     { id:'light-aircraft', icon:'✈', label:'Light aircraft charter', provider:'Safarilink / Air Kenya charter', duration:'45 min',    estimatedCostZAR:6800,  note:'Nairobi to Mara airstrip. Most camps have their own airstrip — vehicle transfer included.', recommended:true },
@@ -420,9 +433,6 @@ function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
     image:imageUrl, reelUrl:s.reel_url??s.video_url??null,
     funFact:s.short_tagline??(s.description ? String(s.description).slice(0,120) : null),
     malariaFree:s.malaria_status==='malaria-free', tags:s.tags||[], rate_includes:s.rate_includes||[],
-    min_child_age:         s.min_child_age        ?? null,
-    game_drive_min_age:    s.game_drive_min_age   ?? null,
-    private_vehicle_avail: s.private_vehicle_available ?? false,
     reviewScore:s.review_score??null, reviewCount:s.review_count??null,
     socialLinks:s.social_media_links??null,
     _images:extraSlides,
@@ -504,49 +514,19 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode,
 
 type ValidationIssue = { severity:'hard'|'warning'; code:string; message:string; };
 
-function validateItinerary(params: {
-  cities:           ItineraryCity[];
-  checkinDate:      string;
-  infants:          number;
-  childAges?:       number[];
-  hasOwnFlights?:   boolean;
-  arrivalFlightNo?: string;
-}): ValidationIssue[] {
-  const { cities, checkinDate, infants, childAges = [] } = params;
+function validateItinerary(params: { cities:ItineraryCity[]; checkinDate:string; infants:number; hasOwnFlights?:boolean; arrivalFlightNo?:string; }): ValidationIssue[] {
+  const { cities, checkinDate, infants } = params;
   const issues: ValidationIssue[] = [];
-  const youngestChild = childAges.length > 0 ? Math.min(...childAges) : null;
-  const gameDriveSlugs = ['kruger-sabi-sand','okavango-delta','masai-mara','chobe-vic-falls'];
-  const malariaSlugs   = ['kruger-sabi-sand','okavango-delta','masai-mara','bwindi','chobe-vic-falls'];
-
   if (params.hasOwnFlights && !params.arrivalFlightNo && cities.length > 0) {
     issues.push({ severity:'warning', code:'NO_ARRIVAL_DETAILS', message:'No arrival flight details provided. Your Journey Specialist will contact you to arrange your airport transfer and first-night timing.' });
   }
   if (!checkinDate) issues.push({ severity:'warning', code:'NO_DATES', message:'No specific dates selected. Pricing is indicative — your Journey Specialist will confirm availability once dates are set.' });
   cities.forEach(c => { if (c.nights===1) issues.push({ severity:'hard', code:'ONE_NIGHT_STAY', message:`${c.city}: 1-night stay is below minimum. Extend to at least 2 nights or remove this destination.` }); });
-
-  if (infants > 0) cities.forEach(c => {
+  if (infants>0) cities.forEach(c => {
     const slug = CITY_TO_SLUG[c.city?.toLowerCase().trim()??'']??'';
-    if (gameDriveSlugs.includes(slug)) issues.push({ severity:'warning', code:'INFANT_AGE_RESTRICTION', message:`${c.city}: Infants are not permitted on open game drives at most camps. We'll recommend villa or exclusive-use options.` });
-    if (malariaSlugs.includes(slug))   issues.push({ severity:'warning', code:'INFANT_MALARIA',         message:`${c.city}: Malaria zone. Consult your paediatrician before travel with infants.` });
+    if (['kruger-sabi-sand','okavango-delta','masai-mara','chobe-vic-falls'].includes(slug)) issues.push({ severity:'warning', code:'INFANT_AGE_RESTRICTION', message:`${c.city}: Some camps restrict under-5s on open game drives. We'll confirm lodge policies.` });
+    if (['kruger-sabi-sand','okavango-delta','masai-mara','bwindi','chobe-vic-falls'].includes(slug)) issues.push({ severity:'warning', code:'INFANT_MALARIA', message:`${c.city}: Malaria zone. Consult your paediatrician before travel with infants.` });
   });
-
-  if (youngestChild !== null && youngestChild < 12) {
-    cities.forEach(c => {
-      const slug = CITY_TO_SLUG[c.city?.toLowerCase().trim()??'']??'';
-      if (gameDriveSlugs.includes(slug)) {
-        const msg = youngestChild < 6
-          ? `${c.city}: Children under 6 are not permitted on shared game drives at most camps. A private vehicle (typically +R4,500/day) will be required — we'll include this in your quote.`
-          : `${c.city}: Some camps require children under 12 to have a private vehicle for game drives. Your Journey Specialist will confirm the policy for your selected lodge.`;
-        issues.push({ severity:'warning', code:'CHILD_GAME_DRIVE', message:msg });
-      }
-    });
-  }
-
-  if (youngestChild !== null && youngestChild < 12) {
-    const hasMultiMalaria = cities.filter(c => malariaSlugs.includes(CITY_TO_SLUG[c.city?.toLowerCase().trim()??'']??'')).length > 0;
-    if (hasMultiMalaria) issues.push({ severity:'warning', code:'CHILD_MALARIA', message:`You have children under 12 travelling to a malaria zone. Consult your paediatrician — prophylaxis options for children differ from adults.` });
-  }
-
   const charterSlugs = ['kruger-sabi-sand','okavango-delta','masai-mara'];
   if (cities.some(c => charterSlugs.includes(CITY_TO_SLUG[c.city?.toLowerCase().trim()??'']??''))) issues.push({ severity:'warning', code:'CHARTER_BAGGAGE', message:'Light aircraft routes enforce a 20kg soft-bag limit. Hard-sided cases are not permitted.' });
   return issues;
@@ -1140,7 +1120,8 @@ function NestedPropertyCarousel({
       const stripCenter = strip.scrollLeft + strip.clientWidth / 2;
       let closest = 0; let minDist = Infinity;
       cards.forEach((card, i) => {
-        const cardCenter = card.offsetLeft + card.offsetWidth / 2;
+        const el = card as HTMLElement;
+        const cardCenter = el.offsetLeft + el.offsetWidth / 2;
         const dist = Math.abs(stripCenter - cardCenter);
         if (dist < minDist) { minDist = dist; closest = i; }
       });
@@ -1619,22 +1600,44 @@ function buildTransferLegs(opt: any, meta?: any): TransferLeg[] {
         note: 'FedAir terminal, Atlas Rd · OR Tambo domestic · arrives lodge airstrip',
         noteColor: T.blue,
       });
-    } else if (isAirlink || isFastjet || (hasLive && i===1)) {
-      // Commercial scheduled airline — use Duffel meta if available
-      const airlineName = hasLive && carrier ? (AIRLINE_META[carrier]?.name ?? carrier) : (isAirlink?'Airlink':isFastjet?'Fastjet':'Scheduled airline');
-      const airlineCode = hasLive && carrier ? carrier : (isAirlink?'4Z':isFastjet?'TC':'?');
-      const routeMatch = p.match(/([A-Z]{3})\s*→?\s*([A-Z]{3})/);
+    } else if (isAirlink || isFastjet || (hasLive && i===1) || /Airways|Airlines|Airlink|Fastjet|Air Zimbabwe|FlySafair/i.test(p)) {
+      // Commercial scheduled airline — could be Duffel meta or known airline name
+      // Detect "Airline Name · dep→arr · stops · dur" pattern from commercialLine
+      const timeMatch = p.match(/(\d{1,2}:\d{2})\s*→\s*(\d{1,2}:\d{2})/);
+      const flightDep = timeMatch?.[1] ?? depTime;
+      const flightArr = timeMatch?.[2] ?? arrTime;
+      const routeMatch = p.match(/([A-Z]{3})\s*→\s*([A-Z]{3})/);
       const from = routeMatch?.[1] ?? '';
       const to   = routeMatch?.[2] ?? '';
+
+      // Airline name: extract from "Airline · time→time" or use meta
+      let airlineName = 'Scheduled airline';
+      let airlineCode = '?';
+      if (hasLive && carrier) {
+        airlineName = AIRLINE_META[carrier]?.name ?? carrier;
+        airlineCode = AIRLINE_META[carrier]?.code ?? carrier.slice(0,2).toUpperCase();
+      } else if (isAirlink)  { airlineName = 'Airlink';  airlineCode = '4Z'; }
+      else if (isFastjet)    { airlineName = 'Fastjet';  airlineCode = 'TC'; }
+      else {
+        // Try to extract airline name from "Airline · ..." pattern
+        const nameChunk = p.split(/\s*·\s*/)[0].trim();
+        if (nameChunk && !/^\d/.test(nameChunk) && nameChunk.length < 30) {
+          airlineName = nameChunk.replace(/ Airways$/, '').replace(/ Airlines$/, '');
+          const meta2 = Object.values(AIRLINE_META).find(m => airlineName.includes(m.name) || m.name.includes(airlineName));
+          if (meta2) airlineCode = meta2.code;
+          else airlineCode = airlineName.slice(0,2).toUpperCase();
+        }
+      }
+
+      const stopsStr = (typeof stops === 'number') ? (stops === 0 ? 'direct' : `${stops} stop${stops > 1 ? 's' : ''}`) : '';
+
       legs.push({
         type:'airline', badge: airlineCode,
-        primary: airlineName + (hasLive && meta.flight_no ? `  ${meta.flight_no}` : ''),
-        route: hasLive && depTime && arrTime
-          ? `${from||'?'} ${depTime}  →  ${to||'?'} ${arrTime}`
-          : (from && to ? `${from} → ${to}` : p),
-        detail: hasLive
-          ? [stops, durStr].filter(Boolean).join(' · ') + ' · Economy'
-          : (durStr ? `${durStr} · Economy` : undefined),
+        primary: airlineName + (hasLive && meta?.flight_no ? `  ${meta.flight_no}` : ''),
+        route: (flightDep && flightArr && from && to)
+          ? `${from} ${flightDep}  →  ${to} ${flightArr}`
+          : (from && to ? `${from} → ${to}` : undefined),
+        detail: [stopsStr, durStr].filter(Boolean).join(' · ') || undefined,
         note: hasLive ? undefined : 'Est. fare — confirmed by specialist',
         noteColor: T.textDim,
       });
@@ -1845,10 +1848,10 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
         ))}
       </div>
 
-      {/* Cost + select row */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 16px 12px', borderTop:'0.5px solid rgba(255,255,255,0.04)', marginTop:4 }}>
-        <div style={{ fontSize:11, color:T.textDim }}>
-          {cost > 0 ? `${fmt(cost)} est. · subject to confirmation` : 'Cost confirmed by specialist'}
+      {/* Select row — pricing hidden from traveller */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', padding:'8px 16px 12px', borderTop:'0.5px solid rgba(255,255,255,0.04)', marginTop:4 }}>
+        <div style={{ fontSize:10, color:T.textDim, marginRight:'auto' }}>
+          Your Journey Specialist confirms all transfer costs
         </div>
         {onSelect && optionCount > 1 && (
           <button onClick={onSelect} style={{ fontSize:11, fontWeight:600, color:isSelected?'rgba(96,165,250,0.9)':T.textMid, background:isSelected?'rgba(96,165,250,0.1)':'transparent', border:`0.5px solid ${isSelected?'rgba(96,165,250,0.3)':T.border}`, borderRadius:7, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit', transition:'all 0.2s' }}>
@@ -2114,14 +2117,14 @@ function ChatDrawer({ msgs, input, setInput, send, loading, endRef, onClose, edi
 
 
 const HOTELS_FALLBACK: Hotel[] = [
-  { id:1, edition_id:'safari', name:'Singita Boulders Lodge', location:'Kruger / Sabi Sand, South Africa', destination:'Kruger / Sabi Sand', subRegion:'kruger-sabi-sand', region:'southern-africa', country:'South Africa', stars:5, trustScore:99, contentScore:95, netRate:56000, otaRate:76000, marginScore:27, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', funFact:'River-facing suites on the Sand River. Six guests per guide.', upgrades:{ rooms:[{label:'Luxury Suite',extra:0,tier:0},{label:'Private Villa',extra:89000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:4200,tier:1}] }, min_child_age:10, game_drive_min_age:10, private_vehicle_avail:true },
-  { id:2, edition_id:'safari', name:'Londolozi Tree Camp',    location:'Kruger / Sabi Sand, South Africa', destination:'Kruger / Sabi Sand', subRegion:'kruger-sabi-sand', region:'southern-africa', country:'South Africa', stars:5, trustScore:97, contentScore:90, netRate:48000, otaRate:67000, marginScore:28, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1500491460312-c32fc2dbc751?w=800&q=80', funFact:'Treehouse suites above the Sand River.', upgrades:{ rooms:[{label:'Suite',extra:0,tier:0},{label:'Private Treehouse',extra:30000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3800,tier:1}] }, min_child_age:6, game_drive_min_age:6, private_vehicle_avail:true },
-  { id:3, edition_id:'safari', name:'Wilderness Mombo Camp',  location:'Okavango Delta, Botswana',         destination:'Okavango Delta',    subRegion:'okavango-delta',  region:'southern-africa', country:'Botswana',      stars:5, trustScore:98, contentScore:92, netRate:62000, otaRate:88000, marginScore:30, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact:"Chief's Island — the highest predator density in the Delta.", upgrades:{ rooms:[{label:'Luxury Tent',extra:0,tier:0},{label:'Family Tent',extra:18000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3200,tier:1}] }, min_child_age:12, game_drive_min_age:12, private_vehicle_avail:true },
-  { id:4, edition_id:'safari', name:'andBeyond Xaranna',      location:'Okavango Delta, Botswana',         destination:'Okavango Delta',    subRegion:'okavango-delta',  region:'southern-africa', country:'Botswana',      stars:5, trustScore:95, contentScore:88, netRate:52000, otaRate:74000, marginScore:29, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', funFact:'On a private island in the Delta.', upgrades:{ rooms:[{label:'Luxury Tent',extra:0,tier:0},{label:'Honeymoon Tent',extra:12000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3000,tier:1}] }, min_child_age:6, game_drive_min_age:6, private_vehicle_avail:true },
-  { id:5, edition_id:'safari', name:'Matetsi Victoria Falls',  location:'Chobe / Victoria Falls, Zimbabwe', destination:'Chobe / Victoria Falls', subRegion:'chobe-vic-falls', region:'southern-africa', country:'Zimbabwe', stars:5, trustScore:96, contentScore:88, netRate:38000, otaRate:54000, marginScore:30, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact:'Private 26km stretch of the Zambezi.', upgrades:{ rooms:[{label:'River Suite',extra:0,tier:0},{label:'Private Villa',extra:45000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3200,tier:1}] }, min_child_age:6, game_drive_min_age:6, private_vehicle_avail:true },
-  { id:6, edition_id:'safari', name:'Ellerman House',         location:'Cape Town, South Africa',          destination:'Cape Town',         subRegion:'cape-town',      region:'southern-africa', country:'South Africa', stars:5, trustScore:94, contentScore:91, netRate:28000, otaRate:null,  marginScore:27, malariaFree:true,  reelUrl:null, tags:['malaria-free'], image:'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80', funFact:'Eleven suites overlooking the Atlantic.', upgrades:{ rooms:[{label:'Classic Suite',extra:0,tier:0},{label:'Villa Suite',extra:18000,tier:1}], basis:[{label:'Breakfast included',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:2200,tier:1}] }, min_child_age:null, game_drive_min_age:null, private_vehicle_avail:false },
-  { id:7, edition_id:'safari', name:'Jamala Madikwe',         location:'Madikwe, South Africa',            destination:'Madikwe',           subRegion:'madikwe',        region:'southern-africa', country:'South Africa', stars:5, trustScore:93, contentScore:85, netRate:28000, otaRate:38500, marginScore:27, malariaFree:true,  reelUrl:null, tags:['malaria-free','family-friendly'], image:'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact:'Malaria-free Big Five.', upgrades:{ rooms:[{label:'Classic Suite',extra:0,tier:0},{label:'Royal Suite',extra:15000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:2200,tier:1}] }, min_child_age:4, game_drive_min_age:6, private_vehicle_avail:true },
-  { id:8, edition_id:'safari', name:'Mara Plains Camp',       location:'Masai Mara, Kenya',                destination:'Masai Mara',        subRegion:'masai-mara',     region:'east-africa',     country:'Kenya',        stars:5, trustScore:96, contentScore:91, netRate:42000, otaRate:58000, marginScore:28, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80', funFact:'Only 8 tents. Peak migration July–October.', upgrades:{ rooms:[{label:'Classic Tent',extra:0,tier:0},{label:'Family Tent',extra:18000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3200,tier:1}] }, min_child_age:6, game_drive_min_age:6, private_vehicle_avail:true },
+  { id:1, edition_id:'safari', name:'Singita Boulders Lodge', location:'Kruger / Sabi Sand, South Africa', destination:'Kruger / Sabi Sand', subRegion:'kruger-sabi-sand', region:'southern-africa', country:'South Africa', stars:5, trustScore:99, contentScore:95, netRate:56000, otaRate:76000, marginScore:27, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', funFact:'River-facing suites on the Sand River. Six guests per guide.', upgrades:{ rooms:[{label:'Luxury Suite',extra:0,tier:0},{label:'Private Villa',extra:89000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:4200,tier:1}] } },
+  { id:2, edition_id:'safari', name:'Londolozi Tree Camp',    location:'Kruger / Sabi Sand, South Africa', destination:'Kruger / Sabi Sand', subRegion:'kruger-sabi-sand', region:'southern-africa', country:'South Africa', stars:5, trustScore:97, contentScore:90, netRate:48000, otaRate:67000, marginScore:28, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1500491460312-c32fc2dbc751?w=800&q=80', funFact:'Treehouse suites above the Sand River.', upgrades:{ rooms:[{label:'Suite',extra:0,tier:0},{label:'Private Treehouse',extra:30000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3800,tier:1}] } },
+  { id:3, edition_id:'safari', name:'Wilderness Mombo Camp',  location:'Okavango Delta, Botswana',         destination:'Okavango Delta',    subRegion:'okavango-delta',  region:'southern-africa', country:'Botswana',      stars:5, trustScore:98, contentScore:92, netRate:62000, otaRate:88000, marginScore:30, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', funFact:"Chief's Island — the highest predator density in the Delta.", upgrades:{ rooms:[{label:'Luxury Tent',extra:0,tier:0},{label:'Family Tent',extra:18000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3200,tier:1}] } },
+  { id:4, edition_id:'safari', name:'andBeyond Xaranna',      location:'Okavango Delta, Botswana',         destination:'Okavango Delta',    subRegion:'okavango-delta',  region:'southern-africa', country:'Botswana',      stars:5, trustScore:95, contentScore:88, netRate:52000, otaRate:74000, marginScore:29, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', funFact:'On a private island in the Delta.', upgrades:{ rooms:[{label:'Luxury Tent',extra:0,tier:0},{label:'Honeymoon Tent',extra:12000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3000,tier:1}] } },
+  { id:5, edition_id:'safari', name:'Matetsi Victoria Falls',  location:'Chobe / Victoria Falls, Zimbabwe', destination:'Chobe / Victoria Falls', subRegion:'chobe-vic-falls', region:'southern-africa', country:'Zimbabwe', stars:5, trustScore:96, contentScore:88, netRate:38000, otaRate:54000, marginScore:30, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', funFact:'Private 26km stretch of the Zambezi.', upgrades:{ rooms:[{label:'River Suite',extra:0,tier:0},{label:'Private Villa',extra:45000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3200,tier:1}] } },
+  { id:6, edition_id:'safari', name:'Ellerman House',         location:'Cape Town, South Africa',          destination:'Cape Town',         subRegion:'cape-town',      region:'southern-africa', country:'South Africa', stars:5, trustScore:94, contentScore:91, netRate:28000, otaRate:null,  marginScore:27, malariaFree:true,  reelUrl:null, tags:['malaria-free'], image:'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80', funFact:'Eleven suites overlooking the Atlantic.', upgrades:{ rooms:[{label:'Classic Suite',extra:0,tier:0},{label:'Villa Suite',extra:18000,tier:1}], basis:[{label:'Breakfast included',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:2200,tier:1}] } },
+  { id:7, edition_id:'safari', name:'Jamala Madikwe',         location:'Madikwe, South Africa',            destination:'Madikwe',           subRegion:'madikwe',        region:'southern-africa', country:'South Africa', stars:5, trustScore:93, contentScore:85, netRate:28000, otaRate:38500, marginScore:27, malariaFree:true,  reelUrl:null, tags:['malaria-free','family-friendly'], image:'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=800&q=80', funFact:'Malaria-free Big Five.', upgrades:{ rooms:[{label:'Classic Suite',extra:0,tier:0},{label:'Royal Suite',extra:15000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:2200,tier:1}] } },
+  { id:8, edition_id:'safari', name:'Mara Plains Camp',       location:'Masai Mara, Kenya',                destination:'Masai Mara',        subRegion:'masai-mara',     region:'east-africa',     country:'Kenya',        stars:5, trustScore:96, contentScore:91, netRate:42000, otaRate:58000, marginScore:28, malariaFree:false, reelUrl:null, tags:[], image:'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=800&q=80', funFact:'Only 8 tents. Peak migration July–October.', upgrades:{ rooms:[{label:'Classic Tent',extra:0,tier:0},{label:'Family Tent',extra:18000,tier:1}], basis:[{label:'All-inclusive',extra:0,tier:0}], flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:3200,tier:1}] } },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2154,19 +2157,9 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
 
   const [nights,   setNights]   = useState(7);
   const [adults,   setAdults]   = useState(2);
-  const [children,  setChildren]  = useState(0);
-  const [childAges, setChildAges] = useState<number[]>([]);
-  const [infants,   setInfants]   = useState(0);
+  const [children, setChildren] = useState(0);
+  const [infants,  setInfants]  = useState(0);
   const totalPax = Math.max(adults+children,1);
-
-  // Keep childAges in sync with children count
-  const handleSetChildren = (n: number) => {
-    setChildren(n);
-    setChildAges(prev => n > prev.length
-      ? [...prev, ...Array(n - prev.length).fill(8)]
-      : prev.slice(0, n)
-    );
-  };
 
   const [needsIntlFlight, setNeedsIntlFlight] = useState<boolean|null>(null);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
@@ -2722,7 +2715,6 @@ const runBriefPlanner = (briefText: string) => {
       cities: itinerary?.cities ?? [],
       checkinDate,
       infants,
-      childAges,
       hasOwnFlights: !includeIntlFlight,
       arrivalFlightNo,
     });
@@ -2759,7 +2751,7 @@ const runBriefPlanner = (briefText: string) => {
     setCheckoutLoading(false);
   };
 
-  const validationIssues = useMemo(() => validateItinerary({ cities:itinerary?.cities??[], checkinDate, infants, childAges, hasOwnFlights:!includeIntlFlight, arrivalFlightNo }), [itinerary?.cities, checkinDate, infants, childAges, includeIntlFlight, arrivalFlightNo]);
+  const validationIssues = useMemo(() => validateItinerary({ cities:itinerary?.cities??[], checkinDate, infants, hasOwnFlights:!includeIntlFlight, arrivalFlightNo }), [itinerary?.cities, checkinDate, infants, includeIntlFlight, arrivalFlightNo]);
 
   const navProps = { edition, setScreen, currency, setCurrency, chatOpen, setChatOpen, totalZAR:grandTotal, fmt, hasPricedItems:grandTotal>0 };
 
@@ -2781,7 +2773,7 @@ const runBriefPlanner = (briefText: string) => {
             setNights(7);
             setBudget(230000);
             setAdults(2);
-            handleSetChildren(0);
+            setChildren(0);
             setInfants(0);
             setFlightIntent(null);
             setGatewayPreference('open_jaw');
@@ -2947,7 +2939,7 @@ const runBriefPlanner = (briefText: string) => {
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
                   {[
                     { label:'Adults', value:adults, set:setAdults, min:1 },
-                    { label:'Children', value:children, set:handleSetChildren, min:0 },
+                    { label:'Children', value:children, set:setChildren, min:0 },
                     { label:'Infants', value:infants, set:setInfants, min:0 },
                   ].map(p => (
                     <div key={p.label}>
@@ -2960,28 +2952,6 @@ const runBriefPlanner = (briefText: string) => {
                     </div>
                   ))}
                 </div>
-                {/* Child age pickers in builder panel */}
-                {children > 0 && (
-                  <div style={{ marginTop:14, paddingTop:14, borderTop:`0.5px solid ${T.border}` }}>
-                    <div style={{ fontSize:9, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:10 }}>Children's ages</div>
-                    <div style={{ display:'flex', flexWrap:'wrap' as const, gap:8 }}>
-                      {childAges.map((age, i) => (
-                        <div key={i} style={{ display:'flex', flexDirection:'column' as const, alignItems:'center', gap:4 }}>
-                          <div style={{ fontSize:9, color:T.textDim }}>Child {i+1}</div>
-                          <select
-                            value={age}
-                            onChange={e => setChildAges(prev => prev.map((a, j) => j === i ? Number(e.target.value) : a))}
-                            style={{ background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:8, color:T.text, fontSize:13, padding:'7px 10px', fontFamily:'inherit', cursor:'pointer', outline:'none' }}
-                          >
-                            {Array.from({length:18},(_,n)=>n).map(n => (
-                              <option key={n} value={n} style={{ background:'#1a1a1a' }}>{n === 0 ? 'Under 1' : `${n} yr${n===1?'':'s'}`}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* International flights */}
@@ -3058,7 +3028,7 @@ const runBriefPlanner = (briefText: string) => {
         <button
           onClick={() => {
             setSelectedRegions([]); setSelectedThemes([]); setNights(7); setBudget(230000);
-            setAdults(2); handleSetChildren(0); setInfants(0); setFlightIntent(null);
+            setAdults(2); setChildren(0); setInfants(0); setFlightIntent(null);
             setCheckinDate(''); setDateMode('specific'); setFlexMonth('');
             setScreen('landing');
           }}
@@ -3205,7 +3175,7 @@ const runBriefPlanner = (briefText: string) => {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:14 }}>
             {([
               { label:'Adults',   sub:'\u00a0',    value:adults,   set:setAdults,   min:1 },
-              { label:'Children', sub:'Ages 2–17', value:children, set:handleSetChildren, min:0 },
+              { label:'Children', sub:'Ages 2–17', value:children, set:setChildren, min:0 },
               { label:'Infants',  sub:'Under 2',   value:infants,  set:setInfants,  min:0 },
             ]).map(p => (
               <div key={p.label}>
@@ -3219,41 +3189,9 @@ const runBriefPlanner = (briefText: string) => {
               </div>
             ))}
           </div>
-          {/* Child age pickers — appear when children > 0 */}
-          {children > 0 && (
-            <div style={{ marginTop:16 }}>
-              <div style={{ fontSize:10, fontWeight:300, letterSpacing:'0.18em', color:'rgba(245,240,232,0.45)', textTransform:'uppercase' as const, marginBottom:10 }}>Children's ages</div>
-              <div style={{ display:'flex', flexWrap:'wrap' as const, gap:8 }}>
-                {childAges.map((age, i) => (
-                  <div key={i} style={{ display:'flex', flexDirection:'column' as const, alignItems:'center', gap:4 }}>
-                    <div style={{ fontSize:10, color:'rgba(245,240,232,0.35)', fontWeight:200 }}>Child {i+1}</div>
-                    <select
-                      value={age}
-                      onChange={e => setChildAges(prev => prev.map((a, j) => j === i ? Number(e.target.value) : a))}
-                      style={{ background:'rgba(255,255,255,0.05)', border:'0.5px solid rgba(255,255,255,0.15)', borderRadius:8, color:'rgba(245,240,232,0.9)', fontSize:14, padding:'8px 12px', fontFamily:'inherit', cursor:'pointer', outline:'none' }}
-                    >
-                      {Array.from({length:18},(_,n)=>n).map(n => (
-                        <option key={n} value={n} style={{ background:'#1a1a1a' }}>{n === 0 ? 'Under 1' : `${n} yr${n===1?'':'s'}`}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
-              {childAges.length > 0 && Math.min(...childAges) < 6 && (
-                <div style={{ marginTop:12, background:'rgba(251,191,36,0.05)', border:'0.5px solid rgba(251,191,36,0.18)', borderRadius:8, padding:'10px 14px', fontSize:13, color:T.amber, lineHeight:1.65, fontWeight:200 }}>
-                  Children under 6 require a private vehicle at most bush camps. We'll show lodges that welcome young children and include this in your pricing.
-                </div>
-              )}
-              {childAges.length > 0 && Math.min(...childAges) >= 6 && Math.min(...childAges) < 12 && (
-                <div style={{ marginTop:12, background:'rgba(251,191,36,0.05)', border:'0.5px solid rgba(251,191,36,0.18)', borderRadius:8, padding:'10px 14px', fontSize:13, color:T.amber, lineHeight:1.65, fontWeight:200 }}>
-                  Some camps have age minimums for shared game drives. We'll only show properties that can accommodate your children.
-                </div>
-              )}
-            </div>
-          )}
-          {infants > 0 && (
+          {infants>0 && (
             <div style={{ marginTop:14, background:'rgba(251,191,36,0.05)', border:'0.5px solid rgba(251,191,36,0.18)', borderRadius:8, padding:'10px 14px', fontSize:13, color:T.amber, lineHeight:1.65, fontWeight:200 }}>
-              Infants under 2 are not permitted on open game drives at most bush camps — we'll recommend lodges with villa or exclusive-use options.
+              Some camps restrict under-5s on open game drives — we'll flag this and suggest malaria-free alternatives.
             </div>
           )}
         </div>
@@ -3616,6 +3554,82 @@ const runBriefPlanner = (briefText: string) => {
               </div>
             )}
 
+            {/* ── ARRIVAL TRANSFER: gateway → first region ─────────────── */}
+            {(() => {
+              const gateway = flightArrivalGateway || arrivalAirport || departureHubId || 'JNB';
+              if (!gateway || !itinerary.cities[0]) return null;
+              const firstSlug = CITY_TO_SLUG[itinerary.cities[0].city.toLowerCase().trim()] ?? '';
+              if (!firstSlug) return null;
+              const legKey = `${gateway}→${firstSlug}`;
+              const leg = GATEWAY_LEGS[legKey];
+              if (!leg) return null;
+              return (
+                <div key="arrival-transfer" style={{ marginBottom:24 }}>
+                  {/* Divider */}
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                    <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.15)' }} />
+                    <div style={{ fontSize:10, color:'rgba(96,165,250,0.7)', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
+                      ✈ {leg.fromLabel} → {leg.toLabel}
+                    </div>
+                    <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.15)' }} />
+                  </div>
+                  {/* Card */}
+                  <div style={{ background:'rgba(10,12,18,0.90)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:12, overflow:'hidden' }}>
+                    {/* Header */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'11px 16px 9px', borderBottom:'0.5px solid rgba(255,255,255,0.05)' }}>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:600, color:T.text, fontFamily:"'Jost',sans-serif" }}>Getting there</div>
+                        <div style={{ fontSize:10, color:T.textDim }}>airport to lodge</div>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.07)', borderRadius:20, padding:'4px 10px' }}>
+                        <span style={{ fontSize:9 }}>⏱</span>
+                        <span style={{ fontSize:11, fontWeight:600, color:T.text }}>{leg.duration}</span>
+                      </div>
+                    </div>
+                    {/* Legs */}
+                    <div style={{ padding:'12px 16px 8px' }}>
+                      {/* Parse the provider into visual legs */}
+                      {leg.provider.split(' + ').map((part, i) => {
+                        const isFedAir = /Federal Air/i.test(part);
+                        const isAirlink = /Airlink/i.test(part);
+                        const isFastjet = /Fastjet/i.test(part);
+                        const isCharter = /Wilderness Air|MackAir|charter/i.test(part);
+                        const badge = isFedAir?'FA':isAirlink?'4Z':isFastjet?'TC':isCharter?'WA':'✈';
+                        const badgeColor = isFedAir?'#1a3a6e':isAirlink?'#d4341a':isFastjet?'#f97316':isCharter?'#2d6a4f':'#374151';
+                        const route = part.match(/([A-Z]{3})→([A-Z]{3})/)?.[0] ?? '';
+                        const name = part.replace(/\s+[A-Z]{3}→[A-Z]{3}.*/, '').trim() || part;
+                        return (
+                          <div key={i} style={{ display:'flex', gap:10, alignItems:'flex-start', marginBottom: i < leg.provider.split(' + ').length-1 ? 10 : 6 }}>
+                            <div style={{ width:32, height:32, borderRadius:8, background:badgeColor, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, fontWeight:700, color:'#fff', letterSpacing:'0.04em', flexShrink:0, border:'0.5px solid rgba(255,255,255,0.15)' }}>{badge}</div>
+                            <div style={{ flex:1, paddingTop:2 }}>
+                              <div style={{ display:'flex', justifyContent:'space-between' }}>
+                                <span style={{ fontSize:12, fontWeight:600, color:T.text }}>{name}</span>
+                                {route && <span style={{ fontSize:11, fontWeight:600, color:'rgba(96,165,250,0.9)' }}>{route}</span>}
+                              </div>
+                              {isFedAir && <div style={{ fontSize:10, color:T.textMid, marginTop:2 }}>10:00 &amp; 13:00 daily · 55–65 min · 20kg soft bag</div>}
+                              {isCharter && <div style={{ fontSize:10, color:T.textMid, marginTop:2 }}>20kg soft bag · no hard cases · private airstrip</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Lodge collection row */}
+                      <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+                        <div style={{ width:32, height:32, borderRadius:8, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>🏠</div>
+                        <div style={{ flex:1, paddingTop:2 }}>
+                          <div style={{ fontSize:12, fontWeight:600, color:T.text }}>Lodge collection</div>
+                          <div style={{ fontSize:10, color:'rgba(74,222,128,0.75)', marginTop:2 }}>Complimentary · lodge vehicle meets at airstrip</div>
+                        </div>
+                      </div>
+                    </div>
+                    {/* AI note */}
+                    <div style={{ margin:'0 16px 12px', padding:'8px 12px', background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.1)', borderRadius:8, fontSize:11, color:'rgba(96,165,250,0.7)', lineHeight:1.6 }}>
+                      ⚑ {leg.aiNote}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Per-destination sections */}
             {itinerary.cities.map((city, cityIdx) => {
               const cityName = city.city.toLowerCase().trim();
@@ -3628,19 +3642,10 @@ const runBriefPlanner = (briefText: string) => {
                     const name = (h.name ?? '').toLowerCase();
                     return dest.includes(cityName) || cityName.includes(dest.split(',')[0].trim()) || name.includes(cityName);
                   });
-              // Family eligibility filter — only runs when children have ages set
-              const youngestChild = childAges.length > 0 ? Math.min(...childAges) : null;
-              const familyEligible = (h: Hotel) => {
-                if (youngestChild === null) return true;
-                const minAge = (h as any).min_child_age ?? null;
-                return minAge === null || youngestChild >= minAge;
-              };
-              const filteredPool = pool.filter(familyEligible);
-              const safePool = filteredPool.length > 0
-                ? filteredPool.slice(0, 12)
-                : pool.length > 0
-                  ? pool.slice(0, 3)
-                  : hotelsByMargin.filter(h => (h.country ?? '') === (itinerary.cities[cityIdx]?.country ?? '')).slice(0, 3);
+              // Never filter by pax — all properties shown; specialist confirms family suitability
+              const safePool = pool.length > 0
+                ? pool.slice(0, 20)
+                : hotelsByMargin.filter(h => (h.country ?? '') === (itinerary.cities[cityIdx]?.country ?? '')).slice(0, 6);
               const currentStay = cityStays[cityIdx] ?? { hotelId:safePool[0]?.id??0, nights:city.nights, prefs:{ rooms:0, basis:0, flexibility:0 } };
 
               const isCityAlways = CITY_TYPE_ALWAYS.has(slug);
@@ -3669,14 +3674,11 @@ const runBriefPlanner = (briefText: string) => {
                 return safeKeys.map(k => sf[k]).filter((v:any) => typeof v === 'string' && v.length > 10) as string[];
               })();
               const kbTips: string[] = Array.isArray(regionEntry?.tips) ? regionEntry.tips : [];
-             const seasonalNote: string | undefined = (() => {
-           if (!checkinDate) return undefined;
-           const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
-           // Use guest voice if available, fall back to specialist voice only if no guest version exists
-           const notes = regionEntry?.seasonal_notes_guest ?? regionEntry?.seasonal_notes;
-           if (!notes) return undefined;
-           return (notes as any)[m] ?? undefined;
-         })();
+              const seasonalNote: string | undefined = (() => {
+                if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
+                const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
+                return (regionEntry.seasonal_notes as any)[m] ?? undefined;
+              })();
               const regionFindings = skeletonFindings.filter((f:any) =>
                 f.severity !== 'confirmed'
               ).slice(0, 4);
@@ -3904,7 +3906,7 @@ const runBriefPlanner = (briefText: string) => {
             <div style={{ fontSize:11, color:T.gold, letterSpacing:'0.15em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:6 }}>Your Brief</div>
             <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, fontWeight:700, marginBottom:8, color:T.text }}>Tell us what you're dreaming of</h2>
             <p style={{ fontSize:14, color:T.textMid, marginBottom:24, lineHeight:1.65 }}>Write anything — we'll read it and build your journey around it.</p>
-            <BriefScreen nights={nights} setNights={setNights} adults={adults} setAdults={setAdults} children={children} setChildren={setChildren} childAges={childAges} setChildAges={setChildAges} infants={infants} setInfants={setInfants} onBuild={(text:string)=>runBriefPlanner(text)} />
+            <BriefScreen nights={nights} setNights={setNights} adults={adults} setAdults={setAdults} children={children} setChildren={setChildren} infants={infants} setInfants={setInfants} onBuild={(text:string)=>runBriefPlanner(text)} />
           </div>
         </div>
       )}
@@ -3913,7 +3915,7 @@ const runBriefPlanner = (briefText: string) => {
 }
 
 
-function BriefScreen({ nights, setNights, adults, setAdults, children, setChildren, childAges, setChildAges, infants, setInfants, onBuild }: any) {
+function BriefScreen({ nights, setNights, adults, setAdults, children, setChildren, infants, setInfants, onBuild }: any) {
   const [brief, setBrief] = useState('');
   const maxLen = 1000;
   const ready = brief.trim().length >= 30;
@@ -3939,7 +3941,7 @@ function BriefScreen({ nights, setNights, adults, setAdults, children, setChildr
         {[
           { label:'Nights',   value:nights,   options:[5,7,10,12,14,21], onChange:setNights,   suffix:'n' },
           { label:'Adults',   value:adults,   options:[1,2,3,4,6],       onChange:setAdults,   suffix:''  },
-          { label:'Children', value:children, options:[0,1,2,3,4], onChange:(n:number)=>{ setChildren(n); setChildAges((prev:number[]) => n > prev.length ? [...prev,...Array(n-prev.length).fill(8)] : prev.slice(0,n)); }, suffix:'' },
+          { label:'Children', value:children, options:[0,1,2,3,4],       onChange:setChildren, suffix:''  },
           { label:'Infants',  value:infants,  options:[0,1,2],           onChange:setInfants,  suffix:''  },
         ].map(p => (
           <div key={p.label} style={{ background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, padding:'12px 14px' }}>
