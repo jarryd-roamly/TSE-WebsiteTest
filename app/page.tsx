@@ -651,8 +651,21 @@ function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
               return 0;
             })(),
             tier:  i,
+            // Full room metadata preserved for the detail sheet
+            meta: {
+              description: rt.description ?? null,
+              maxGuests:   rt.max_occupancy ?? null,
+              bedType:     rt.bed_type ?? null,
+              view:        rt.view ?? null,
+              mealBasis:   rt.meal_basis ?? null,
+              category:    rt.category ?? null,
+              images: (() => { try {
+                const arr = Array.isArray(rt.images) ? rt.images : (rt.images ? JSON.parse(rt.images) : []);
+                return arr.map((img:any)=>typeof img==='string'?img:img?.url).filter(Boolean);
+              } catch { return []; } })(),
+            },
           }))
-        : [{label:'Standard Suite',extra:0,tier:0},{label:'Premium Suite',extra:Math.round(netRate*0.4),tier:1}],
+        : [{label:'Standard Suite',extra:0,tier:0,meta:null},{label:'Premium Suite',extra:Math.round(netRate*0.4),tier:1,meta:null}],
       basis:[{label:'All-inclusive',extra:0,tier:0}],
       flexibility:[{label:'Standard',extra:0,tier:0},{label:'Flexible',extra:Math.round(netRate*0.08),tier:1}],
     },
@@ -841,39 +854,25 @@ const M_HOTELS = 1.15;
 // Activities REMOVED — they live in their own spool below the property carousel.
 // Title changed from "Upgrade & Personalise" to "Customise".
 // ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMBINED PROPERTY DETAIL + CUSTOMISE SHEET
+// Single sheet opened by the one carousel button. No chat tab. No base-price header.
+// Room cards show features + incremental pricing. Functional KB diamond on hero.
+// Traveller-safe content only — no internal trade notes, no duplication.
+// ═══════════════════════════════════════════════════════════════════════════════
 function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: { hotel:Hotel; stayPrefs:{rooms:number;basis:number;flexibility:number}; kbEntries:KBEntry[]; fmt:(n:number)=>string; onSelect:(key:string,opt:any)=>void; onClose:()=>void; }) {
 
   const [heroSlide, setHeroSlide] = useState(0);
-  const [sheetTab,  setSheetTab]  = useState<'rooms'|'chat'>('rooms');
-  const [chatMsgs,  setChatMsgs]  = useState<{role:'user'|'ai';text:string}[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [kbNoteOpen, setKbNoteOpen] = useState(false);
 
-  const sendChat = async (msg: string) => {
-    if (!msg.trim() || chatLoading) return;
-    setChatMsgs(m => [...m, { role:'user', text:msg }]);
-    setChatInput('');
-    setChatLoading(true);
-    try {
-      const res = await fetch('/api/ai-gateway', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          model:'claude-haiku-4-5-20251001', max_tokens:300,
-          system:`You are a luxury safari specialist. The traveller is customising their itinerary at ${hotel.name} in ${hotel.destination}. Respond concisely (2-3 sentences). For changes like "make it cheaper" or "extend" — describe what you would do and ask them to confirm before making changes. Be warm and specific.`,
-          messages:[{ role:'user', content:msg }]
-        })
-      });
-      const d = await res.json();
-      const text = d.content?.[0]?.text ?? "Let me connect you with your Journey Specialist for this one.";
-      setChatMsgs(m => [...m, { role:'ai', text }]);
-    } catch {
-      setChatMsgs(m => [...m, { role:'ai', text:"Your Journey Specialist can action this for you — tap escalate below." }]);
-    }
-    setChatLoading(false);
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior:'smooth' }), 100);
-  };
+  // Lock body scroll while overlay is open
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
+  // Traveller-safe KB only (never specialist_recs / internal_only / commercial)
   const kbEntry = kbEntries.find((e:any) =>
     (e.status === 'active' || e.active === true) &&
     (e.entry_type === 'property' || e.type === 'property') &&
@@ -881,11 +880,10 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
     !e.internal_only &&
     ((e.linked_name ?? e.linkedTo ?? '').toLowerCase().includes(hotel.name.toLowerCase()))
   );
-  const kbHighlightsSheet: string[] = kbEntry?.highlights ?? [];
-  const kbTipsSheet: string[]       = kbEntry?.tips ?? [];
-  // Never expose specialist_recs or specialistNotes to traveller
-  const kbSpecialistNote: string    = '';
+  const kbHighlights: string[] = kbEntry?.highlights ?? [];
+
   const allSlides = buildSlides(hotel);
+  const heroKbNote = allSlides[heroSlide] ? getSlideKB(hotel, allSlides[heroSlide], kbEntries) : null;
 
   const [localPrefs, setLocalPrefs] = useState(stayPrefs);
   const handleSelect = (key: string, opt: any) => {
@@ -893,267 +891,203 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
     onSelect(key, opt);
   };
 
-  const [roomSlides, setRoomSlides]   = useState<Record<number,number>>({});
-  const [expandedRoom, setExpandedRoom] = useState<number | null>(null);
+  const [roomSlides, setRoomSlides] = useState<Record<number,number>>({});
 
   const roomExtra  = hotel.upgrades?.rooms?.[localPrefs.rooms]?.extra ?? 0;
   const flexExtra  = hotel.upgrades?.flexibility?.[localPrefs.flexibility]?.extra ?? 0;
   const addedCost  = roomExtra + flexExtra;
 
+  // Childcare guidance — traveller-safe, tag-driven
+  const tags = (hotel.tags ?? []) as string[];
+  const childcareNote = tags.includes('family-friendly')
+    ? 'Family suites available · children of all ages welcome · dedicated kids\u2019 activities and babysitting on request.'
+    : hotel.malariaFree
+    ? 'Malaria-free — well suited to families. Children welcome; family rooms subject to availability.'
+    : 'Children by arrangement — many camps set a minimum age for game drives. Your specialist confirms before booking.';
+
+  const isRoomOnly = (hotel.rate_includes?.length ?? 0) === 0 ||
+    ((hotel.rate_includes?.length ?? 0) === 1 && hotel.rate_includes?.[0] === 'accommodation');
+
   return (
     <div className="overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background:'#0f0f0f', borderRadius:'20px 20px 0 0', width:'100%', maxWidth:680, height:'95vh', display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease', overflow:'hidden' }}>
+      <div style={{ background:'#0f0f0f', borderRadius:'18px', width:'94vw', maxWidth:920, height:'92vh', display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease', overflow:'hidden', border:`0.5px solid ${T.borderGold}` }}>
 
-        {/* STICKY HEADER */}
-        <div style={{ flexShrink:0, padding:'18px 20px 14px', borderBottom:`0.5px solid rgba(255,255,255,0.08)`, background:'#0f0f0f' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.12em', fontWeight:700, marginBottom:3 }}>✦ Customise</div>
-              <div style={{ fontSize:18, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif", lineHeight:1.2 }}>{hotel.name}</div>
-              <div style={{ fontSize:12, color:T.textDim, marginTop:2 }}>{hotel.destination} · {hotel.country}</div>
+        {/* STICKY HEADER — no price */}
+        <div style={{ flexShrink:0, padding:'16px 22px 14px', borderBottom:`0.5px solid rgba(255,255,255,0.08)`, background:'#0f0f0f', display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:14 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.14em', fontWeight:700, marginBottom:3 }}>✦ Property detail</div>
+            <div style={{ fontSize:22, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif", lineHeight:1.15 }}>{hotel.name}</div>
+            <div style={{ fontSize:12, color:T.textDim, marginTop:3, display:'flex', gap:10, flexWrap:'wrap' as const }}>
+              <span>{hotel.destination} · {hotel.country}</span>
+              <span style={{ color:T.green }}>★ {hotel.trustScore}/100</span>
+              {hotel.malariaFree && <span style={{ color:T.gold }}>✦ Malaria-free</span>}
             </div>
-            <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:T.textMid, width:34, height:34, borderRadius:'50%', cursor:'pointer', fontSize:17, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginLeft:12 }}>×</button>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:10, flexWrap:'wrap' }}>
-            <div style={{ fontSize:20, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>
-              {fmt(hotel.displayRate)}<span style={{ fontSize:11, color:T.textDim, fontWeight:400 }}>/night</span>
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:T.textMid, width:36, height:36, borderRadius:'50%', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>×</button>
+        </div>
+
+        {/* SCROLLABLE BODY — two-column on wide screens to reduce scrolling */}
+        <div style={{ flex:1, overflowY:'auto', padding:'0 0 130px' }}>
+
+          {/* HERO CAROUSEL — prominent arrows + functional KB diamond */}
+          {allSlides.length > 0 && (
+            <div style={{ position:'relative', height:'min(46vh, 380px)', overflow:'hidden', background:'#111' }}>
+              {allSlides[heroSlide] && (
+                allSlides[heroSlide].type === 'youtube'
+                  ? <iframe src={allSlides[heroSlide].url} title={hotel.name} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
+                : allSlides[heroSlide].type === 'reel' || allSlides[heroSlide].type === 'video'
+                  ? <video src={allSlides[heroSlide].url} poster={allSlides[heroSlide].poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                  : <img src={allSlides[heroSlide].url} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+              )}
+              <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.55) 0%,transparent 55%)' }} />
+
+              {/* Prominent arrows */}
+              {heroSlide > 0 && (
+                <button onClick={() => { setHeroSlide(i => i-1); setKbNoteOpen(false); }} style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', background:'rgba(10,10,10,0.78)', border:`1.5px solid ${T.gold}`, color:T.gold, width:44, height:44, borderRadius:'50%', cursor:'pointer', fontSize:22, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5, boxShadow:'0 2px 12px rgba(0,0,0,0.6)' }}>‹</button>
+              )}
+              {heroSlide < allSlides.length - 1 && (
+                <button onClick={() => { setHeroSlide(i => i+1); setKbNoteOpen(false); }} style={{ position:'absolute', right:14, top:'50%', transform:'translateY(-50%)', background:'rgba(10,10,10,0.78)', border:`1.5px solid ${T.gold}`, color:T.gold, width:44, height:44, borderRadius:'50%', cursor:'pointer', fontSize:22, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5, boxShadow:'0 2px 12px rgba(0,0,0,0.6)' }}>›</button>
+              )}
+
+              {/* Caption + dots */}
+              <div style={{ position:'absolute', bottom:12, left:0, right:0, display:'flex', justifyContent:'space-between', alignItems:'flex-end', padding:'0 16px' }}>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,0.6)', background:'rgba(0,0,0,0.45)', borderRadius:5, padding:'3px 9px' }}>{allSlides[heroSlide]?.label || ''}{allSlides[heroSlide]?.roomType ? ` · ${allSlides[heroSlide].roomType}` : ''}</div>
+                {allSlides.length > 1 && (
+                  <div style={{ display:'flex', gap:4 }}>
+                    {allSlides.map((_,i) => <div key={i} onClick={() => { setHeroSlide(i); setKbNoteOpen(false); }} style={{ width:i===heroSlide?16:5, height:5, borderRadius:3, background:i===heroSlide?T.gold:'rgba(255,255,255,0.4)', cursor:'pointer', transition:'all 0.2s' }} />)}
+                  </div>
+                )}
+              </div>
+
+              {/* Functional KB diamond */}
+              {heroKbNote && (
+                <button onClick={() => setKbNoteOpen(o => !o)} title="Specialist note for this image" style={{ position:'absolute', top:14, right:14, zIndex:8, background:'transparent', border:'none', cursor:'pointer', padding:2 }}>
+                  <div style={{ width:34, height:34, background:'linear-gradient(135deg,#c8a020,#f0c840)', transform:'rotate(45deg)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 2px 12px rgba(0,0,0,0.55)' }}>
+                    <span style={{ transform:'rotate(-45deg)', fontSize:14, color:'#0a0a0a', fontWeight:900 }}>✦</span>
+                  </div>
+                </button>
+              )}
+              {kbNoteOpen && heroKbNote && (
+                <div style={{ position:'absolute', top:56, right:14, left:14, maxWidth:420, marginLeft:'auto', background:'rgba(8,8,8,0.97)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'12px 14px', zIndex:9, backdropFilter:'blur(16px)' }}>
+                  <div style={{ fontSize:10, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase' as const, marginBottom:6 }}>✦ Why we recommend this</div>
+                  <div style={{ fontSize:12.5, color:'rgba(240,237,230,0.85)', lineHeight:1.65 }}>{heroKbNote}</div>
+                  <button onClick={() => setKbNoteOpen(false)} style={{ marginTop:8, fontSize:10, color:T.textDim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>Close ×</button>
+                </div>
+              )}
             </div>
-            {addedCost > 0 && (<div style={{ fontSize:12, color:T.green }}>+ {fmt(addedCost)} in selected add-ons</div>)}
-            {hotel.otaRate && (
-              <div style={{ fontSize:11, color:T.textDim, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'2px 10px' }}>
-               Save {fmt(Math.max(0, (hotel.otaRate||0) - hotel.displayRate))}/night vs direct
+          )}
+
+          <div style={{ padding:'20px 22px 0' }}>
+
+            {/* About + what's included */}
+            {hotel.funFact && (
+              <div style={{ fontSize:15, color:T.textMid, lineHeight:1.75, marginBottom:16, fontFamily:"'Cormorant Garamond',serif", fontStyle:'italic' }}>{hotel.funFact}</div>
+            )}
+
+            <div style={{ marginBottom:20, padding:'11px 14px', background:isRoomOnly?'rgba(251,146,60,0.06)':'rgba(74,222,128,0.05)', border:`0.5px solid ${isRoomOnly?'rgba(251,146,60,0.2)':'rgba(74,222,128,0.15)'}`, borderRadius:10 }}>
+              <div style={{ fontSize:9, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:6 }}>What's included</div>
+              <InclusionPills includes={hotel.rate_includes ?? []} malariaFree={hotel.malariaFree} />
+            </div>
+
+            {/* Good to know — traveller-safe highlights, shown ONCE */}
+            {kbHighlights.length > 0 && (
+              <div style={{ marginBottom:22 }}>
+                <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.12em', fontWeight:700, marginBottom:10 }}>✦ Good to know</div>
+                <div style={{ display:'flex', flexWrap:'wrap' as const, gap:6 }}>
+                  {kbHighlights.map((h:string,i:number) => (
+                    <span key={i} style={{ fontSize:11.5, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:7, padding:'5px 11px' }}>{h}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Childcare / families */}
+            <div style={{ marginBottom:22, padding:'12px 14px', background:'rgba(255,255,255,0.025)', border:`0.5px solid ${T.border}`, borderRadius:10 }}>
+              <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:5 }}>👨‍👩‍👧 Children &amp; families</div>
+              <div style={{ fontSize:12.5, color:T.textMid, lineHeight:1.6 }}>{childcareNote}</div>
+            </div>
+
+            {/* ROOM TYPES — features + incremental pricing */}
+            <div style={{ marginBottom:22 }}>
+              <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:12 }}>Room types</div>
+              {(hotel.upgrades?.rooms ?? []).map((opt:any, roomIdx:number) => {
+                const sel = opt.tier === localPrefs.rooms;
+                const meta = opt.meta ?? null;
+                const roomImgs: string[] = meta?.images?.length
+                  ? meta.images
+                  : allSlides.filter(s => s.roomType && s.roomType.toLowerCase().includes(opt.label.toLowerCase())).map(s => s.url);
+                const rIdx  = roomSlides[roomIdx] ?? 0;
+                const rImg  = roomImgs[rIdx] ?? hotel.image;
+                const mealLabel = meta?.mealBasis === 'FI' ? 'Fully inclusive' : meta?.mealBasis === 'BB' ? 'Breakfast included' : meta?.mealBasis === 'HB' ? 'Half board' : null;
+                return (
+                  <div key={opt.label} onClick={() => handleSelect('rooms', opt)} style={{ marginBottom:12, borderRadius:12, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?'rgba(212,175,55,0.05)':T.surface, overflow:'hidden', cursor:'pointer', transition:'border-color 0.2s' }}>
+                    <div style={{ position:'relative', height:180, overflow:'hidden' }}>
+                      <img src={rImg} alt={opt.label} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 55%)' }} />
+                      {roomImgs.length > 1 && rIdx > 0 && (
+                        <button onClick={e => { e.stopPropagation(); setRoomSlides(prev => ({ ...prev, [roomIdx]: rIdx-1 })); }} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', background:'rgba(10,10,10,0.7)', border:`1px solid ${T.gold}`, color:T.gold, width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>‹</button>
+                      )}
+                      {roomImgs.length > 1 && rIdx < roomImgs.length-1 && (
+                        <button onClick={e => { e.stopPropagation(); setRoomSlides(prev => ({ ...prev, [roomIdx]: rIdx+1 })); }} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'rgba(10,10,10,0.7)', border:`1px solid ${T.gold}`, color:T.gold, width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>›</button>
+                      )}
+                      {/* selected pill + incremental price */}
+                      <div style={{ position:'absolute', top:10, right:10, display:'flex', gap:6 }}>
+                        {sel
+                          ? <div style={{ fontSize:10, color:'#0a0a0a', background:T.gold, borderRadius:20, padding:'3px 10px', fontWeight:800 }}>✓ Selected</div>
+                          : <div style={{ fontSize:10, color:T.textMid, background:'rgba(0,0,0,0.55)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'3px 10px' }}>Tap to select</div>}
+                      </div>
+                      <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'12px 14px', display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
+                        <div style={{ fontSize:17, fontWeight:700, color:'#fff', fontFamily:"'Cormorant Garamond',serif" }}>{opt.label}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:opt.extra===0?'rgba(255,255,255,0.7)':T.gold }}>
+                          {opt.extra === 0 ? 'Included in rate' : `+${fmt(opt.extra)}/night`}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Feature chips */}
+                    <div style={{ padding:'12px 14px' }}>
+                      <div style={{ display:'flex', gap:7, flexWrap:'wrap' as const, marginBottom: meta?.description ? 8 : 0 }}>
+                        {meta?.maxGuests && <span style={{ fontSize:11, color:T.textMid, background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:6, padding:'3px 9px' }}>👥 Sleeps {meta.maxGuests}</span>}
+                        {meta?.bedType && <span style={{ fontSize:11, color:T.textMid, background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:6, padding:'3px 9px' }}>🛏 {meta.bedType}</span>}
+                        {meta?.view && <span style={{ fontSize:11, color:T.textMid, background:'rgba(255,255,255,0.04)', border:`0.5px solid ${T.border}`, borderRadius:6, padding:'3px 9px' }}>🌅 {meta.view}</span>}
+                        {mealLabel && <span style={{ fontSize:11, color:T.green, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.25)', borderRadius:6, padding:'3px 9px' }}>✓ {mealLabel}</span>}
+                      </div>
+                      {meta?.description && <div style={{ fontSize:12, color:T.textMid, lineHeight:1.6 }}>{meta.description}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Cancellation */}
+            {hotel.upgrades?.flexibility && (
+              <div style={{ marginBottom:8 }}>
+                <div style={{ fontSize:10, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:10 }}>Cancellation</div>
+                <div style={{ display:'flex', gap:8 }}>
+                  {hotel.upgrades.flexibility.map((opt:any) => {
+                    const sel = opt.tier === localPrefs.flexibility;
+                    return (
+                      <button key={opt.label} onClick={() => handleSelect('flexibility', opt)} style={{ flex:1, padding:'11px 14px', borderRadius:9, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?600:400, textAlign:'left' as const }}>
+                        <div style={{ fontWeight:sel?700:400 }}>{opt.label}</div>
+                        <div style={{ fontSize:10, marginTop:2, color:opt.extra===0?T.textDim:T.gold }}>{opt.extra===0?'No extra cost':`+${fmt(opt.extra)}/night`}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
-
-          {/* TAB SWITCHER */}
-          <div style={{ display:'flex', gap:6, marginTop:14 }}>
-            {(['rooms','chat'] as const).map(t => (
-              <button key={t} onClick={() => setSheetTab(t)} style={{ flex:1, padding:'9px 0', borderRadius:9, border:`1.5px solid ${sheetTab===t ? T.gold : T.border}`, background:sheetTab===t ? T.goldDim : 'transparent', color:sheetTab===t ? T.gold : T.textMid, fontSize:12, fontWeight:sheetTab===t ? 700 : 400, cursor:'pointer', fontFamily:'inherit' }}>
-                {t==='rooms' ? '🛏 Rooms & Upgrades' : '💬 Customise via chat'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* SCROLLABLE BODY */}
-        <div style={{ flex:1, overflowY:'auto', padding:'0 0 120px' }}>
-
-          {/* CHAT TAB */}
-          {sheetTab === 'chat' && (
-            <div style={{ padding:'18px 20px', display:'flex', flexDirection:'column', gap:14 }}>
-              <div style={{ fontSize:12, color:T.textDim, lineHeight:1.6 }}>
-                Tap a quick action below — or type anything to your Journey Specialist. All changes are confirmed with you before they happen.
-              </div>
-              <div style={{ display:'flex', flexWrap:'wrap' as const, gap:8 }}>
-                {CHAT_QUICK_ACTIONS.map(a => (
-                  <button key={a.id} onClick={() => sendChat(a.label)} style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 14px', borderRadius:20, border:`0.5px solid ${T.borderGold}`, background:T.goldDim, color:T.gold, fontSize:12, cursor:'pointer', fontFamily:'inherit', fontWeight:600 }}>
-                    <span>{a.icon}</span>{a.label}
-                  </button>
-                ))}
-              </div>
-              {chatMsgs.length > 0 && (
-                <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:280, overflowY:'auto' as const, padding:'4px 0' }}>
-                  {chatMsgs.map((m, i) => (
-                    <div key={i} style={{ display:'flex', justifyContent:m.role==='user'?'flex-end':'flex-start' }}>
-                      <div style={{ maxWidth:'84%', padding:'9px 13px', borderRadius:m.role==='user'?'14px 14px 4px 14px':'14px 14px 14px 4px', background:m.role==='user'?T.goldDim:T.surface, border:`0.5px solid ${m.role==='user'?T.borderGold:T.border}`, fontSize:12, color:m.role==='user'?T.gold:T.text, lineHeight:1.55 }}>
-                        {m.text}
-                      </div>
-                    </div>
-                  ))}
-                  {chatLoading && (
-                    <div style={{ display:'flex', justifyContent:'flex-start' }}>
-                      <div style={{ padding:'9px 14px', borderRadius:'14px 14px 14px 4px', background:T.surface, border:`0.5px solid ${T.border}`, fontSize:12, color:T.textDim }}>Thinking…</div>
-                    </div>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-              )}
-              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key==='Enter' && sendChat(chatInput)} placeholder="Make it cheaper · Add a night · Swap Cape Town for Kruger…" style={{ flex:1, padding:'10px 14px', background:T.surface, border:`0.5px solid ${T.border}`, borderRadius:12, color:T.text, fontSize:12, outline:'none', fontFamily:'inherit' }} />
-                <button onClick={() => sendChat(chatInput)} disabled={!chatInput.trim() || chatLoading} style={{ width:40, height:40, borderRadius:10, background:chatInput.trim()?`linear-gradient(135deg,${T.gold},${T.goldLight})`:'rgba(255,255,255,0.06)', border:'none', color:chatInput.trim()?'#0a0a0a':T.textDim, cursor:chatInput.trim()?'pointer':'default', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit', flexShrink:0 }}>→</button>
-              </div>
-            </div>
-          )}
-
-          {/* ROOMS TAB */}
-          {sheetTab === 'rooms' && (
-            <>
-              {/* SECTION 1: HERO CAROUSEL */}
-              {allSlides.length > 0 && (
-                <div style={{ position:'relative', height:240, overflow:'hidden', background:'#111' }}>
-                  {allSlides[heroSlide] && (
-                    allSlides[heroSlide].type === 'youtube'
-                      ? <iframe src={allSlides[heroSlide].url} title={hotel.name} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
-                    : allSlides[heroSlide].type === 'reel' || allSlides[heroSlide].type === 'video'
-                      ? <video src={allSlides[heroSlide].url} poster={allSlides[heroSlide].poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                      : <img src={allSlides[heroSlide].url} alt={hotel.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                  )}
-                  <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.5) 0%,transparent 60%)' }} />
-                  {heroSlide > 0 && (
-                    <button onClick={() => setHeroSlide(i => i-1)} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:30, height:30, borderRadius:'50%', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>‹</button>
-                  )}
-                  {heroSlide < allSlides.length - 1 && (
-                    <button onClick={() => setHeroSlide(i => i+1)} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.55)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:30, height:30, borderRadius:'50%', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>›</button>
-                  )}
-                  <div style={{ position:'absolute', bottom:10, left:0, right:0, display:'flex', justifyContent:'space-between', alignItems:'flex-end', padding:'0 14px' }}>
-                    <div style={{ fontSize:10, color:'rgba(255,255,255,0.5)', background:'rgba(0,0,0,0.4)', borderRadius:4, padding:'2px 7px' }}>{allSlides[heroSlide]?.label || ''}{allSlides[heroSlide]?.roomType ? ` · ${allSlides[heroSlide].roomType}` : ''}</div>
-                    {allSlides.length > 1 && (
-                      <div style={{ display:'flex', gap:3 }}>
-                        {allSlides.map((_,i) => <div key={i} onClick={() => setHeroSlide(i)} style={{ width:i===heroSlide?14:4, height:4, borderRadius:2, background:i===heroSlide?T.gold:'rgba(255,255,255,0.35)', cursor:'pointer', transition:'all 0.2s' }} />)}
-                      </div>
-                    )}
-                  </div>
-                  {(() => { const note = allSlides[heroSlide] ? getSlideKB(hotel, allSlides[heroSlide], kbEntries) : null; return note ? (
-                    <div title={note} style={{ position:'absolute', top:10, right:10, zIndex:8 }}>
-                      <div style={{ width:26, height:26, background:'linear-gradient(135deg,#c8a020,#f0c840)', transform:'rotate(45deg)', borderRadius:4, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <span style={{ transform:'rotate(-45deg)', fontSize:10, color:'#0a0a0a', fontWeight:900 }}>✦</span>
-                      </div>
-                    </div>
-                  ) : null; })()}
-                </div>
-              )}
-
-              <div style={{ padding:'20px 20px 0' }}>
-                {hotel.funFact && (
-                  <div style={{ marginBottom:20 }}>
-                    <div style={{ fontSize:14, color:T.textMid, lineHeight:1.75 }}>{hotel.funFact}</div>
-                  </div>
-                )}
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:20 }}>
-                  <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'4px 12px', fontSize:12, color:T.green }}>★ {hotel.trustScore}/100 trust score</div>
-                  {hotel.malariaFree && <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'4px 12px', fontSize:12, color:T.green }}>✓ Malaria-free</div>}
-                  {(hotel as any).reviewScore && <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'4px 12px', fontSize:12, color:T.textMid }}>{(hotel as any).reviewScore}★ guest rating</div>}
-                </div>
-
-                {(kbHighlightsSheet.length > 0 || kbTipsSheet.length > 0 || kbSpecialistNote) && (
-                  <div style={{ marginBottom:24 }}>
-                    <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:10 }}>✦ Specialist Notes</div>
-                    {kbSpecialistNote && (
-                      <div style={{ background:'rgba(212,175,55,0.07)', border:`0.5px solid ${T.borderGold}`, borderLeft:`2px solid ${T.gold}`, borderRadius:'0 12px 12px 0', padding:'12px 16px', marginBottom:12, fontSize:13, color:'rgba(240,237,230,0.85)', lineHeight:1.75, fontStyle:'italic' }}>{kbSpecialistNote}</div>
-                    )}
-                    {kbHighlightsSheet.length > 0 && (
-                      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:10 }}>
-                        {kbHighlightsSheet.map((h:string,i:number) => (
-                          <span key={i} style={{ fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:6, padding:'4px 10px' }}>{h}</span>
-                        ))}
-                      </div>
-                    )}
-                    {kbTipsSheet.map((tip:string,i:number) => (
-                      <div key={i} style={{ fontSize:12, color:T.textMid, lineHeight:1.65, padding:'4px 0', borderBottom:i<kbTipsSheet.length-1?`0.5px solid ${T.border}`:'none' }}>
-                        <span style={{ color:T.green, marginRight:6 }}>›</span>{tip}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div style={{ marginBottom:24 }}>
-                  <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:12 }}>Room types & upgrades</div>
-                  {(hotel.upgrades?.rooms ?? []).map((opt:any, roomIdx:number) => {
-                    const sel = opt.tier === localPrefs.rooms;
-                    const expanded = expandedRoom === roomIdx;
-                    const roomSlideList = allSlides.filter(s => !s.roomType || s.roomType?.toLowerCase().includes(opt.label.toLowerCase()));
-                    const rSlideIdx = roomSlides[roomIdx] ?? 0;
-                    const rSlide = roomSlideList[rSlideIdx] ?? allSlides[0];
-                    return (
-                      <div key={opt.label} style={{ marginBottom:10, borderRadius:12, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?'rgba(212,175,55,0.04)':T.surface, overflow:'hidden', transition:'border-color 0.2s' }}>
-                        <div style={{ position:'relative', height:160, overflow:'hidden', cursor:'pointer' }} onClick={() => { handleSelect('rooms', opt); }}>
-                          {rSlide && (rSlide.type==='youtube'
-                            ? <iframe src={rSlide.url} title={opt.label} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none' }} allow="autoplay; encrypted-media" allowFullScreen={false} loading="lazy" />
-                            : rSlide.type==='reel'||rSlide.type==='video'
-                            ? <video src={rSlide.url} poster={rSlide.poster} autoPlay muted loop playsInline style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                            : <img src={rSlide.url} alt={opt.label} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                          )}
-                          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.7) 0%,transparent 50%)' }} />
-                          {roomSlideList.length > 1 && rSlideIdx > 0 && (
-                            <button onClick={e => { e.stopPropagation(); setRoomSlides(prev => ({ ...prev, [roomIdx]: rSlideIdx-1 })); }} style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.5)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:24, height:24, borderRadius:'50%', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>‹</button>
-                          )}
-                          {roomSlideList.length > 1 && rSlideIdx < roomSlideList.length-1 && (
-                            <button onClick={e => { e.stopPropagation(); setRoomSlides(prev => ({ ...prev, [roomIdx]: rSlideIdx+1 })); }} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'rgba(0,0,0,0.5)', border:'0.5px solid rgba(255,255,255,0.2)', color:'#fff', width:24, height:24, borderRadius:'50%', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', zIndex:5 }}>›</button>
-                          )}
-                          <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
-                            <div>
-                              <div style={{ fontSize:14, fontWeight:700, color:'#fff', fontFamily:"'Cormorant Garamond',serif" }}>{opt.label}</div>
-                              {roomSlideList.length > 1 && (
-                                <div style={{ display:'flex', gap:3, marginTop:4 }}>
-                                  {roomSlideList.map((_,i) => <div key={i} style={{ width:i===rSlideIdx?12:4, height:4, borderRadius:2, background:i===rSlideIdx?T.gold:'rgba(255,255,255,0.35)', transition:'all 0.2s' }} />)}
-                                </div>
-                              )}
-                            </div>
-                            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                              {sel && <div style={{ fontSize:10, color:'#0a0a0a', background:T.gold, borderRadius:20, padding:'2px 8px', fontWeight:800 }}>✓ Selected</div>}
-                              {!sel && <div style={{ fontSize:10, color:T.textDim, background:'rgba(255,255,255,0.06)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'2px 8px' }}>Select</div>}
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                          <button onClick={() => setExpandedRoom(expanded ? null : roomIdx)} style={{ background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:12, color:T.textDim, display:'flex', alignItems:'center', gap:4 }}>
-                            {expanded ? '▲ Hide details' : '▼ Room details'}
-                          </button>
-                          <button onClick={() => handleSelect('rooms', opt)} style={{ padding:'7px 16px', borderRadius:8, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?700:400 }}>
-                            {sel ? '✓ Selected' : 'Select this room'}
-                          </button>
-                        </div>
-                        {expanded && (
-                          <div style={{ padding:'0 14px 14px', borderTop:`0.5px solid ${T.border}` }}>
-                            <div style={{ fontSize:12, color:T.textMid, lineHeight:1.65, paddingTop:10 }}>
-                              {kbEntry?.structuredFields?.best_room && opt.tier === 1 ? String(kbEntry.structuredFields.best_room) : `${opt.label} — ${opt.extra === 0 ? 'included in your base rate' : `upgrade at ${fmt(opt.extra)}/night`}. All meals and game activities included.`}
-                            </div>
-                            {hotel.upgrades?.basis && (
-                              <div style={{ marginTop:10, display:'flex', gap:6, flexWrap:'wrap' }}>
-                                {hotel.upgrades.basis.map((b:any) => (
-                                  <div key={b.label} style={{ fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'3px 10px' }}>✓ {b.label}</div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {hotel.upgrades?.flexibility && (
-                    <div style={{ marginTop:8 }}>
-                      <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.07em', fontWeight:600, marginBottom:8 }}>Cancellation</div>
-                      <div style={{ display:'flex', gap:8 }}>
-                        {hotel.upgrades.flexibility.map((opt:any) => {
-                          const sel = opt.tier === localPrefs.flexibility;
-                          return (
-                            <button key={opt.label} onClick={() => handleSelect('flexibility', opt)} style={{ flex:1, padding:'9px 12px', borderRadius:9, border:`1.5px solid ${sel?T.gold:T.border}`, background:sel?T.goldDim:'transparent', color:sel?T.gold:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:sel?600:400, textAlign:'left' as const }}>
-                              <div style={{ fontWeight:sel?700:400 }}>{opt.label}</div>
-                              <div style={{ fontSize:10, marginTop:2, color:opt.extra===0?T.textDim:T.gold }}>{opt.extra===0?'No extra cost':`+${fmt(opt.extra)}/night`}</div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {(hotel as any).socialLinks && (
-                  <div style={{ marginBottom:24 }}>
-                    <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:600, marginBottom:10 }}>Follow this property</div>
-                    <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                      {Object.entries((hotel as any).socialLinks).map(([platform, url]:any) => url && (
-                        <a key={platform} href={url} target="_blank" rel="noopener noreferrer" style={{ padding:'7px 14px', background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, borderRadius:8, fontSize:12, color:T.textMid, textDecoration:'none', textTransform:'capitalize' as const }}>{platform}</a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
         </div>
 
         {/* STICKY FOOTER */}
-        <div style={{ flexShrink:0, padding:'14px 20px 24px', borderTop:`0.5px solid rgba(255,255,255,0.08)`, background:'#0f0f0f' }}>
+        <div style={{ flexShrink:0, padding:'14px 22px 22px', borderTop:`0.5px solid rgba(255,255,255,0.08)`, background:'#0f0f0f' }}>
           {addedCost > 0 && (
             <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:10 }}>
-              <span style={{ color:T.textDim }}>Base rate + add-ons</span>
-             <span style={{ color:T.gold, fontWeight:600 }}>{fmt(hotel.displayRate + addedCost)}/night equivalent</span>
+              <span style={{ color:T.textDim }}>Selected add-ons</span>
+              <span style={{ color:T.gold, fontWeight:600 }}>+ {fmt(addedCost)}/night</span>
             </div>
           )}
           <button onClick={onClose} className="btn-gold" style={{ width:'100%', padding:15, fontSize:15 }}>
-            Confirm & return to itinerary →
+            Confirm &amp; return to itinerary →
           </button>
           <div style={{ textAlign:'center' as const, fontSize:11, color:T.textDim, marginTop:8 }}>Tap outside or press × to close without saving</div>
         </div>
@@ -1273,7 +1207,7 @@ function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities, pax
 function NestedPropertyCarousel({
   destinationLabel, destinationSlug, cityNights, onNightsChange,
   hotels, selectedHotelId, onSelectHotel, stayPrefs, onUpgradeSelect,
-  kbEntries, fmt, edition, onEscalateChat, onExploreLodge,
+  kbEntries, fmt, edition,
 }: {
   destinationLabel:     string;
   destinationSlug:      string;
@@ -1287,8 +1221,6 @@ function NestedPropertyCarousel({
   kbEntries:            KBEntry[];
   fmt:                  (n: number) => string;
   edition:              EditionConfig;
-  onEscalateChat:       (context: string) => void;
-  onExploreLodge?:      (hotel: Hotel, supplierId?: string, includes?: string[]) => void;
 }) {
   const [activeIdx, setActiveIdx] = useState(() => {
     const idx = hotels.findIndex(h => String(h.id) === String(selectedHotelId));
@@ -1301,7 +1233,6 @@ function NestedPropertyCarousel({
     setSlideIdxMap(prev => ({ ...prev, [String(hotelId)]: idx }));
 
   const [kbOpenId,      setKbOpenId]      = useState<string | null>(null);
-  const [chatOpenId,    setChatOpenId]    = useState<string | null>(null);
   const [upgradeOpenId, setUpgradeOpenId] = useState<string | null>(null);
 
   const stripRef = useRef<HTMLDivElement>(null);
@@ -1313,7 +1244,7 @@ function NestedPropertyCarousel({
     const card = cards[idx];
     if (card) card.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
     setActiveIdx(idx);
-    setKbOpenId(null); setChatOpenId(null);
+    setKbOpenId(null);
     // AUTO-SELECT: the centred property is always the selected one
     if (hotels[idx]) onSelectHotel(hotels[idx]);
   }, [hotels, onSelectHotel]);
@@ -1377,7 +1308,6 @@ function NestedPropertyCarousel({
             const currentSlide = slides[slideIdx] ?? slides[0];
             const kbNote = currentSlide ? getSlideKB(hotel, currentSlide, kbEntries) : null;
             const kbOpen = kbOpenId === String(hotel.id);
-            const chatOpen = chatOpenId === String(hotel.id);
 
             const { resolved: res } = resolveHotelUpgrades(hotel, isActive ? stayPrefs : { rooms:0,basis:0,flexibility:0 });
             const upExtra = Object.values(res).reduce((s: number, v: any) => s + (v?.extra ?? 0), 0);
@@ -1427,10 +1357,10 @@ function NestedPropertyCarousel({
                   <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.78) 0%,transparent 50%)' }} />
 
                   {slideIdx > 0 && (
-                    <button onClick={e => { e.stopPropagation(); setSlideIdx(hotel.id, slideIdx - 1); setKbOpenId(null); }} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', background:'rgba(30,30,30,0.72)', border:'1px solid rgba(255,255,255,0.18)', color:'rgba(255,255,255,0.85)', width:28, height:28, borderRadius:'50%', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', zIndex:8, backdropFilter:'blur(4px)' }} aria-label="Previous image">‹</button>
+                    <button onClick={e => { e.stopPropagation(); setSlideIdx(hotel.id, slideIdx - 1); setKbOpenId(null); }} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', background:'rgba(10,10,10,0.78)', border:`1.5px solid ${T.gold}`, color:T.gold, width:40, height:40, borderRadius:'50%', cursor:'pointer', fontSize:20, display:'flex', alignItems:'center', justifyContent:'center', zIndex:8, backdropFilter:'blur(4px)', boxShadow:'0 2px 12px rgba(0,0,0,0.6)' }} aria-label="Previous image">‹</button>
                   )}
                   {slideIdx < slides.length - 1 && (
-                    <button onClick={e => { e.stopPropagation(); setSlideIdx(hotel.id, slideIdx + 1); setKbOpenId(null); }} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'rgba(30,30,30,0.72)', border:'1px solid rgba(255,255,255,0.18)', color:'rgba(255,255,255,0.85)', width:28, height:28, borderRadius:'50%', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', zIndex:8, backdropFilter:'blur(4px)' }} aria-label="Next image">›</button>
+                    <button onClick={e => { e.stopPropagation(); setSlideIdx(hotel.id, slideIdx + 1); setKbOpenId(null); }} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'rgba(10,10,10,0.78)', border:`1.5px solid ${T.gold}`, color:T.gold, width:40, height:40, borderRadius:'50%', cursor:'pointer', fontSize:20, display:'flex', alignItems:'center', justifyContent:'center', zIndex:8, backdropFilter:'blur(4px)', boxShadow:'0 2px 12px rgba(0,0,0,0.6)' }} aria-label="Next image">›</button>
                   )}
 
                   {slides.length > 1 && (
@@ -1447,14 +1377,12 @@ function NestedPropertyCarousel({
                   )}
 
                   {kbNote && (
-                    <button onClick={e => { e.stopPropagation(); setKbOpenId(kbOpen ? null : String(hotel.id)); setChatOpenId(null); }} title="Specialist KB note for this image" style={{ position:'absolute', top:10, right:48, zIndex:9, background:'transparent', border:'none', cursor:'pointer', padding:2 }}>
-                      <div style={{ width:28, height:28, background:'linear-gradient(135deg,#c8a020,#f0c840)', transform:'rotate(45deg)', borderRadius:5, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 2px 10px rgba(0,0,0,0.5)' }}>
-                        <span style={{ transform:'rotate(-45deg)', fontSize:11, color:'#0a0a0a', fontWeight:900, lineHeight:1 }}>✦</span>
+                    <button onClick={e => { e.stopPropagation(); setKbOpenId(kbOpen ? null : String(hotel.id)); }} title="Specialist KB note for this image" style={{ position:'absolute', top:10, right:10, zIndex:9, background:'transparent', border:'none', cursor:'pointer', padding:2 }}>
+                      <div style={{ width:30, height:30, background:'linear-gradient(135deg,#c8a020,#f0c840)', transform:'rotate(45deg)', borderRadius:5, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 2px 10px rgba(0,0,0,0.5)' }}>
+                        <span style={{ transform:'rotate(-45deg)', fontSize:12, color:'#0a0a0a', fontWeight:900, lineHeight:1 }}>✦</span>
                       </div>
                     </button>
                   )}
-
-                  <button onClick={e => { e.stopPropagation(); setChatOpenId(chatOpen ? null : String(hotel.id)); setKbOpenId(null); }} title="Ask about this image" style={{ position:'absolute', top:10, right:10, zIndex:9, width:28, height:28, borderRadius:'50%', background:'rgba(96,165,250,0.22)', border:'1.5px solid rgba(96,165,250,0.6)', color:'#93c5fd', cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>?</button>
 
                   <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 14px 12px' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end' }}>
@@ -1469,15 +1397,11 @@ function NestedPropertyCarousel({
                   </div>
 
                   {kbOpen && kbNote && (
-                    <div style={{ position:'absolute', top:44, right:8, left:8, background:'rgba(8,8,8,0.97)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'12px 14px', zIndex:18, backdropFilter:'blur(16px)' }}>
+                    <div style={{ position:'absolute', top:48, right:8, left:8, background:'rgba(8,8,8,0.97)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'12px 14px', zIndex:18, backdropFilter:'blur(16px)' }}>
                       <div style={{ fontSize:10, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase' as const, marginBottom:6 }}>✦ Why we recommend this</div>
                       <div style={{ fontSize:12, color:'rgba(240,237,230,0.8)', lineHeight:1.65 }}>{kbNote}</div>
                       <button onClick={() => setKbOpenId(null)} style={{ marginTop:8, fontSize:10, color:T.textDim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>Close ×</button>
                     </div>
-                  )}
-
-                  {chatOpen && currentSlide && (
-                    <ImageMiniChat hotel={hotel} slide={currentSlide} edition={edition} onEscalate={ctx => { setChatOpenId(null); onEscalateChat(ctx); }} onClose={() => setChatOpenId(null)} />
                   )}
                 </div>
 
@@ -1489,16 +1413,12 @@ function NestedPropertyCarousel({
                   )}
 
 
-                  {/* [V6-5] SINGLE BUTTON — Customise. Select button removed (auto-selected on swipe). */}
-                  <div style={{ display:'flex', gap:8, marginTop:4 }}>
-                    <button onClick={() => setUpgradeOpenId(String(hotel.id))} style={{ flex:1, padding:'12px 0', borderRadius:9, border:`1.5px solid ${T.borderGold}`, background:T.goldDim, color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700, letterSpacing:'0.03em' }}>
-                      Customise ✦
+                  {/* SINGLE BUTTON — opens combined detail + customise sheet */}
+                  <div style={{ marginTop:4 }}>
+                    <button onClick={() => setUpgradeOpenId(String(hotel.id))} style={{ width:'100%', padding:'14px 0', borderRadius:10, border:`1.5px solid ${T.gold}`, background:`linear-gradient(135deg, ${T.goldDim}, rgba(212,175,55,0.04))`, color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:14, fontWeight:700, letterSpacing:'0.03em', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                      View rooms &amp; details
+                      <span style={{ fontSize:15 }}>→</span>
                     </button>
-                    {onExploreLodge && (
-                      <button onClick={() => onExploreLodge(hotel, hotel.supplier_id ?? String(hotel.id), hotel.rate_includes ?? [])} style={{ padding:'12px 14px', borderRadius:9, border:`0.5px solid ${T.border}`, background:'rgba(255,255,255,0.04)', color:T.textMid, cursor:'pointer', fontFamily:'inherit', fontSize:12, letterSpacing:'0.02em', whiteSpace:'nowrap' as const }}>
-                        Explore →
-                      </button>
-                    )}
                   </div>
                 </div>
 
@@ -2673,9 +2593,32 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
         </div>
         )}
         {(showDepartureXfer || !!departureHubId) && selectedHub && (() => {
-          const deptOpts = CITY_TRANSFERS[lastSlug] ?? [
-            { id:'private-car', icon:'🚗', label:'Private transfer', provider:'Private vehicle to airport', duration:'Varies by lodge location', estimatedCostZAR:2800, note:`Private vehicle from your final lodge to ${selectedHub.airport}. Driver tracks your checkout time.`, recommended:true },
-            { id:'charter-transfer', icon:'✈', label:'Light aircraft charter', provider:'Charter to hub airport', duration:'30–60 min flight', estimatedCostZAR:8500, note:`Direct charter to ${selectedHub.airport}. Eliminates road transfer time — best for early departures.`, recommended:false },
+          // REAL route data — derived from GATEWAY_LEGS / INTERNAL_LEGS, route-specific per hub
+          const hub = selectedHub.code;
+          // Scheduled/commercial routing leg (the realistic default)
+          const schedLeg = hub === 'CPT'
+            ? getInternalLeg(lastSlug, 'cape-town')
+            : hub === 'VFA'
+            ? getInternalLeg(lastSlug, 'chobe-vic-falls')
+            : (() => {
+                // lodge → JNB: reverse the inbound gateway leg for real provider/duration/cost
+                const g = GATEWAY_LEGS[`JNB→${lastSlug}`];
+                return g
+                  ? { fromLabel:g.toLabel, toLabel:'O.R. Tambo (JNB)', mode:'combo' as const, provider:g.provider.replace(/JNB→|OR Tambo/gi,'').trim()+' → JNB', duration:g.duration, estimatedCostZAR:g.estimatedCostZAR, aiNote:g.aiNote, bufferHours:3 }
+                  : getInternalLeg(lastSlug, 'cape-town');
+              })();
+          const charterCost = Math.round((schedLeg?.estimatedCostZAR ?? 8000) * 1.9);
+          const deptOpts = [
+            {
+              id:'scheduled', icon:'✈', label:'Scheduled routing', provider:schedLeg?.provider ?? `Lodge → ${selectedHub.airport}`,
+              duration:schedLeg?.duration ?? '~3h', estimatedCostZAR:schedLeg?.estimatedCostZAR ?? 8000,
+              note:schedLeg?.aiNote ?? `Real airline routing from your final lodge to ${selectedHub.airport}. Confirmed on your travel dates.`, recommended:true,
+            },
+            {
+              id:'charter', icon:'🛩', label:'Private light-aircraft charter', provider:`Direct charter → ${selectedHub.airport}`,
+              duration:'45–90 min flight', estimatedCostZAR:charterCost,
+              note:`Private charter direct to ${selectedHub.airport}. Flat rate up to 6 pax. Eliminates connection risk — best for early or same-day international departures.`, recommended:false,
+            },
           ];
           return (
             <div style={{ marginTop:4 }}>
@@ -2684,19 +2627,16 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
                 {deptOpts.map(opt => {
                   const isSel = opt.recommended;
                   return (
-                    <div key={opt.id} style={{ flexShrink:0, width:'min(78vw, 300px)', scrollSnapAlign:'center', borderRadius:11, border:`1.5px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:T.surface, padding:'12px 14px' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                    <div key={opt.id} style={{ flexShrink:0, width:'min(82vw, 340px)', scrollSnapAlign:'center', borderRadius:11, border:`1.5px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:T.surface, padding:'13px 15px' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
                         <span style={{ fontSize:18 }}>{opt.icon}</span>
-                        <div>
+                        <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:13, fontWeight:700, color:isSel?T.gold:T.text }}>{opt.label}</div>
                           <div style={{ fontSize:11, color:T.textDim }}>{opt.provider}</div>
                         </div>
-                        {isSel && <div style={{ marginLeft:'auto', fontSize:9, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 7px', fontWeight:800 }}>✦ Rec.</div>}
+                        {isSel && <div style={{ fontSize:9, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 7px', fontWeight:800 }}>✦ Rec.</div>}
                       </div>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                        <div style={{ fontSize:12, color:T.textMid }}>{opt.duration}</div>
-                        <div style={{ fontSize:14, fontWeight:700, color:isSel?T.gold:T.text }}>{fmt(opt.estimatedCostZAR)}<span style={{ fontSize:9, color:T.textDim, fontWeight:400 }}> est.</span></div>
-                      </div>
+                      <div style={{ fontSize:12, color:T.textMid, marginBottom:6 }}>{opt.duration}</div>
                       <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5 }}>{opt.note}</div>
                     </div>
                   );
@@ -4787,12 +4727,6 @@ const runBriefPlanner = (briefText: string) => {
                     kbEntries={kbEntries}
                     fmt={fmt}
                     edition={edition}
-                    onEscalateChat={escalateToSpecialist}
-                    onExploreLodge={(hotel, supplierId, includes) => {
-                      setMiniSiteHotel(hotel);
-                      setMiniSiteSupplier(supplierId);
-                      setMiniSiteIncludes(includes ?? []);
-                    }}
                   />
 
                   {/* ── STEP 3: EXPERIENCES ── */}
@@ -4854,28 +4788,6 @@ const runBriefPlanner = (briefText: string) => {
                 </RegionChapter>
               );
             })}
-             {/* PropertyMiniSite overlay — launched from Explore button */}
-            {miniSiteHotel && (
-              <PropertyMiniSite
-                hotel={miniSiteHotel}
-                supplierId={miniSiteSupplier}
-                kbEntries={kbEntries}
-                includes={miniSiteIncludes}
-                onSelectRoom={(extra, label) => {
-                  // Find the city index for this hotel and update prefs
-                  const cityIdx = cityStays.findIndex(s => String(s.hotelId) === String(miniSiteHotel?.id));
-                  if (cityIdx >= 0) {
-                    const roomTier = miniSiteHotel?.upgrades?.rooms?.findIndex((r:any) => r.label === label) ?? 0;
-                    setCityStays(prev => {
-                      const next = [...prev];
-                      next[cityIdx] = { ...next[cityIdx], prefs:{ ...next[cityIdx].prefs, rooms: roomTier >= 0 ? roomTier : 0 } };
-                      return next;
-                    });
-                  }
-                }}
-                onClose={() => { setMiniSiteHotel(null); setMiniSiteSupplier(undefined); setMiniSiteIncludes([]); }}
-              />
-            )}      
 
             {itinerary.cities.length > 0 && (() => {
               const lastCity = itinerary.cities[itinerary.cities.length - 1];
