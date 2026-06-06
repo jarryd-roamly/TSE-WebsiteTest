@@ -367,6 +367,20 @@ function buildSlides(hotel: Hotel): Slide[] {
   return slides.filter(s => { if (seen.has(s.url)) return false; seen.add(s.url); return true; });
 }
 
+// Strips any string that is internal/specialist voice — not safe for guest display
+function isGuestSafe(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const blockedPhrases = [
+    'verify:', 'verify ', 'position for', 'position as', 'recommend to guests',
+    'do not recommend', 'never recommend', 'specialist approval', 'trust score',
+    'internal', 'margin', 'net rate', 'display rate', 'gross margin',
+    'below threshold', 'below portfolio', 'requires verification',
+    'explicit specialist', 'kb-', 'r$', 'r ',
+  ];
+  return !blockedPhrases.some(phrase => lower.includes(phrase));
+}
+
 function getSlideKB(hotel: Hotel, slide: Slide, kbEntries: KBEntry[]): string | null {
   // TRAVELLER-SAFE ONLY — never expose specialistNotes or specialist_recs
   const entries = kbEntries.filter((e:any) =>
@@ -380,7 +394,9 @@ function getSlideKB(hotel: Hotel, slide: Slide, kbEntries: KBEntry[]): string | 
     ((e.linkedTo ?? e.linked_name ?? '')).toLowerCase().includes(hotel.name.toLowerCase())
   );
   if (propMatch) {
-    const tip = (propMatch.tips ?? [])[0] ?? (propMatch.highlights ?? [])[0];
+    // Filter tips and highlights through guest-safe check before returning
+    const tip = (propMatch.tips ?? []).find((t:string) => isGuestSafe(t))
+             ?? (propMatch.highlights ?? []).find((h:string) => isGuestSafe(h));
     if (tip) return tip;
     // Fall back to safe structured fields only (why_here, best_sightings — not commercial/ops)
     const safe = ['why_here','best_sightings','ideal_nights'];
@@ -1264,7 +1280,7 @@ function NestedPropertyCarousel({
 
                   {kbOpen && kbNote && (
                     <div style={{ position:'absolute', top:44, right:8, left:8, background:'rgba(8,8,8,0.97)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'12px 14px', zIndex:18, backdropFilter:'blur(16px)' }}>
-                      <div style={{ fontSize:10, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase' as const, marginBottom:6 }}>✦ Specialist note</div>
+                      <div style={{ fontSize:10, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase' as const, marginBottom:6 }}>✦ Why we recommend this</div>
                       <div style={{ fontSize:12, color:'rgba(240,237,230,0.8)', lineHeight:1.65 }}>{kbNote}</div>
                       <button onClick={() => setKbOpenId(null)} style={{ marginTop:8, fontSize:10, color:T.textDim, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>Close ×</button>
                     </div>
