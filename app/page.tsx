@@ -1141,10 +1141,10 @@ function NestedPropertyCarousel({
 
       <div style={{ position:'relative' as const }}>
         {activeIdx > 0 && (
-          <button onClick={() => scrollToIdx(activeIdx - 1)} aria-label="Previous property" style={{ position:'absolute', left:-18, top:'50%', transform:'translateY(-60%)', zIndex:20, background:T.surface, border:`1px solid ${T.border}`, color:T.text, width:36, height:56, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:20, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 16px rgba(0,0,0,0.55)', transition:'background 0.15s' }}>◂</button>
+          <button onClick={() => scrollToIdx(activeIdx - 1)} aria-label="Previous property" style={{ position:'absolute', left:-18, top:'50%', transform:'translateY(-60%)', zIndex:20, background:T.gold, border:`1px solid ${T.gold}`, color:'#0a0a0a', width:36, height:56, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 16px rgba(0,0,0,0.55)', fontWeight:700 }}>◂</button>
         )}
         {activeIdx < hotels.length - 1 && (
-          <button onClick={() => scrollToIdx(activeIdx + 1)} aria-label="Next property" style={{ position:'absolute', right:-18, top:'50%', transform:'translateY(-60%)', zIndex:20, background:T.surface, border:`1px solid ${T.border}`, color:T.text, width:36, height:56, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:20, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 16px rgba(0,0,0,0.55)', transition:'background 0.15s' }}>▸</button>
+          <button onClick={() => scrollToIdx(activeIdx + 1)} aria-label="Next property" style={{ position:'absolute', right:-18, top:'50%', transform:'translateY(-60%)', zIndex:20, background:T.gold, border:`1px solid ${T.gold}`, color:'#0a0a0a', width:36, height:56, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 16px rgba(0,0,0,0.55)', fontWeight:700 }}>▸</button>
         )}
 
         <div ref={stripRef} style={{ display:'flex', gap:12, overflowX:'auto', scrollSnapType:'x mandatory', WebkitOverflowScrolling:'touch', scrollbarWidth:'none', msOverflowStyle:'none', paddingLeft:24, paddingRight:24, paddingBottom:4 } as React.CSSProperties}>
@@ -1497,193 +1497,335 @@ function buildTransferOptions(
 }
 
 
-function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries, selectedTransferId, onSelect, destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge }: { fromSlug:string; toSlug:string; fromLabel:string; toLabel:string; fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null; onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number; commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; originLodge?:string; }) {
-  const options = useMemo(() => buildTransferOptions(fromSlug, toSlug, destLodge, pax ?? 2, usdToZar ?? 18.62, commercialFares, commercialMeta, originLodge), [fromSlug, toSlug, destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge]);
+// ── AIRLINE METADATA for logo badges ─────────────────────────────────────────
+const AIRLINE_META: Record<string,{name:string;code:string;color:string}> = {
+  'FA':    {name:'Federal Air', code:'FA', color:'#1a3a6e'},
+  'FedAir':{name:'Federal Air', code:'FA', color:'#1a3a6e'},
+  '4Z':    {name:'Airlink',     code:'4Z', color:'#d4341a'},
+  'Airlink':{name:'Airlink',   code:'4Z', color:'#d4341a'},
+  'FA203': {name:'Federal Air', code:'FA', color:'#1a3a6e'},
+  'TC':    {name:'Fastjet',     code:'TC', color:'#f97316'},
+  'Fastjet':{name:'Fastjet',   code:'TC', color:'#f97316'},
+  'WA':    {name:'Wilderness Air', code:'WA', color:'#2d6a4f'},
+  'MA':    {name:'Mack Air',   code:'MA', color:'#5e3a1a'},
+};
+
+function AirlineBadge({ code, size=28 }: { code:string; size?:number }) {
+  const meta = AIRLINE_META[code] ?? {name:code, code:code.slice(0,2).toUpperCase(), color:'#1a1a2e'};
+  return (
+    <div style={{
+      width:size, height:size, borderRadius:6,
+      background:meta.color,
+      display:'flex', alignItems:'center', justifyContent:'center',
+      fontSize:size<30?9:10, fontWeight:700, color:'#fff', letterSpacing:'0.04em',
+      flexShrink:0, border:'0.5px solid rgba(255,255,255,0.15)',
+    }}>{meta.code}</div>
+  );
+}
+
+// ── Build rich structured legs from a transfer option ───────────────────────
+interface TransferLeg {
+  type:    'road'|'airline'|'charter'|'lodge'|'info';
+  badge:   string;   // airline code or emoji
+  primary: string;   // e.g. "Federal Air  FA203"
+  route?:  string;   // e.g. "JNB 13:00  →  SZK 14:30"
+  detail?: string;   // e.g. "1h 30m · direct · Economy"
+  note?:   string;   // e.g. "FedAir terminal, Atlas Rd · OR Tambo"
+  noteColor?: string;
+}
+
+function buildTransferLegs(opt: any, meta?: any): TransferLeg[] {
+  const legs: TransferLeg[] = [];
+  const provider = opt.provider ?? '';
+  const aiNote   = opt.aiNote ?? '';
+
+  // ── Decode the three-part chain: EXIT → COMMERCIAL → ARRIVAL ─────────────
+  const parts = provider.split(/\s{1,4}→\s{1,4}|\s*->\s*/);
+
+  // Detect commercial meta (Duffel live data)
+  const hasLive = meta && (meta.carrier || meta.departing_at);
+  const carrier   = meta?.carrier  ?? '';
+  const depTime   = meta?.departing_at  ? new Date(meta.departing_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
+  const arrTime   = meta?.arriving_at   ? new Date(meta.arriving_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '';
+  const stops     = typeof meta?.stops === 'number' ? (meta.stops===0?'direct':`${meta.stops} stop${meta.stops>1?'s':''}`) : '';
+  const durMin    = meta?.duration_min;
+  const durStr    = durMin ? `${Math.floor(durMin/60)}h${durMin%60?` ${durMin%60}m`:''}` : '';
+
+  for (let i=0; i<parts.length; i++) {
+    const p = parts[i].trim();
+    if (!p) continue;
+
+    const isFedAir     = /FedAir|Federal Air/i.test(p);
+    const isAirlink    = /Airlink/i.test(p);
+    const isFastjet    = /Fastjet/i.test(p);
+    const isCharter    = /Mack Air|Wilderness Air|charter|wilderness/i.test(p);
+    const isRoad       = /Road|private.?transfer|vehicle|drive/i.test(p);
+    const isPrivate    = /Private transfer/i.test(p);
+
+    if (isPrivate || (isRoad && !isFedAir)) {
+      // Road/private transfer leg
+      const route = p.match(/([A-Z]{3})\s*→\s*([A-Z]{3})/)?.[0] ?? '';
+      legs.push({
+        type:'road', badge:'🚗',
+        primary: p.replace(/\s*[A-Z]{3}\s*→\s*[A-Z]{3}\s*/g,'').trim() || 'Private transfer',
+        route: route || undefined,
+        detail: opt.duration && i===0 ? opt.duration : undefined,
+        note: 'Driver meets at arrivals · luggage assistance included',
+        noteColor: T.green,
+      });
+    } else if (isFedAir) {
+      // Federal Air scheduled leg — include specific schedule info
+      const routeMatch = p.match(/([A-Z]{3})\s*→?\s*([A-Z]{3})/);
+      const from = routeMatch?.[1] ?? 'JNB';
+      const to   = routeMatch?.[2] ?? 'SZK';
+      legs.push({
+        type:'airline', badge:'FA',
+        primary: 'Federal Air',
+        route: `${from} → ${to}`,
+        detail: '10:00 & 13:00 daily · 55–65 min · 20kg soft bag',
+        note: 'FedAir terminal, Atlas Rd · OR Tambo domestic · arrives lodge airstrip',
+        noteColor: T.blue,
+      });
+    } else if (isAirlink || isFastjet || (hasLive && i===1)) {
+      // Commercial scheduled airline — use Duffel meta if available
+      const airlineName = hasLive && carrier ? (AIRLINE_META[carrier]?.name ?? carrier) : (isAirlink?'Airlink':isFastjet?'Fastjet':'Scheduled airline');
+      const airlineCode = hasLive && carrier ? carrier : (isAirlink?'4Z':isFastjet?'TC':'?');
+      const routeMatch = p.match(/([A-Z]{3})\s*→?\s*([A-Z]{3})/);
+      const from = routeMatch?.[1] ?? '';
+      const to   = routeMatch?.[2] ?? '';
+      legs.push({
+        type:'airline', badge: airlineCode,
+        primary: airlineName + (hasLive && meta.flight_no ? `  ${meta.flight_no}` : ''),
+        route: hasLive && depTime && arrTime
+          ? `${from||'?'} ${depTime}  →  ${to||'?'} ${arrTime}`
+          : (from && to ? `${from} → ${to}` : p),
+        detail: hasLive
+          ? [stops, durStr].filter(Boolean).join(' · ') + ' · Economy'
+          : (durStr ? `${durStr} · Economy` : undefined),
+        note: hasLive ? undefined : 'Est. fare — confirmed by specialist',
+        noteColor: T.textDim,
+      });
+    } else if (isCharter) {
+      const routeMatch = p.match(/([A-Z]{3})\s*→?\s*([A-Z]{3})/);
+      const from = routeMatch?.[1] ?? 'MUB';
+      const to   = routeMatch?.[2] ?? '';
+      const charterName = /Mack Air/i.test(p)?'Mack Air':/Wilderness Air/i.test(p)?'Wilderness Air':'Light aircraft';
+      legs.push({
+        type:'charter', badge: charterName==='Mack Air'?'MA':'WA',
+        primary: charterName,
+        route: from && to ? `${from} → ${to}` : undefined,
+        detail: '20kg soft bag · no hard cases · private airstrip',
+        note: 'Part of the experience — arrives at camp airstrip',
+        noteColor: T.green,
+      });
+    } else if (/lodge|camp|collection|airstrip/i.test(p)) {
+      legs.push({
+        type:'lodge', badge:'🏠',
+        primary: 'Lodge collection',
+        detail: 'Camp vehicle meets on airstrip',
+        note: 'Complimentary · 5–20 min to main lodge',
+        noteColor: T.green,
+      });
+    } else {
+      // Airport / waypoint — abbreviated
+      const clean = p.replace(/\s*(CPT|JNB|SZK|MUB|VFA|HDS|MQP|BBK|LVI)\s*/g, m=>m.trim()+' ').trim();
+      if (clean.length > 2) {
+        legs.push({ type:'info', badge:'⊕', primary: clean });
+      }
+    }
+  }
+
+  // If nothing parsed → fallback single card
+  if (!legs.length) {
+    legs.push({
+      type:'airline', badge:'✈',
+      primary: opt.label || (parts[0]?.trim() ?? 'Transfer'),
+      route: opt.provider,
+      detail: opt.duration,
+      note: opt.aiNote,
+    });
+  }
+
+  // Baggage note for any charter leg
+  const hasCharter = legs.some(l=>l.type==='charter');
+  if (hasCharter) {
+    legs.push({
+      type:'info', badge:'⚑',
+      primary: '20kg soft-bag limit',
+      detail: 'No hard-sided cases — strictly enforced on all light aircraft',
+      noteColor: T.amber,
+    });
+  }
+
+  return legs;
+}
+
+// ── The JourneyCard component ────────────────────────────────────────────────
+function TransferCarousel({
+  fromSlug, toSlug, fromLabel, toLabel,
+  fmt, kbEntries, selectedTransferId, onSelect,
+  destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge
+}: {
+  fromSlug:string; toSlug:string; fromLabel:string; toLabel:string;
+  fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null;
+  onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number;
+  commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; originLodge?:string;
+}) {
+  const options = useMemo(()=>buildTransferOptions(fromSlug,toSlug,destLodge,pax??2,usdToZar??18.62,commercialFares,commercialMeta,originLodge),[fromSlug,toSlug,destLodge,pax,usdToZar,commercialFares,commercialMeta,originLodge]);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [spinning, setSpinning] = useState(true);
+  const [ready, setReady] = useState(false);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setSpinning(false);
-      const rec = options.find(o => o.recommended);
+  useEffect(()=>{
+    const t = setTimeout(()=>{
+      setReady(true);
+      const rec = options.find(o=>o.recommended);
       if (rec && !selectedTransferId) onSelect(rec.id);
-    }, 600);
-    return () => clearTimeout(t);
-  }, []);
+    }, 500);
+    return ()=>clearTimeout(t);
+  },[]);
 
+  // Fallback when no options built — use INTERNAL_LEGS
   if (!options.length) {
-    // Always show a transfer card even if no options — fallback to INTERNAL_LEGS
     const leg = getInternalLeg(fromSlug, toSlug);
     if (!leg) return null;
+    const fallbackLegs = buildTransferLegs(
+      {label:leg.fromLabel+' → '+leg.toLabel, provider:leg.provider, aiNote:leg.aiNote, duration:leg.duration, badges:[], recommended:true},
+      undefined
+    );
     return (
-      <div style={{ margin:'0 0 24px', padding:'0 2px' }}>
-        <JourneyCardHeader fromLabel={fromLabel} toLabel={toLabel} />
-        <JourneyCardFallback leg={leg} fmt={fmt} />
+      <div style={{ marginBottom:24 }}>
+        <TransferHeader fromLabel={fromLabel} toLabel={toLabel}/>
+        <JourneyCardBody legs={fallbackLegs} duration={leg.duration} aiNote={leg.aiNote}
+          badges={[]} optionCount={1} activeIdx={0} onPrev={()=>{}} onNext={()=>{}}
+          isSelected fmt={fmt} cost={leg.estimatedCostZAR} />
       </div>
     );
   }
 
   const cur = options[activeIdx] ?? options[0];
+  // Get commercial meta for this option (keyed by route e.g. "CPT-JNB")
+  const routeKey = Object.keys(commercialMeta??{}).find(k => cur.provider?.includes(k.split('-')[0]) && cur.provider?.includes(k.split('-')[1]));
+  const liveMeta = routeKey ? (commercialMeta??{})[routeKey] : undefined;
+  const legs = buildTransferLegs(cur, liveMeta);
 
   return (
-    <div style={{ margin:'0 0 24px', padding:'0 2px' }}>
-      <JourneyCardHeader fromLabel={fromLabel} toLabel={toLabel} />
-      {spinning ? (
-        <div style={{ background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.15)', borderRadius:12, padding:'16px 18px', display:'flex', alignItems:'center', gap:12 }}>
-          <div className="spinner" style={{ width:16, height:16, borderWidth:2, borderColor:'rgba(96,165,250,0.3)', borderTopColor:'#60a5fa' }} />
-          <div style={{ fontSize:12, color:'rgba(96,165,250,0.7)' }}>Checking transfer options…</div>
+    <div style={{ marginBottom:24 }}>
+      <TransferHeader fromLabel={fromLabel} toLabel={toLabel}/>
+      {!ready ? (
+        <div style={{ background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.12)', borderRadius:12, padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
+          <div className="spinner" style={{width:14,height:14,borderWidth:2}}/>
+          <div style={{fontSize:12,color:'rgba(96,165,250,0.6)'}}>Checking transfer options…</div>
         </div>
       ) : (
-        <>
-          {/* JourneyCard — matches MD handoff spec */}
-          <div style={{ background:'rgba(12,14,18,0.92)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:12, overflow:'hidden' }}>
-            {/* Card header */}
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px 10px', borderBottom:'0.5px solid rgba(255,255,255,0.06)' }}>
-              <div>
-                <div style={{ fontSize:12, fontWeight:700, color:T.text }}>Getting there</div>
-                <div style={{ fontSize:10, color:T.textDim }}>door to lodge</div>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                {/* Duration pill */}
-                <div style={{ display:'flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.06)', borderRadius:20, padding:'4px 10px' }}>
-                  <span style={{ fontSize:9 }}>⏱</span>
-                  <span style={{ fontSize:11, fontWeight:600, color:T.text }}>{cur.duration.replace('~','').replace(' total door-to-door','').replace(' door-to-door','')}</span>
-                </div>
-                {/* Pagination */}
-                {options.length > 1 && (
-                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    <button onClick={() => setActiveIdx(i => Math.max(0,i-1))} disabled={activeIdx===0} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:activeIdx===0?'rgba(255,255,255,0.2)':T.text, width:24, height:24, borderRadius:'50%', cursor:activeIdx===0?'default':'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>‹</button>
-                    <span style={{ fontSize:10, color:T.textDim, minWidth:30, textAlign:'center' }}>{activeIdx+1}/{options.length}</span>
-                    <button onClick={() => setActiveIdx(i => Math.min(options.length-1,i+1))} disabled={activeIdx===options.length-1} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:activeIdx===options.length-1?'rgba(255,255,255,0.2)':T.text, width:24, height:24, borderRadius:'50%', cursor:activeIdx===options.length-1?'default':'pointer', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>›</button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Badges row */}
-            <div style={{ display:'flex', gap:6, padding:'10px 16px 8px', flexWrap:'wrap' }}>
-              {cur.recommended && <span style={{ fontSize:9, fontWeight:700, color:T.green, background:'rgba(74,222,128,0.1)', border:'0.5px solid rgba(74,222,128,0.25)', borderRadius:20, padding:'2px 8px' }}>Recommended</span>}
-              {cur.badges.filter(b=>b.text!=='✦ Recommended').map((b,i)=>(
-                <span key={i} style={{ fontSize:9, fontWeight:700, color:b.color, background:`${b.color}18`, border:`0.5px solid ${b.color}35`, borderRadius:20, padding:'2px 8px' }}>{b.text}</span>
-              ))}
-            </div>
-
-            {/* Transfer chain legs */}
-            <div style={{ padding:'0 16px 4px' }}>
-              {parseTransferChain(cur).map((leg, i, arr) => (
-                <div key={i} style={{ display:'flex', gap:12, alignItems:'flex-start', marginBottom:i<arr.length-1?10:8 }}>
-                  {/* Icon badge */}
-                  <div style={{ width:32, height:32, borderRadius:8, background:leg.type==='airline'?'rgba(96,165,250,0.12)':leg.type==='charter'?'rgba(212,175,55,0.1)':'rgba(74,222,128,0.08)', border:`0.5px solid ${leg.type==='airline'?'rgba(96,165,250,0.25)':leg.type==='charter'?'rgba(212,175,55,0.2)':'rgba(74,222,128,0.2)'}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2 }}>
-                    {leg.icon}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-                      <div>
-                        <div style={{ fontSize:12, fontWeight:600, color:T.text, lineHeight:1.2 }}>{leg.name}</div>
-                        {leg.flightNo && <div style={{ fontSize:10, color:T.textDim, marginTop:1 }}>{leg.flightNo}</div>}
-                        {leg.detail && <div style={{ fontSize:10, color:T.textMid, marginTop:1, lineHeight:1.5 }}>{leg.detail}</div>}
-                      </div>
-                      {leg.times && (
-                        <div style={{ fontSize:11, fontWeight:600, color:T.text, textAlign:'right', flexShrink:0, marginLeft:8 }}>{leg.times}</div>
-                      )}
-                    </div>
-                    {leg.note && (
-                      <div style={{ fontSize:10, color:'rgba(74,222,128,0.75)', marginTop:3 }}>{leg.note}</div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* AI note */}
-            {cur.aiNote && (
-              <div style={{ margin:'0 16px 12px', padding:'8px 12px', background:'rgba(96,165,250,0.04)', border:'0.5px solid rgba(96,165,250,0.1)', borderRadius:8, fontSize:11, color:'rgba(96,165,250,0.7)', lineHeight:1.6 }}>
-                ⚑ {cur.aiNote}
-              </div>
-            )}
-
-            {/* Select button */}
-            {options.length > 1 && (
-              <div style={{ padding:'0 16px 14px', display:'flex', gap:8 }}>
-                {options.map((opt, i) => (
-                  <button key={opt.id} onClick={() => { setActiveIdx(i); onSelect(opt.id); }} style={{
-                    flex:1, padding:'8px 0', borderRadius:8, border:`1.5px solid ${(selectedTransferId===opt.id||(i===0&&!selectedTransferId&&opt.recommended))?'#60a5fa':T.border}`, background:(selectedTransferId===opt.id||(i===0&&!selectedTransferId&&opt.recommended))?'rgba(96,165,250,0.08)':'transparent', color:(selectedTransferId===opt.id||(i===0&&!selectedTransferId&&opt.recommended))?'#60a5fa':T.textMid, fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit',
-                  }}>{i===activeIdx ? '✓ Selected' : `Option ${i+1}`}</button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Summary strip */}
-          <div style={{ marginTop:8, padding:'7px 12px', background:'rgba(96,165,250,0.05)', border:'0.5px solid rgba(96,165,250,0.12)', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <div style={{ fontSize:11, color:'rgba(96,165,250,0.7)' }}>{cur.icon} {fromLabel} → {toLabel} · {cur.duration.replace('~','').replace(' total door-to-door','')}</div>
-            <div style={{ fontSize:11, color:T.textDim }}>{fmt(cur.estimatedCostZAR)} est.</div>
-          </div>
-        </>
+        <JourneyCardBody
+          legs={legs} duration={cur.duration} aiNote={cur.aiNote}
+          badges={cur.badges} optionCount={options.length} activeIdx={activeIdx}
+          onPrev={()=>setActiveIdx(i=>Math.max(0,i-1))}
+          onNext={()=>setActiveIdx(i=>Math.min(options.length-1,i+1))}
+          isSelected={selectedTransferId===cur.id || (!selectedTransferId && cur.recommended)}
+          onSelect={()=>onSelect(cur.id)}
+          fmt={fmt} cost={cur.estimatedCostZAR}
+        />
       )}
     </div>
   );
 }
 
-// Parse a transfer option's provider string into displayable legs
-function parseTransferChain(opt: any): Array<{type:string;icon:string;name:string;flightNo?:string;detail?:string;times?:string;note?:string}> {
-  const legs: Array<{type:string;icon:string;name:string;flightNo?:string;detail?:string;times?:string;note?:string}> = [];
-  // Try to parse the chain from the provider string
-  // Format is: "ExitLeg → CommercialLeg → ArrivalLeg"
-  const parts = opt.provider.split(/\s*→\s*|\s*->\s*/);
-  for (const part of parts) {
-    const p = part.trim();
-    if (!p) continue;
-    if (/FedAir|Federal Air|Airlink|Fastjet|Mack Air|Wilderness Air|charter/i.test(p)) {
-      const isAirline = /FedAir|Federal Air|Airlink|Fastjet/i.test(p);
-      const isCharter = /Mack Air|Wilderness Air|charter/i.test(p);
-      legs.push({
-        type: isCharter ? 'charter' : 'airline',
-        icon: isCharter ? '🛩' : '✈',
-        name: p.split(/\s*(CPT|JNB|SZK|MUB|VFA|HDS|MQP)\s*→/i)[0].trim() || p,
-        detail: p.includes('→') ? p : undefined,
-      });
-    } else if (/Private transfer|transfer|vehicle|road/i.test(p)) {
-      legs.push({ type:'road', icon:'🚗', name: p });
-    } else if (/Lodge collection|airstrip|meetup/i.test(p)) {
-      legs.push({ type:'lodge', icon:'🏠', name: p, note: 'Complimentary · 5–20 min to main lodge' });
-    } else {
-      legs.push({ type:'other', icon:'✦', name: p });
-    }
-  }
-  // If no legs parsed, show as single card
-  if (!legs.length) {
-    legs.push({ type:'airline', icon:'✈', name: opt.label, detail: opt.provider });
-  }
-  return legs;
-}
-
-// Fallback for when buildTransferOptions returns nothing
-function JourneyCardFallback({ leg, fmt }: { leg: any; fmt:(n:number)=>string }) {
+// ── Shared header ─────────────────────────────────────────────────────────────
+function TransferHeader({ fromLabel, toLabel }: { fromLabel:string; toLabel:string }) {
   return (
-    <div style={{ background:'rgba(12,14,18,0.92)', border:'0.5px solid rgba(96,165,250,0.15)', borderRadius:12, padding:'14px 16px' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-        <div style={{ fontSize:20 }}>✈</div>
-        <div>
-          <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{leg.fromLabel} → {leg.toLabel}</div>
-          <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{leg.provider}</div>
-        </div>
-        <div style={{ marginLeft:'auto', fontSize:12, color:'rgba(96,165,250,0.7)' }}>{leg.duration}</div>
+    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+      <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.15)' }}/>
+      <div style={{ fontSize:10, color:'rgba(96,165,250,0.7)', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
+        ✈ {fromLabel} → {toLabel}
       </div>
-      <div style={{ fontSize:11, color:T.textDim, lineHeight:1.6, background:'rgba(96,165,250,0.04)', borderRadius:7, padding:'8px 10px' }}>{leg.aiNote}</div>
+      <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.15)' }}/>
     </div>
   );
 }
 
-// Shared header for all transfer cards
-function JourneyCardHeader({ fromLabel, toLabel }: { fromLabel:string; toLabel:string }) {
+// ── JourneyCard body ──────────────────────────────────────────────────────────
+function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeIdx, onPrev, onNext, isSelected, onSelect, fmt, cost }: {
+  legs:TransferLeg[]; duration:string; aiNote:string;
+  badges:Array<{text:string;color:string}>; optionCount:number; activeIdx:number;
+  onPrev:()=>void; onNext:()=>void; isSelected:boolean; onSelect?:()=>void;
+  fmt:(n:number)=>string; cost:number;
+}) {
+  const durDisplay = duration.replace(/~|total\s*door-to-door|door-to-door/gi,'').trim();
+  const isRec = badges.some(b=>b.text.includes('Recommended'));
+
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-      <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.12)' }} />
-      <div style={{ fontSize:10, color:'rgba(96,165,250,0.65)', fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase', display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
-        ✈ {fromLabel} → {toLabel}
+    <div style={{ background:'rgba(10,12,18,0.90)', border:`0.5px solid ${isSelected?'rgba(96,165,250,0.35)':'rgba(96,165,250,0.12)'}`, borderRadius:12, overflow:'hidden', transition:'border-color 0.2s' }}>
+      {/* Card top bar */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'11px 16px 9px', borderBottom:'0.5px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ display:'flex', flexDirection:'column' as const }}>
+          <span style={{ fontSize:13, fontWeight:600, color:T.text, fontFamily:"'Jost',sans-serif" }}>Getting there</span>
+          <span style={{ fontSize:10, color:T.textDim }}>door to lodge</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {/* Duration */}
+          <div style={{ display:'flex', alignItems:'center', gap:4, background:'rgba(255,255,255,0.07)', borderRadius:20, padding:'4px 10px' }}>
+            <span style={{ fontSize:9 }}>⏱</span>
+            <span style={{ fontSize:11, fontWeight:600, color:T.text }}>{durDisplay}</span>
+          </div>
+          {/* Pagination */}
+          {optionCount > 1 && (
+            <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+              <button onClick={onPrev} disabled={activeIdx===0} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:activeIdx===0?'rgba(255,255,255,0.2)':T.text, width:22, height:22, borderRadius:'50%', cursor:activeIdx===0?'default':'pointer', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>‹</button>
+              <span style={{ fontSize:10, color:T.textDim, minWidth:28, textAlign:'center' as const }}>{activeIdx+1}/{optionCount}</span>
+              <button onClick={onNext} disabled={activeIdx===optionCount-1} style={{ background:'rgba(255,255,255,0.07)', border:'none', color:activeIdx===optionCount-1?'rgba(255,255,255,0.2)':T.text, width:22, height:22, borderRadius:'50%', cursor:activeIdx===optionCount-1?'default':'pointer', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>›</button>
+            </div>
+          )}
+        </div>
       </div>
-      <div style={{ flex:1, height:'0.5px', background:'rgba(96,165,250,0.12)' }} />
+
+      {/* Badges */}
+      {(isRec || badges.length>0) && (
+        <div style={{ display:'flex', gap:6, padding:'8px 16px 6px', flexWrap:'wrap' as const }}>
+          {isRec && <span style={{ fontSize:9, fontWeight:700, color:T.green, background:'rgba(74,222,128,0.1)', border:'0.5px solid rgba(74,222,128,0.25)', borderRadius:20, padding:'2px 9px' }}>Recommended</span>}
+          {badges.filter(b=>!b.text.includes('Recommended')).map((b,i)=>(
+            <span key={i} style={{ fontSize:9, fontWeight:600, color:b.color, background:`${b.color}15`, border:`0.5px solid ${b.color}30`, borderRadius:20, padding:'2px 9px' }}>{b.text}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Leg rows */}
+      <div style={{ padding:'8px 16px 6px' }}>
+        {legs.map((leg, i) => (
+          <div key={i} style={{ display:'flex', gap:10, alignItems:'flex-start', marginBottom: i<legs.length-1 ? 10 : 6 }}>
+            {/* Badge */}
+            {leg.type === 'airline' || leg.type === 'charter'
+              ? <AirlineBadge code={leg.badge} size={32}/>
+              : leg.type === 'info'
+              ? <div style={{ width:32, height:32, borderRadius:6, background:'rgba(251,191,36,0.08)', border:'0.5px solid rgba(251,191,36,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0 }}>{leg.badge}</div>
+              : <div style={{ width:32, height:32, borderRadius:6, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>{leg.badge}</div>
+            }
+            <div style={{ flex:1, minWidth:0, paddingTop:2 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
+                <span style={{ fontSize:12, fontWeight:600, color:T.text, lineHeight:1.25 }}>{leg.primary}</span>
+                {leg.route && <span style={{ fontSize:11, fontWeight:600, color:leg.type==='airline'?'rgba(96,165,250,0.9)':T.text, flexShrink:0, letterSpacing:'0.01em' }}>{leg.route}</span>}
+              </div>
+              {leg.detail && <div style={{ fontSize:10, color:T.textMid, marginTop:2, lineHeight:1.5 }}>{leg.detail}</div>}
+              {leg.note && <div style={{ fontSize:10, color:leg.noteColor??T.textDim, marginTop:3, lineHeight:1.5 }}>{leg.note}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Cost + select row */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 16px 12px', borderTop:'0.5px solid rgba(255,255,255,0.04)', marginTop:4 }}>
+        <div style={{ fontSize:11, color:T.textDim }}>
+          {cost > 0 ? `${fmt(cost)} est. · subject to confirmation` : 'Cost confirmed by specialist'}
+        </div>
+        {onSelect && optionCount > 1 && (
+          <button onClick={onSelect} style={{ fontSize:11, fontWeight:600, color:isSelected?'rgba(96,165,250,0.9)':T.textMid, background:isSelected?'rgba(96,165,250,0.1)':'transparent', border:`0.5px solid ${isSelected?'rgba(96,165,250,0.3)':T.border}`, borderRadius:7, padding:'5px 12px', cursor:'pointer', fontFamily:'inherit', transition:'all 0.2s' }}>
+            {isSelected ? '✓ Selected' : 'Select this'}
+          </button>
+        )}
+        {isSelected && optionCount===1 && (
+          <span style={{ fontSize:10, color:'rgba(96,165,250,0.65)', fontWeight:600 }}>✓ Selected</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -1770,15 +1912,17 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
       </div>
       <div style={{ fontSize:12, color:T.textDim, marginBottom:12, lineHeight:1.55 }}>
         {knownGateway
-          ? `Flying home from ${knownGateway} on your selected flight. We'll time your final lodge transfer to match.`
+          ? `Flying from ${knownGateway}. We'll time your final lodge transfer to match.`
           : departureHubId
-            ? `Flying from ${GATEWAY_LABEL[departureHubId] ?? departureHubId}. Your final lodge-to-airport transfer is below.`
+            ? `Flying from ${GATEWAY_LABEL[departureHubId] ?? departureHubId}. Final lodge transfer options are below.`
             : includeIntlFlight
-              ? 'Your return flight is included — your Journey Specialist will confirm your final transfer.'
+              ? 'Return flight included — Journey Specialist will confirm your final transfer.'
               : "Select your departure airport — we'll arrange your final lodge-to-airport transfer."
         }
       </div>
       {!includeIntlFlight && (<>
+        {/* Only show hub selector if not already set from inspire-input */}
+        {!departureHubId && (
         <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:selectedHub ? 14 : 0 }}>
           {hubs.map(hub => {
             const isSel = departureHubId === hub.code;
@@ -1795,7 +1939,8 @@ function DepartureCard({ lastCity, lastSlug, includeIntlFlight, fmt, kbEntries, 
             );
           })}
         </div>
-        {showDepartureXfer && selectedHub && (() => {
+        )}
+        {(showDepartureXfer || !!departureHubId) && selectedHub && (() => {
           const deptOpts = CITY_TRANSFERS[lastSlug] ?? [
             { id:'private-car', icon:'🚗', label:'Private transfer', provider:'Private vehicle to airport', duration:'Varies by lodge location', estimatedCostZAR:2800, note:`Private vehicle from your final lodge to ${selectedHub.airport}. Driver tracks your checkout time.`, recommended:true },
             { id:'charter-transfer', icon:'✈', label:'Light aircraft charter', provider:'Charter to hub airport', duration:'30–60 min flight', estimatedCostZAR:8500, note:`Direct charter to ${selectedHub.airport}. Eliminates road transfer time — best for early departures.`, recommended:false },
@@ -1970,6 +2115,16 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
   const [activeBgSlug, setActiveBgSlug] = useState<string>('');
   const [prevBgSlug, setPrevBgSlug] = useState<string>('');
   const [bgTransition, setBgTransition] = useState(false);
+  // Set initial bg when itinerary loads
+  useEffect(() => {
+    if (itinerary?.cities?.[0]) {
+      const slug = CITY_TO_SLUG[itinerary.cities[0].city?.toLowerCase().trim()??'']??'';
+      if (slug && slug !== activeBgSlug) {
+        setActiveBgSlug(slug);
+        setBgTransition(true);
+      }
+    }
+  }, [itinerary?.cities?.[0]?.city]);
 
   const [screen,    setScreen]    = useState<Screen>('landing');
   const [inputMode, setInputMode] = useState<InputMode>('socratic');
@@ -2570,6 +2725,26 @@ const runBriefPlanner = (briefText: string) => {
   return (
     <>
       <style suppressHydrationWarning>{GLOBAL_CSS}</style>
+      <style suppressHydrationWarning>{`
+        /* BCC CINEMATIC OVERRIDE ─────────────────────────────── */
+        body { background: #0e0c10 !important; }
+
+        /* Warmer, slightly lighter surfaces */
+        .bcc-card { background: rgba(28,24,32,0.88) !important; }
+
+        /* Carousel arrows ─ gold bg, black arrow */
+        button[aria-label="Previous property"],
+        button[aria-label="Next property"] {
+          background: #d4af37 !important;
+          border-color: #d4af37 !important;
+          color: #0a0a0a !important;
+        }
+
+        /* Transfer card selects */
+        .transfer-select-btn {
+          transition: all 0.2s;
+        }
+      `}</style>
       {showValidation && <ValidationModal issues={validationIssues} onProceed={doCheckout} onBack={()=>setShowValidation(false)} />}
 
      {/* LANDING */}
@@ -3009,16 +3184,57 @@ const runBriefPlanner = (briefText: string) => {
 
         {/* ── 5. DATES ───────────────────────────────────────────────── */}
         <div style={{ marginBottom:44 }}>
-          <SectionLabel text="When are you travelling?" />
-          <DateSelector checkinDate={checkinDate} setCheckinDate={setCheckinDate} dateMode={dateMode} setDateMode={setDateMode} flexMonth={flexMonth} setFlexMonth={setFlexMonth} windowStart={windowStart} setWindowStart={setWindowStart} windowEnd={windowEnd} setWindowEnd={setWindowEnd} nights={nights} />
-        </div>
-
+          <SectionLabel text="When are you travelling?" sub="Set both dates and nights updates automatically" />
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
+            <div>
+              <div style={{ fontSize:10, fontWeight:300, letterSpacing:'0.18em', color:'rgba(245,240,232,0.5)', textTransform:'uppercase', marginBottom:6 }}>Arrival date</div>
+              <input type="date" value={checkinDate} onChange={e => {
+                setCheckinDate(e.target.value);
+                // Auto-calculate nights if checkout also set
+                if (windowEnd && e.target.value) {
+                  const d1 = new Date(e.target.value);
+                  const d2 = new Date(windowEnd);
+                  const diff = Math.round((d2.getTime()-d1.getTime())/(1000*60*60*24));
+                  if (diff > 0 && diff <= 30) setNights(diff);
+                }
+              }} style={{ width:'100%', background:'rgba(255,255,255,0.03)', border:`0.5px solid ${checkinDate?T.gold:'rgba(255,255,255,0.15)'}`, color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit' }} />
+            </div>
+            <div>
+              <div style={{ fontSize:10, fontWeight:300, letterSpacing:'0.18em', color:'rgba(245,240,232,0.5)', textTransform:'uppercase', marginBottom:6 }}>Departure date</div>
+              <input type="date" value={windowEnd} min={checkinDate || undefined} onChange={e => {
+                setWindowEnd(e.target.value);
+                // Auto-calculate nights
+                if (checkinDate && e.target.value) {
+                  const d1 = new Date(checkinDate);
+                  const d2 = new Date(e.target.value);
+                  const diff = Math.round((d2.getTime()-d1.getTime())/(1000*60*60*24));
+                  if (diff > 0 && diff <= 30) setNights(diff);
+                }
+              }} style={{ width:'100%', background:'rgba(255,255,255,0.03)', border:`0.5px solid ${windowEnd?T.gold:'rgba(255,255,255,0.15)'}`, color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit' }} />
+            </div>
+          </div>
+          {checkinDate && windowEnd && (() => {
+            const d1 = new Date(checkinDate);
+            const d2 = new Date(windowEnd);
+            const diff = Math.round((d2.getTime()-d1.getTime())/(1000*60*60*24));
+            return diff > 0 ? (
+              <div style={{ fontSize:12, color:T.gold, fontWeight:400, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, padding:'8px 14px' }}>
+                ✦ {diff} night{diff!==1?'s':''} — {checkinDate} to {windowEnd}
+              </div>
+            ) : null;
+          })()}
+          {!checkinDate && (
+            <div style={{ fontSize:11, color:'rgba(245,240,232,0.32)', fontWeight:200 }}>
+              Dates not required — your specialist can work with a flexible window
+            </div>
+          )}
         <InputDivider />
 
-        {/* ── 6. TRIP LENGTH ─────────────────────────────────────────── */}
+        {/* ── 6. TRIP LENGTH — hidden when dates calculate it automatically ── */}
+        {!checkinDate && (
         <div style={{ marginBottom:44 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:18 }}>
-            <SectionLabel text="Trip length" noMargin />
+            <SectionLabel text="Trip length" sub="Or set arrival &amp; departure dates above" noMargin />
             <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:30, fontWeight:300, color:T.text }}>{nights} <span style={{ fontSize:15, color:T.textDim }}>nights</span></span>
           </div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' as const }}>
@@ -3030,6 +3246,7 @@ const runBriefPlanner = (briefText: string) => {
             ))}
           </div>
         </div>
+        )}
 
         <InputDivider />
 
@@ -3205,7 +3422,7 @@ const runBriefPlanner = (briefText: string) => {
                 position:'absolute', inset:0,
                 backgroundImage:`url(${REGION_BG_IMAGES[activeBgSlug]})`,
                 backgroundSize:'cover', backgroundPosition:'center',
-                opacity: bgTransition ? 0.07 : 0,
+                opacity: bgTransition ? 0.13 : 0,
                 transition:'opacity 1.8s ease',
                 filter:'saturate(0.5) contrast(0.85)',
               }}/>
