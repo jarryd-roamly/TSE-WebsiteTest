@@ -2111,21 +2111,6 @@ export default function SafariEdition({ edition = SAFARI_EDITION }: { edition?: 
     if (typeof window==='undefined') return false;
     return localStorage.getItem('tse_access')==='safari2026';
   });
-  // Active region background — updated by IntersectionObserver as traveller scrolls
-  const [activeBgSlug, setActiveBgSlug] = useState<string>('');
-  const [prevBgSlug, setPrevBgSlug] = useState<string>('');
-  const [bgTransition, setBgTransition] = useState(false);
-  // Set initial bg when itinerary loads
-  useEffect(() => {
-    if (itinerary?.cities?.[0]) {
-      const slug = CITY_TO_SLUG[itinerary.cities[0].city?.toLowerCase().trim()??'']??'';
-      if (slug && slug !== activeBgSlug) {
-        setActiveBgSlug(slug);
-        setBgTransition(true);
-      }
-    }
-  }, [itinerary?.cities?.[0]?.city]);
-
   const [screen,    setScreen]    = useState<Screen>('landing');
   const [inputMode, setInputMode] = useState<InputMode>('socratic');
   const [specialist] = useState(() => SPECIALISTS[Math.floor(Math.random()*SPECIALISTS.length)] ?? SPECIALISTS[0]);
@@ -2172,6 +2157,10 @@ const toggleTheme = (id: string) =>
   const [intlOrigin,  setIntlOrigin]  = useState('LHR');
   const [researchStep,setResearchStep]= useState(0);
   const [itinerary,   setItinerary]   = useState<Itinerary|null>(null);
+  // Active region background — cross-fades as traveller scrolls
+  const [activeBgSlug, setActiveBgSlug] = useState<string>('');
+  const [prevBgSlug, setPrevBgSlug] = useState<string>('');
+  const [bgTransition, setBgTransition] = useState(false);
   const [skeletonId,  setSkeletonId]  = useState<string|null>(null);
   const [skeletonFindings, setSkeletonFindings] = useState<any[]>([]);
 
@@ -2337,6 +2326,16 @@ useEffect(() => {
       })
       .catch(() => { /* keep empty fallback — spool just shows nothing */ });
   }, [edition.id]);
+
+  // Set initial region background when itinerary first loads
+  useEffect(() => {
+    if (!itinerary?.cities?.[0]) return;
+    const slug = CITY_TO_SLUG[itinerary.cities[0].city?.toLowerCase().trim()??'']??'';
+    if (slug && slug !== activeBgSlug) {
+      setActiveBgSlug(slug);
+      setBgTransition(true);
+    }
+  }, [itinerary?.cities?.[0]?.city]); // eslint-disable-line
 
   const M = edition.margins;
 
