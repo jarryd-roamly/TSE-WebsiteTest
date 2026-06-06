@@ -165,7 +165,7 @@ function MobileRegionChapter({
       {chapterIndex > 0 && (
         <div style={{ padding: '32px 0 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1, height: '1px', background: \`linear-gradient(to right, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)\` }} />
+            <div style={{ flex: 1, height: '1px', background: `linear-gradient(to right, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)` }} />
             <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 3, flexShrink: 0 }}>
               <div style={{ width: 5, height: 5, background: T.gold, transform: 'rotate(45deg)', opacity: 0.8 }} />
               <div style={{ fontSize: 8, letterSpacing: '0.45em', textTransform: 'uppercase' as const, color: T.gold, opacity: 0.7, whiteSpace: 'nowrap' as const }}>
@@ -173,7 +173,7 @@ function MobileRegionChapter({
               </div>
               <div style={{ width: 5, height: 5, background: T.gold, transform: 'rotate(45deg)', opacity: 0.8 }} />
             </div>
-            <div style={{ flex: 1, height: '1px', background: \`linear-gradient(to left, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)\` }} />
+            <div style={{ flex: 1, height: '1px', background: `linear-gradient(to left, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)` }} />
           </div>
         </div>
       )}
@@ -191,7 +191,7 @@ function MobileRegionChapter({
       {warns.slice(0, 1).map(f => {
         const s = SEV[f.severity] ?? SEV.recommendation;
         return (
-          <div key={f.id} style={{ margin: '0 0 12px', padding: '10px 14px', borderLeft: \`2px solid \${s.color}\`, background: s.bg, borderRadius: '0 8px 8px 0' }}>
+          <div key={f.id} style={{ margin: '0 0 12px', padding: '10px 14px', borderLeft: `2px solid \${s.color}`, background: s.bg, borderRadius: '0 8px 8px 0' }}>
             <div style={{ fontSize: 10, color: s.color, fontWeight: 700, marginBottom: 2 }}>{s.icon} {f.title}</div>
             <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.55 }}>{f.traveller_message}</div>
           </div>
@@ -220,7 +220,7 @@ function MobileRegionChapter({
             bottom: 0, left: 0, right: 0,
             zIndex: 201,
             background: 'rgba(12,10,16,0.98)',
-            border: \`0.5px solid \${T.borderGold}\`,
+            border: `0.5px solid \${T.borderGold}`,
             borderBottom: 'none',
             borderRadius: '20px 20px 0 0',
             paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))',
@@ -236,7 +236,7 @@ function MobileRegionChapter({
             >
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.3em', textTransform: 'uppercase' as const, opacity: 0.75 }}>
-                  ✦ {CHAPTER_TAG[regionSlug] ?? regionLabel} · {nights}n{month ? \` · \${month}\` : ''}
+                  ✦ {CHAPTER_TAG[regionSlug] ?? regionLabel} · {nights}n{month ? ` · \${month}` : ''}
                 </div>
                 {!drawerOpen && (
                   <div style={{ fontSize: 11, color: T.textMid, marginTop: 3, lineHeight: 1.4, overflow: 'hidden', maxHeight: 32, WebkitMaskImage: 'linear-gradient(to right, black 70%, transparent)' }}>
@@ -244,7 +244,7 @@ function MobileRegionChapter({
                   </div>
                 )}
               </div>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: \`0.5px solid \${T.border}\`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.textDim, transform: drawerOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s', flexShrink: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: `0.5px solid \${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.textDim, transform: drawerOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s', flexShrink: 0 }}>
                 ↑
               </div>
             </div>
@@ -256,7 +256,7 @@ function MobileRegionChapter({
             <div style={{ flex: 1, overflowY: 'auto' as const, padding: '0 20px 20px', WebkitOverflowScrolling: 'touch' as unknown as undefined }}>
               {/* Seasonal note */}
               {seasonalNote && month && (
-                <div style={{ marginBottom: 16, padding: '10px 14px', background: 'rgba(212,175,55,0.06)', border: \`0.5px solid \${T.borderGold}\`, borderRadius: 10 }}>
+                <div style={{ marginBottom: 16, padding: '10px 14px', background: 'rgba(212,175,55,0.06)', border: `0.5px solid \${T.borderGold}`, borderRadius: 10 }}>
                   <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 5 }}>✦ {month} in {regionLabel}</div>
                   <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.7, fontStyle: 'italic' }}>{seasonalNote}</div>
                 </div>
@@ -264,7 +264,7 @@ function MobileRegionChapter({
 
               {/* KB highlights */}
               {kbHighlights.slice(0, 3).map((h, i) => (
-                <div key={i} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < Math.min(kbHighlights.length, 3) - 1 ? \`0.5px solid \${T.border}\` : 'none' }}>
+                <div key={i} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < Math.min(kbHighlights.length, 3) - 1 ? `0.5px solid \${T.border}` : 'none' }}>
                   <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, marginBottom: 5 }}>✦ Did you know</div>
                   <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.72, fontStyle: 'italic' }}>{h}</div>
                 </div>
@@ -272,7 +272,7 @@ function MobileRegionChapter({
 
               {/* Specialist note */}
               {specialistNote && (
-                <div style={{ marginBottom: 14, borderLeft: \`2px solid rgba(212,175,55,0.4)\`, paddingLeft: 12 }}>
+                <div style={{ marginBottom: 14, borderLeft: `2px solid rgba(212,175,55,0.4)`, paddingLeft: 12 }}>
                   <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, marginBottom: 4 }}>About this region</div>
                   <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.7 }}>{specialistNote}</div>
                 </div>
@@ -280,7 +280,7 @@ function MobileRegionChapter({
 
               {/* KB tips */}
               {kbTips.slice(0, 3).map((tip, i) => (
-                <div key={i} style={{ fontSize: 12, color: T.textMid, lineHeight: 1.65, padding: '6px 0', borderBottom: i < Math.min(kbTips.length, 3) - 1 ? \`0.5px solid \${T.border}\` : 'none' }}>
+                <div key={i} style={{ fontSize: 12, color: T.textMid, lineHeight: 1.65, padding: '6px 0', borderBottom: i < Math.min(kbTips.length, 3) - 1 ? `0.5px solid \${T.border}` : 'none' }}>
                   <span style={{ color: T.gold, marginRight: 6 }}>›</span>{tip}
                 </div>
               ))}
@@ -292,8 +292,7 @@ function MobileRegionChapter({
   );
 }
 
-// ── Inclusions strip
- (goes INTO the property tile via portal-style, but here we
+// ── Inclusions strip (goes INTO the property tile via portal-style, but here we
 //    export it so NestedPropertyCarousel can use it too) ─────────────────────
 export function InclusionPills({ includes, malariaFree, compact=false }: {
   includes:string[]; malariaFree:boolean; compact?:boolean;
