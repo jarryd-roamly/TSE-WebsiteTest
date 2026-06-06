@@ -97,7 +97,7 @@ export async function GET() {
       ...result,
     });
   }
-
+await new Promise(r => setTimeout(r, 2000));
   const summary = {
     total_routes: results.length,
     with_offers: results.filter(r => r.status === 'ok').length,
