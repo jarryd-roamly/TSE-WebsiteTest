@@ -113,8 +113,11 @@ export interface Hotel {
   marginScore:  number;
   image:        string;
   funFact:      string | null;
-  malariaFree:  boolean;
-  tags:         string[];
+  malariaFree:          boolean;
+  tags:                 string[];
+  min_child_age:        number | null;   // null = no restriction
+  game_drive_min_age:   number | null;   // null = no restriction; many lodges: 6 or 12
+  private_vehicle_avail: boolean;        // private vehicle available for age-gated game drives
   upgrades: {
     rooms:       UpgradeOption[];
     basis:       UpgradeOption[];
