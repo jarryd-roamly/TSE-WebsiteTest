@@ -3561,11 +3561,14 @@ const runBriefPlanner = (briefText: string) => {
                 return safeKeys.map(k => sf[k]).filter((v:any) => typeof v === 'string' && v.length > 10) as string[];
               })();
               const kbTips: string[] = Array.isArray(regionEntry?.tips) ? regionEntry.tips : [];
-              const seasonalNote: string | undefined = (() => {
-                if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
-                const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
-                return (regionEntry.seasonal_notes as any)[m] ?? undefined;
-              })();
+             const seasonalNote: string | undefined = (() => {
+           if (!checkinDate) return undefined;
+           const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
+           // Use guest voice if available, fall back to specialist voice only if no guest version exists
+           const notes = regionEntry?.seasonal_notes_guest ?? regionEntry?.seasonal_notes;
+           if (!notes) return undefined;
+           return (notes as any)[m] ?? undefined;
+         })();
               const regionFindings = skeletonFindings.filter((f:any) =>
                 f.severity !== 'confirmed'
               ).slice(0, 4);
