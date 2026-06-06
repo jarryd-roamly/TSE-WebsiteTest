@@ -29,7 +29,8 @@ import { lastMileFor, lastMileZar, defaultCommercialTarget,
 import SafariCinematicResearch from '@/components/SafariCinematicResearch'
 import LandingHero from '@/components/LandingHero';
 import JourneyLoadingScreen from '@/components/JourneyLoadingScreen';
-import { PropertyMiniSite } from '@/components/RegionChapter';
+import RegionChapter, { PropertyMiniSite } from '@/components/RegionChapter';
+import type { SkeletonFinding as RegionSkeletonFinding } from '@/components/RegionChapter';
 import JourneyConfirmation from '@/components/JourneyConfirmation';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
@@ -630,7 +631,16 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior:'smooth' }), 100);
   };
 
-  const kbEntry = kbEntries.find(e => e.active && e.type==='property' && e.linkedTo?.toLowerCase().includes(hotel.name.toLowerCase()));
+  const kbEntry = kbEntries.find((e:any) =>
+    (e.status === 'active' || e.active === true) &&
+    (e.entry_type === 'property' || e.type === 'property') &&
+    e.claim_type !== 'commercial' &&
+    !e.internal_only &&
+    ((e.linked_name ?? e.linkedTo ?? '').toLowerCase().includes(hotel.name.toLowerCase()))
+  );
+  const kbHighlightsSheet: string[] = kbEntry?.highlights ?? [];
+  const kbTipsSheet: string[]       = kbEntry?.tips ?? [];
+  const kbSpecialistNote: string    = kbEntry?.specialist_recs?.[0] ?? kbEntry?.specialistNotes ?? '';
   const allSlides = buildSlides(hotel);
 
   const [localPrefs, setLocalPrefs] = useState(stayPrefs);
@@ -772,16 +782,22 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                   {(hotel as any).reviewScore && <div style={{ display:'inline-flex', alignItems:'center', gap:5, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'4px 12px', fontSize:12, color:T.textMid }}>{(hotel as any).reviewScore}★ guest rating</div>}
                 </div>
 
-                {kbEntry && (
+                {(kbHighlightsSheet.length > 0 || kbTipsSheet.length > 0 || kbSpecialistNote) && (
                   <div style={{ marginBottom:24 }}>
-                    <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:10 }}>✦ Our Specialist Notes</div>
-                    {kbEntry.specialistNotes && (
-                      <div style={{ background:'rgba(212,175,55,0.07)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'14px 16px', marginBottom:12, fontSize:13, color:'rgba(240,237,230,0.85)', lineHeight:1.75 }}>{kbEntry.specialistNotes}</div>
+                    <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:10 }}>✦ Specialist Notes</div>
+                    {kbSpecialistNote && (
+                      <div style={{ background:'rgba(212,175,55,0.07)', border:`0.5px solid ${T.borderGold}`, borderLeft:`2px solid ${T.gold}`, borderRadius:'0 12px 12px 0', padding:'12px 16px', marginBottom:12, fontSize:13, color:'rgba(240,237,230,0.85)', lineHeight:1.75, fontStyle:'italic' }}>{kbSpecialistNote}</div>
                     )}
-                    {Object.entries(kbEntry.structuredFields ?? {}).filter(([,v]) => typeof v === 'string' && (v as string).length > 10).map(([key, val]) => (
-                      <div key={key} style={{ display:'flex', gap:10, marginBottom:8, alignItems:'flex-start' }}>
-                        <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.06em', fontWeight:700, minWidth:80, paddingTop:2, flexShrink:0 }}>{key.replace(/_/g,' ')}</div>
-                        <div style={{ fontSize:12, color:T.textMid, lineHeight:1.6, flex:1 }}>{String(val)}</div>
+                    {kbHighlightsSheet.length > 0 && (
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:10 }}>
+                        {kbHighlightsSheet.map((h:string,i:number) => (
+                          <span key={i} style={{ fontSize:11, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:6, padding:'4px 10px' }}>{h}</span>
+                        ))}
+                      </div>
+                    )}
+                    {kbTipsSheet.map((tip:string,i:number) => (
+                      <div key={i} style={{ fontSize:12, color:T.textMid, lineHeight:1.65, padding:'4px 0', borderBottom:i<kbTipsSheet.length-1?`0.5px solid ${T.border}`:'none' }}>
+                        <span style={{ color:T.green, marginRight:6 }}>›</span>{tip}
                       </div>
                     ))}
                   </div>
@@ -821,8 +837,8 @@ function UpgradeSheet({ hotel, stayPrefs, kbEntries, fmt, onSelect, onClose }: {
                               )}
                             </div>
                             <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                              {sel && <div style={{ fontSize:10, color:'#0a0a0a', background:T.gold, borderRadius:20, padding:'2px 8px', fontWeight:800 }}>Selected</div>}
-                              <div style={{ fontSize:14, fontWeight:700, color:T.gold }}>{opt.extra===0?'Included':`+${fmt(opt.extra)}/night`}</div>
+                              {sel && <div style={{ fontSize:10, color:'#0a0a0a', background:T.gold, borderRadius:20, padding:'2px 8px', fontWeight:800 }}>✓ Selected</div>}
+                              {!sel && <div style={{ fontSize:10, color:T.textDim, background:'rgba(255,255,255,0.06)', border:`0.5px solid ${T.border}`, borderRadius:20, padding:'2px 8px' }}>Select</div>}
                             </div>
                           </div>
                         </div>
@@ -970,7 +986,7 @@ function ActivitySpool({ regionSlug, selectedIds, onToggle, fmt, activities }: {
                     <div style={{ fontSize:11, color:T.textDim }}>★ {act.trustScore}/100</div>
                     <div style={{ textAlign:'right' as const }}>
                       <div style={{ fontSize:14, fontWeight:700, color:isSel?T.gold:T.text }}>{fmt(display)}<span style={{ fontSize:9, color:T.textDim, fontWeight:400 }}>/pp</span></div>
-                      {saving > 0 && <div style={{ fontSize:9, color:T.green }}>Save {fmt(saving)}</div>}
+
                     </div>
                   </div>
                   <div style={{ fontSize:10, color:T.textDim, lineHeight:1.4 }}>{act.funFact}</div>
@@ -1197,7 +1213,7 @@ function NestedPropertyCarousel({
                         <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)', marginTop:2 }}>{hotel.destination} · ★ {hotel.trustScore}/100</div>
                       </div>
                       <div style={{ textAlign:'right' as const }}>
-                        <div style={{ fontSize:10, color:'rgba(255,255,255,0.45)', background:'rgba(0,0,0,0.35)', borderRadius:6, padding:'3px 8px' }}>{cityNights}n · {fmt(tileTotal)}</div>
+                        <div style={{ fontSize:10, color:'rgba(255,255,255,0.45)', background:'rgba(0,0,0,0.35)', borderRadius:6, padding:'3px 8px' }}>{cityNights} nights</div>
                       </div>
                     </div>
                   </div>
@@ -1217,11 +1233,7 @@ function NestedPropertyCarousel({
 
                 <div style={{ padding:'12px 14px 14px' }}>
                   {hotel.funFact && (<div className="fun-fact" style={{ marginBottom:10 }}>✦ {hotel.funFact}</div>)}
-                  {saving > 500 && (
-                    <div style={{ display:'inline-flex', alignItems:'center', gap:6, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.22)', borderRadius:8, padding:'4px 10px', marginBottom:10, fontSize:11, color:T.green }}>
-                      Save {fmt(saving)} vs booking direct
-                    </div>
-                  )}
+
 
                   {/* [V6-5] SINGLE BUTTON — Customise. Select button removed (auto-selected on swipe). */}
                   <div style={{ display:'flex', gap:8, marginTop:4 }}>
@@ -1511,12 +1523,8 @@ function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries
                     <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
                       {opt.badges.map((b,i) => (<span key={i} style={{ fontSize:10, color:b.color, background:`${b.color}14`, border:`0.5px solid ${b.color}40`, borderRadius:20, padding:'2px 8px', fontWeight:700 }}>{b.text}</span>))}
                     </div>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                    <div style={{ marginBottom:8 }}>
                       <div style={{ fontSize:13, color:T.textMid }}>{opt.duration}</div>
-                      <div style={{ textAlign:'right' as const }}>
-                        <div style={{ fontSize:15, fontWeight:700, color:'#60a5fa' }}>{fmt(opt.estimatedCostZAR)}</div>
-                        <div style={{ fontSize:9, color:T.textDim }}>est. · subject to confirmation</div>
-                      </div>
                     </div>
                     <div style={{ fontSize:11, color:T.textDim, lineHeight:1.55, background:'rgba(96,165,250,0.04)', borderRadius:7, padding:'7px 10px' }}>{opt.aiNote}</div>
                   </div>
@@ -1530,9 +1538,8 @@ function TransferCarousel({ fromSlug, toSlug, fromLabel, toLabel, fmt, kbEntries
             </div>
           )}
           {selected && (
-            <div style={{ marginTop:10, padding:'8px 12px', background:'rgba(96,165,250,0.06)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ marginTop:10, padding:'8px 12px', background:'rgba(96,165,250,0.06)', border:'0.5px solid rgba(96,165,250,0.18)', borderRadius:8 }}>
               <div style={{ fontSize:11, color:'#60a5fa' }}>{selected.icon} {selected.label} · {selected.duration}</div>
-              <div style={{ fontSize:11, color:T.textDim }}>{fmt(selected.estimatedCostZAR)} est.</div>
             </div>
           )}
         </div>
@@ -1577,12 +1584,8 @@ function CityTransferStrip({ slug, destLabel, opts, selectedId, onSelect, fmt }:
                   {isSel && <div style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.12)', border:'0.5px solid rgba(74,222,128,0.3)', borderRadius:20, padding:'2px 8px', fontWeight:700 }}>Selected</div>}
                 </div>
                 {opt.recommended && <div style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:700, display:'inline-block', marginBottom:8 }}>✦ Recommended</div>}
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                <div style={{ marginBottom:6 }}>
                   <div style={{ fontSize:12, color:T.textMid }}>{opt.duration}</div>
-                  <div style={{ textAlign:'right' as const }}>
-                    <div style={{ fontSize:14, fontWeight:700, color:T.green }}>{fmt(opt.estimatedCostZAR)}</div>
-                    <div style={{ fontSize:9, color:T.textDim }}>est.</div>
-                  </div>
                 </div>
                 <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5, background:'rgba(74,222,128,0.04)', borderRadius:7, padding:'7px 10px' }}>{opt.note}</div>
               </div>
@@ -1897,6 +1900,21 @@ const toggleTheme = (id: string) =>
   const [selectedCuratedJourney, setSelectedCuratedJourney] = useState<any>(null);
 
   const [kbEntries,       setKbEntries]       = useState<KBEntry[]>(DEFAULT_KB);
+
+  // Fetch real KB entries from Supabase (non-commercial, active)
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    fetch(`${url}/rest/v1/knowledge_base?select=*&status=eq.active&order=guidance_importance.desc&limit=200`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: any[]) => {
+        if (rows?.length > 0) setKbEntries(rows);
+      })
+      .catch(() => {});
+  }, [edition.id]);
   const [hotels,          setHotels]          = useState<Hotel[]>(HOTELS_FALLBACK);
   const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
@@ -3100,8 +3118,53 @@ const runBriefPlanner = (briefText: string) => {
               const cityXferOpts = isCityDest ? (CITY_TRANSFERS[slug] ?? []) : [];
               const selCityXferId = cityTransferIds[slug];
 
+              // KB data for this region
+              const regionKBAll = kbEntries.filter((e:any) =>
+                (e.status === 'active' || e.active === true) &&
+                (e.region_slug === slug || (e.linkedTo ?? '').toLowerCase().includes(slug.replace(/-/g,' '))) &&
+                e.claim_type !== 'commercial'
+              );
+              const regionEntry  = regionKBAll.find((e:any) => e.entry_type === 'region');
+              const kbHighlights = regionEntry?.highlights ?? regionEntry?.structured_fields
+                ? Object.values(regionEntry.structured_fields ?? {}).slice(0,4) as string[]
+                : [];
+              const kbTips       = regionEntry?.tips ?? [];
+              const seasonalNote: string | undefined = (() => {
+                if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
+                const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
+                return (regionEntry.seasonal_notes as any)[m] ?? undefined;
+              })();
+              const regionFindings = skeletonFindings.filter((f:any) =>
+                f.severity !== 'confirmed'
+              ).slice(0, 4);
+              const selectedHotel = safePool.find((h:any) => String(h.id) === String(currentStay.hotelId));
+              const selectedIncludes: string[] = (selectedHotel as any)?.rate_includes ?? [];
+              const hotelMalariaFree = selectedHotel?.malariaFree ?? false;
+              const specialistNote = regionKBAll
+                .filter((e:any) => e.entry_type === 'property' && e.specialist_recs?.length)
+                .flatMap((e:any) => e.specialist_recs ?? [])
+                .find(Boolean);
+
               return (
-                <div key={cityIdx}>
+                <RegionChapter
+                  key={cityIdx}
+                  chapterIndex={cityIdx}
+                  totalChapters={itinerary.cities.length}
+                  regionSlug={slug}
+                  regionLabel={destLabel}
+                  countryLabel={city.country}
+                  nights={currentStay.nights}
+                  checkinDate={checkinDate}
+                  bgImageUrl={regionImageMap[slug]}
+                  kbHighlights={kbHighlights}
+                  kbTips={kbTips}
+                  skeletonFindings={regionFindings}
+                  selectedHotelName={selectedHotel?.name}
+                  selectedHotelIncludes={selectedIncludes}
+                  malariaFree={hotelMalariaFree}
+                  seasonalNote={seasonalNote}
+                  specialistNote={specialistNote}
+                >
                   {/* [V6-3] Auto airport transfer for Cape Town & Vic Falls */}
                   {isCityDest && cityXferOpts.length > 0 && (
                     <CityTransferStrip slug={slug} destLabel={destLabel} opts={cityXferOpts} selectedId={selCityXferId} onSelect={id => setCityTransferIds(prev => ({ ...prev, [slug]: id }))} fmt={fmt} />
@@ -3164,7 +3227,7 @@ const runBriefPlanner = (briefText: string) => {
                       <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} originLodge={originHotel?.name} />
                     );
                   })()}
-                </div>
+                </RegionChapter>
               );
             })}
              {/* PropertyMiniSite overlay — launched from Explore button */}
