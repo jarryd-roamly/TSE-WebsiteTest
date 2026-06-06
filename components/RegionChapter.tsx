@@ -55,13 +55,13 @@ const CHAPTER_TAG: Record<string,string> = {
 };
 
 const INCLUSION_LABELS: Record<string,{icon:string;label:string}> = {
-  all_meals:      {icon:'',label:'All meals'},
-  game_drives:    {icon:'',label:'Game drives'},
-  mokoro:         {icon:'',label:'Mokoro'},
-  local_drinks:   {icon:'',label:'Drinks'},
-  premium_drinks: {icon:'',label:'Premium drinks'},
-  laundry:        {icon:'',label:'Laundry'},
-  park_fees:      {icon:'',label:'Park fees'},
+  all_meals:      {icon:'🍽',label:'All meals'},
+  game_drives:    {icon:'🐘',label:'Game drives'},
+  mokoro:         {icon:'🛶',label:'Mokoro'},
+  local_drinks:   {icon:'🍷',label:'Local drinks'},
+  premium_drinks: {icon:'🥂',label:'Premium drinks'},
+  laundry:        {icon:'👕',label:'Laundry'},
+  park_fees:      {icon:'🌿',label:'Park fees'},
 };
 
 const SEV: Record<string,{color:string;bg:string;icon:string}> = {
@@ -311,25 +311,8 @@ export function InclusionPills({ includes, malariaFree, compact=false }: {
         </span>
       )}
       {!isRoomOnly && shown.map(k => (
-        <span key={k} style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          fontSize: 9,
-          color: 'rgba(212,175,55,0.75)',
-          background: 'transparent',
-          border: '0.5px solid rgba(212,175,55,0.2)',
-          borderRadius: 2,
-          padding: '2px 8px 2px 6px',
-          letterSpacing: '0.07em',
-          fontWeight: 600,
-          textTransform: 'uppercase' as const,
-          fontFamily: "'Cormorant Garamond', serif",
-        }}>
-          <svg width="8" height="8" viewBox="0 0 10 10" fill="none" style={{ flexShrink:0, opacity:0.85 }}>
-            <polyline points="1.5,5.5 4,8 8.5,2" stroke="rgba(212,175,55,0.9)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          {INCLUSION_LABELS[k].label}
+        <span key={k} style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'2px 8px' }}>
+          {INCLUSION_LABELS[k].icon} {compact ? '' : INCLUSION_LABELS[k].label}
         </span>
       ))}
       {malariaFree && (
