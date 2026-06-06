@@ -33,6 +33,7 @@ export interface RegionChapterProps {
   malariaFree:          boolean;
   seasonalNote?:        string;
   specialistNote?:      string;    // MUST be traveller-safe before passing in
+  onRegionVisible?:     (slug: string) => void;  // fires when chapter enters viewport
   children:             ReactNode;
 }
 
@@ -242,7 +243,12 @@ export default function RegionChapter({
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver==='undefined') { setEntered(true); return; }
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setEntered(true); }, {threshold:0.03});
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        setEntered(true);
+        onRegionVisible?.(regionSlug);
+      }
+    }, {threshold:0.08, rootMargin:'-20% 0px -20% 0px'});
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
@@ -250,25 +256,7 @@ export default function RegionChapter({
   return (
     <div ref={ref} style={{ position:'relative', marginBottom:0 }}>
 
-      {/* Regional background */}
-      {bg && (
-        <div style={{ position:'absolute', inset:0, overflow:'hidden', pointerEvents:'none', zIndex:0 }}>
-          <img src={bg} alt="" aria-hidden style={{
-            width:'100%', height:'100%',
-            objectFit:'cover', objectPosition:'center 35%',
-            opacity: entered ? 0.06 : 0,
-            transition:'opacity 1.6s ease',
-            filter:'saturate(0.55) contrast(0.88)',
-          }} />
-          {/* Minimal vignette — just enough to anchor edges */}
-          <div style={{ position:'absolute', inset:0, background:`
-            linear-gradient(to bottom,
-              rgba(10,10,10,0.4) 0%,
-              rgba(10,10,10,0.08) 12%,
-              rgba(10,10,10,0.08) 88%,
-              rgba(10,10,10,0.5) 100%)` }} />
-        </div>
-      )}
+      {/* Background handled by fixed layer in page.tsx — no per-chapter bg */}
 
       {/* ── Chapter divider — prominent between regions ── */}
       {chapterIndex > 0 && (
