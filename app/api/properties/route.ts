@@ -55,17 +55,20 @@ function extractImg(s: any): string {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const region  = searchParams.get('region') || '';
-  const checkIn = searchParams.get('checkin') || undefined;
-  const nights  = Number(searchParams.get('nights')) || 4;
-  const pax     = Number(searchParams.get('pax'))    || 2;
-  const limit   = Math.min(Number(searchParams.get('limit')) || 8, 20);
+  const region        = searchParams.get('region') || '';
+  const checkIn       = searchParams.get('checkin') || undefined;
+  const nights        = Number(searchParams.get('nights')) || 4;
+  const pax           = Number(searchParams.get('pax'))    || 2;
+  const limit         = Math.min(Number(searchParams.get('limit')) || 8, 20);
+  const youngestChild = searchParams.get('youngest_child') !== null
+    ? Number(searchParams.get('youngest_child'))
+    : null;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
   let query = supabase
     .from('suppliers')
-    .select('id,name,net_rate_per_night,display_rate_per_night,trust_score,content_score,pms_type,region_slug,destination,country,images,hero_image,cover_image,fun_fact,malaria_free,tags,upgrades,reels')
+    .select('id,name,net_rate_per_night,display_rate_per_night,trust_score,content_score,pms_type,region_slug,destination,country,images,hero_image,cover_image,fun_fact,malaria_free,tags,upgrades,reels,min_child_age,game_drive_min_age,private_vehicle_available')
     .eq('is_active', true);
 
   if (region) query = query.eq('region_slug', region);
@@ -76,8 +79,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 
+  // Family eligibility pre-filter — applied before scoring
+  const eligibleRows = youngestChild !== null
+    ? (rows as any[]).filter(s => {
+        const minAge = s.min_child_age ?? null;
+        return minAge === null || youngestChild >= minAge;
+      })
+    : rows as any[];
+
   // Score and rank (uses net_rate internally, never exposed)
-  const scored = (rows as any[]).map(s => {
+  const scored = eligibleRows.map(s => {
     const net  = Number(s.net_rate_per_night) || 25000;
     const disp = Number(s.display_rate_per_night) || Math.round(net * MARGIN_HOTELS);
     const gp   = disp - net;
