@@ -3209,6 +3209,8 @@ const runBriefPlanner = (briefText: string) => {
               Dates not required — your specialist can work with a flexible window
             </div>
           )}
+        </div>
+
         <InputDivider />
 
         {/* ── 6. TRIP LENGTH — hidden when dates calculate it automatically ── */}
