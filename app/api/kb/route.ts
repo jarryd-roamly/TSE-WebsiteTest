@@ -40,30 +40,14 @@ function getSession(req: NextRequest): {
   email: string;
   role:  string;
 } | null {
+  const header = req.headers.get('x-tse-session');
+  if (!header) return null;
   try {
-    const cookie = req.cookies.get('tse_session') ?? req.cookies.get('demo_auth');
-    if (!cookie?.value) return null;
-
-    // demo_auth is just 'authenticated' — not enough info
-    if (cookie.value === 'authenticated') return null;
-
-    const session = JSON.parse(
-      Buffer.from(cookie.value, 'base64').toString('utf-8')
-    ).catch?.() ?? JSON.parse(cookie.value);
-
+    const session = JSON.parse(header);
     if (session?.type !== 'edition') return null;
     return { name: session.name, email: session.email, role: session.role };
   } catch {
-    // Also check localStorage-style header sent by admin SPA
-    const header = req.headers.get('x-tse-session');
-    if (!header) return null;
-    try {
-      const session = JSON.parse(header);
-      if (session?.type !== 'edition') return null;
-      return { name: session.name, email: session.email, role: session.role };
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
