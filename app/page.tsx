@@ -1578,19 +1578,21 @@ function buildTransferOptions(
     min ? `${Math.floor(min/60)}h${min%60?` ${min%60}m`:''}` : '';
 
   // ── Helper: build a structured FedAir leg ───────────────────────────────
+  // FedAir arrival leg: hub → lodge airstrip (Flt 302 dep MQP 13:00 arr ~15:00)
   const fedairLeg = (hub: string, dest: string, isLowveld: boolean, isMadikwe: boolean): StructuredLeg => ({
     kind: 'arrival',
     badge: 'FA',
     name: 'Federal Air',
     from: hub,
     to: dest,
+    flightNum: isLowveld ? 'FA302' : (isMadikwe ? 'FA103' : undefined),
+    depTime: isLowveld ? '13:00' : (isMadikwe ? '10:00' : undefined),
+    arrTime: isLowveld ? '15:00' : (isMadikwe ? '11:00' : undefined),
     detail: isLowveld
-      ? 'FedAir Lowveld Shuttle · dep 09:00 arr ~10:35 · 20kg (hard cases OK)'
+      ? 'Flt 302 · MQP 13:00 → Lodge ~15:00 · 20kg (hard cases OK)'
       : isMadikwe
-      ? 'Daily 10:00 & 13:00 · ~60 min · departs ~90 min after commercial landing · 20kg (hard cases OK)'
+      ? 'Flt 103 · JNB 10:00 → Madikwe 11:00 · 20kg (hard cases OK)'
       : 'Daily 10:00 & 13:00 · ~55–65 min · 20kg (hard cases OK)',
-    // Atlas Rd note only applies when departing FROM JNB (Madikwe / direct lodge service)
-    // Lowveld Shuttle departs FROM the lodge — no OR Tambo reference
     note: isLowveld
       ? 'X Class available: 32kg + hard cases (+25%)'
       : 'OR Tambo Atlas Rd terminal · allow 90 min from commercial arrival · X Class: 32kg + hard cases (+25%)',
@@ -1612,8 +1614,10 @@ function buildTransferOptions(
     '4Z-VFA-CPT':{fn:'4Z391',dep:'13:25',arr:'16:30',dur:185,bag:'20kg · X Class 32kg avail'},
     '4Z-MUB-CPT':{fn:'4Z315',dep:'13:50',arr:'16:20',dur:150,bag:'20kg · X Class 32kg avail'},
     '4Z-JNB-MQP':{fn:'4Z823',dep:'06:50',arr:'08:00',dur:70, bag:'20kg · X Class 32kg avail'},
-    '4Z-JNB-SZK':{fn:'4Z861',dep:'06:00',arr:'07:15',dur:75, bag:'20kg · X Class 32kg avail'},
-    '4Z-JNB-HDS':{fn:'4Z871',dep:'06:00',arr:'07:15',dur:75, bag:'20kg · X Class 32kg avail'},
+    '4Z-JNB-SZK':{fn:'4Z861',dep:'10:05',arr:'11:05',dur:60, bag:'20kg · X Class 32kg avail'},
+    '4Z-SZK-JNB':{fn:'4Z862',dep:'13:35',arr:'14:40',dur:65, bag:'20kg · X Class 32kg avail'},
+    '4Z-JNB-HDS':{fn:'4Z871',dep:'10:30',arr:'11:30',dur:60, bag:'20kg · X Class 32kg avail'},
+    '4Z-HDS-JNB':{fn:'4Z876',dep:'11:45',arr:'12:50',dur:65, bag:'20kg · X Class 32kg avail'},
     '4Z-JNB-VFA':{fn:'4Z492',dep:'09:25',arr:'11:45',dur:140,bag:'20kg · X Class 32kg avail'},
     '4Z-JNB-MUB':{fn:'4Z302',dep:'10:55',arr:'12:35',dur:100,bag:'20kg · X Class 32kg avail'},
     '4Z-JNB-BBK':{fn:'4Z306',dep:'11:50',arr:'13:40',dur:110,bag:'20kg · X Class 32kg avail'},
@@ -1630,25 +1634,22 @@ function buildTransferOptions(
   };
 
   // ── Helper: build a structured commercial leg ─────────────────────────────
-  const commercialLeg = (originHub: string, destHub: string, meta: any, carrierName: string, carrierCode: string): StructuredLeg => {
-    const sc      = SCHED[`${carrierCode}-${originHub}-${destHub}`];
-    const hasLive = !!(meta && (meta.carrier || meta.departing_at));
-    const depT    = hasLive ? fmtT(meta.departing_at) : (sc?.dep ?? '');
-    const arrT    = hasLive ? fmtT(meta.arriving_at)  : (sc?.arr ?? '');
-    const stops   = hasLive && typeof meta?.stops === 'number' ? (meta.stops===0?'Nonstop':`${meta.stops} stop`) : 'Nonstop';
-    const dur     = hasLive ? durStr(meta?.duration_min) : (sc ? durStr(sc.dur) : '');
-    const bag     = sc?.bag ?? '20kg checked';
+  // Duffel meta used ONLY for fare pricing upstream — NEVER shown on tile.
+  // Tile always uses hardcoded SCHED data for display.
+  const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string): StructuredLeg => {
+    const sc  = SCHED[`${carrierCode}-${originHub}-${destHub}`];
+    const dur = sc ? durStr(sc.dur) : '';
     return {
       kind: 'commercial',
-      badge: hasLive ? (meta.carrier ?? carrierCode) : carrierCode,
-      name: hasLive ? (AIRLINE_META[meta.carrier]?.name ?? meta.carrier ?? carrierName) : carrierName,
+      badge: carrierCode,
+      name: carrierName,
       from: originHub,
       to: destHub,
-      depTime: depT || undefined,
-      arrTime: arrT || undefined,
+      depTime: sc?.dep || undefined,
+      arrTime: sc?.arr || undefined,
       flightNum: sc?.fn,
-      detail: [stops, dur, bag].filter(Boolean).join(' · '),
-      note: hasLive ? undefined : 'Schedule indicative · check availability at booking',
+      detail: ['Nonstop', dur, sc?.bag ?? '20kg checked'].filter(Boolean).join(' · '),
+      note: 'Schedule indicative · confirm seat availability at booking',
       noteColor: 'rgba(212,175,55,0.4)',
     };
   };
@@ -1657,7 +1658,20 @@ function buildTransferOptions(
   const exitLeg = (lm: any, fromHub: string): StructuredLeg | null => {
     if (!lm) return null;
     if (lm.mode === 'fedair') {
-      return fedairLeg(lm.fromAirport, fromHub, false, false);
+      // Exit: lodge airstrip → commercial hub (Flt 301 dep 09:00 arr MQP 10:35)
+      return {
+        kind: 'exit' as const,
+        badge: 'FA',
+        name: 'Federal Air',
+        from: 'Lodge airstrip',
+        to: fromHub,
+        flightNum: 'FA301',
+        depTime: '09:00',
+        arrTime: '10:35',
+        detail: 'Flt 301 · Lodge 09:00 → MQP 10:35 · 20kg (hard cases OK)',
+        note: 'X Class available: 32kg + hard cases (+25%)',
+        noteColor: 'rgba(212,175,55,0.5)',
+      };
     }
     if (lm.mode === 'mackair' || lm.mode === 'wilderness') {
       return {
