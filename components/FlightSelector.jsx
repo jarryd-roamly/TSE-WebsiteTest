@@ -81,7 +81,7 @@ export default function FlightSelector({
 
   // ── State ──
   const [city,      setCity]      = useState(originIata || '');
-  // Sync city if originIata prop arrives after mount
+  // Sync city when originIata arrives after mount (e.g. from inspire flow)
   useEffect(() => { if (originIata && !city) setCity(originIata); }, [originIata]);
   const [depDate,   setDepDate]   = useState(travelDates?.start || '');
   const [cabin,     setCabin]     = useState('economy');
@@ -233,7 +233,9 @@ export default function FlightSelector({
           </select>
         </Field>
         <Field label="Departure date">
-          <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} style={inputStyle(T)} />
+          <div style={{ ...inputStyle(T), cursor:'default', color:'rgba(245,240,232,0.65)', display:'flex', alignItems:'center' }}>
+            {depDate ? new Date(depDate).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : '—'}
+          </div>
         </Field>
       </div>
       <div style={{ fontSize:10, color:T.textDim, marginBottom:14 }}>
