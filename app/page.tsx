@@ -3467,10 +3467,8 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [itinerary?.cities, cityStays, checkinDate, adults, children, hotelsByMargin]);
 
-  // ── Price components memo — exposes breakdown for the price bar ──────────
-  const priceComponents = useMemo(() => {
-    const zero = { lodgeCost:0, transferCost:0, activityCost:0, cityXferCost:0, flightCostZAR:0, grandTotal:0 };
-    if (!itinerary?.cities || cityStays.length===0) return zero;
+  const grandTotal = useMemo(() => {
+    if (!itinerary?.cities || cityStays.length===0) return 0;
     const lodgeCost = itinerary.cities.reduce((sum, city, i) => {
       const stay = cityStays[i]; if (!stay) return sum;
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
@@ -3516,22 +3514,13 @@ useEffect(() => {
       const chosen = selId ? opts.find(o => o.id === selId) : opts.find(o => o.recommended) ?? opts[0];
       return sum + (chosen?.estimatedCostZAR ?? 0);
     }, 0);
+    // [V7.1] International flights — Duffel offer price is in USD; grandTotal is ZAR.
     const USD_ZAR = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
     const flightCostZAR = selectedFlightOffer
       ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
       : 0;
-    const grandTotal = lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
-    return { lodgeCost, transferCost, activityCost, cityXferCost, flightCostZAR, grandTotal };
+    return lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
   }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children, activities, transferFares]);
-  const grandTotal      = priceComponents.grandTotal;
-  const _lodgeCost      = priceComponents.lodgeCost;
-  const _transferCost   = priceComponents.transferCost + priceComponents.cityXferCost;
-  const _activityCost   = priceComponents.activityCost;
-  const _flightCostZAR  = priceComponents.flightCostZAR;
-  // Flights & transfers bucket = intl flights + all regional transfers (incl. commercial legs)
-  const _flightsAndTransfers = _flightCostZAR + _transferCost;
-  // Lodges & experiences bucket
-  const _lodgesAndExp   = _lodgeCost + _activityCost;
 
   // [V7-4] Route reversal — uses real INTERNAL_LEGS transfer costs. Fires after itinerary builds.
   const routeReversalResult = useMemo(() => {
@@ -4849,51 +4838,59 @@ const runBriefPlanner = (briefText: string) => {
             )}
 
             <div style={{ maxWidth:680, margin:'0 auto' }}>
+              {(() => {
+                // Compute display breakdown inline — avoids any memo restructuring
+                const USD_ZAR = CURRENCIES.find((c:any) => c.code === 'USD')?.rate ?? 18.62;
+                const intlFlightZAR = selectedFlightOffer
+                  ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
+                  : 0;
+                // grandTotal already includes transfers; back out intl flights to get lodge+xfer bucket
+                const lodgesAndRest = grandTotal - intlFlightZAR;
+                const hasFlights    = intlFlightZAR > 0;
+                const nights        = itinerary.cities.reduce((s:number,c:any)=>s+c.nights,0);
+                return (
+                  <>
+                    {/* Breakdown row */}
+                    {grandTotal > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px', marginBottom:10, paddingBottom:10, borderBottom:'0.5px solid rgba(255,255,255,0.07)' }}>
+                        <div>
+                          <div style={{ fontSize:9, color:'rgba(245,240,232,0.42)', textTransform:'uppercase' as const, letterSpacing:'0.14em', marginBottom:3 }}>Lodges & transfers</div>
+                          <div style={{ fontSize:15, color:'rgba(245,240,232,0.88)', fontWeight:400 }}>{fmt(lodgesAndRest)}</div>
+                        </div>
+                        <div>
+                          <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
+                            <span style={{ fontSize:9, color:'rgba(245,240,232,0.42)', textTransform:'uppercase' as const, letterSpacing:'0.14em' }}>✈ Flights</span>
+                            {hasFlights && <span style={{ fontSize:8, background:'rgba(212,175,55,0.12)', color:T.gold, border:'0.5px solid rgba(212,175,55,0.35)', borderRadius:3, padding:'1px 5px', letterSpacing:'0.1em', fontWeight:700 }}>PAID IN FULL</span>}
+                          </div>
+                          <div style={{ fontSize:15, color: hasFlights ? T.gold : 'rgba(245,240,232,0.35)', fontWeight:400 }}>
+                            {hasFlights ? fmt(intlFlightZAR) : 'Add flights above'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-              {/* Price breakdown rows — only show when we have a priced itinerary */}
-              {grandTotal > 0 && (
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px', marginBottom:10, paddingBottom:10, borderBottom:'0.5px solid rgba(255,255,255,0.07)' }}>
-
-                  {/* Lodges & experiences */}
-                  <div>
-                    <div style={{ fontSize:9, color:'rgba(245,240,232,0.45)', textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:400, marginBottom:3 }}>Lodges & experiences</div>
-                    <div style={{ fontSize:15, color:'rgba(245,240,232,0.85)', fontWeight:400 }}>{fmt(_lodgesAndExp)}</div>
-                  </div>
-
-                  {/* Flights & transfers */}
-                  <div>
-                    <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
-                      <span style={{ fontSize:9, color:'rgba(245,240,232,0.45)', textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:400 }}>✈ Flights & transfers</span>
-                      {(_flightCostZAR > 0 || _transferCost > 0) && (
-                        <span style={{ fontSize:8, background:'rgba(212,175,55,0.12)', color:T.gold, border:`0.5px solid rgba(212,175,55,0.35)`, borderRadius:3, padding:'1px 5px', letterSpacing:'0.1em', fontWeight:700 }}>PAID IN FULL</span>
-                      )}
+                    {/* Total + CTA */}
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+                      <div>
+                        <div style={{ fontSize:9, color:'rgba(245,240,232,0.42)', textTransform:'uppercase' as const, letterSpacing:'0.14em', marginBottom:3 }}>
+                          Total · {nights} nights · {adults + children} guests
+                        </div>
+                        <div style={{ fontSize:26, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>
+                          {fmt(grandTotal || itinerary.totalEstimate)}
+                        </div>
+                      </div>
+                      <button className="btn-gold" style={{ padding:'13px 26px', fontSize:14, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
+                        {checkoutLoading ? 'Saving…' : (
+                          <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                            <span style={{ fontWeight:600, letterSpacing:'0.02em' }}>Validate & Firm up →</span>
+                            <span style={{ fontSize:9, fontWeight:400, opacity:0.65, letterSpacing:'0.08em', textTransform:'uppercase' as const }}>Confirm & price journey</span>
+                          </span>
+                        )}
+                      </button>
                     </div>
-                    <div style={{ fontSize:15, color: _flightCostZAR > 0 ? T.gold : 'rgba(245,240,232,0.85)', fontWeight:400 }}>
-                      {_flightsAndTransfers > 0 ? fmt(_flightsAndTransfers) : <span style={{ fontSize:12, color:'rgba(245,240,232,0.35)' }}>Add flights above</span>}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Total + CTA */}
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
-                <div>
-                  <div style={{ fontSize:9, color:'rgba(245,240,232,0.45)', textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:400, marginBottom:3 }}>
-                    Total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights · {adults + children} guests
-                  </div>
-                  <div style={{ fontSize:26, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>
-                    {fmt(grandTotal || itinerary.totalEstimate)}
-                  </div>
-                </div>
-                <button className="btn-gold" style={{ padding:'13px 26px', fontSize:14, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
-                  {checkoutLoading ? 'Saving…' : (
-                    <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
-                      <span style={{ fontWeight:600, letterSpacing:'0.02em' }}>Validate & Firm up →</span>
-                      <span style={{ fontSize:9, fontWeight:400, opacity:0.65, letterSpacing:'0.08em', textTransform:'uppercase' }}>Confirm & price journey</span>
-                    </span>
-                  )}
-                </button>
-              </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
