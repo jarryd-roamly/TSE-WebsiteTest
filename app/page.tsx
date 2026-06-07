@@ -1578,7 +1578,9 @@ function buildTransferOptions(
     min ? `${Math.floor(min/60)}h${min%60?` ${min%60}m`:''}` : '';
 
   // ── Helper: build a structured FedAir leg ───────────────────────────────
-  // FedAir arrival leg: hub → lodge airstrip (Flt 302 dep MQP 13:00 arr ~15:00)
+  // FedAir arrival leg: hub → lodge airstrip
+  // Lowveld: Flt 302 MQP 13:00 → Lodges 15:00 (one scheduled departure)
+  // Madikwe: Flt 103 JNB 10:00 → Madikwe 11:00 / Flt 101 JNB 13:00 → Madikwe 14:00 (two daily)
   const fedairLeg = (hub: string, dest: string, isLowveld: boolean, isMadikwe: boolean): StructuredLeg => ({
     kind: 'arrival',
     badge: 'FA',
@@ -1595,7 +1597,22 @@ function buildTransferOptions(
       : 'Daily 10:00 & 13:00 · ~55–65 min · 20kg (hard cases OK)',
     note: isLowveld
       ? 'X Class available: 32kg + hard cases (+25%)'
-      : 'OR Tambo Atlas Rd terminal · allow 90 min from commercial arrival · X Class: 32kg + hard cases (+25%)',
+      : 'OR Tambo Atlas Rd terminal · allow 90 min from commercial arrival · Also Flt 101: dep 13:00 arr 14:00 · X Class: 32kg + hard cases (+25%)',
+    noteColor: 'rgba(212,175,55,0.5)',
+  });
+
+  // FedAir 13:00 Madikwe arrival leg (second daily departure)
+  const fedairLeg1300 = (hub: string, dest: string): StructuredLeg => ({
+    kind: 'arrival',
+    badge: 'FA',
+    name: 'Federal Air',
+    from: hub,
+    to: dest,
+    flightNum: 'FA101',
+    depTime: '13:00',
+    arrTime: '14:00',
+    detail: 'Flt 101 · JNB 13:00 → Madikwe 14:00 · 20kg (hard cases OK)',
+    note: 'OR Tambo Atlas Rd terminal · allows morning commercial arrivals to JNB · X Class: 32kg + hard cases (+25%)',
     noteColor: 'rgba(212,175,55,0.5)',
   });
 
@@ -1667,18 +1684,22 @@ function buildTransferOptions(
   const exitLeg = (lm: any, fromHub: string): StructuredLeg | null => {
     if (!lm) return null;
     if (lm.mode === 'fedair') {
-      // Exit: lodge airstrip → commercial hub (Flt 301 dep 09:00 arr MQP 10:35)
+      const isMadikwe = fromHub === 'JNB'; // Madikwe exits to JNB; Lowveld exits to MQP/HDS/SZK
       return {
         kind: 'exit' as const,
         badge: 'FA',
         name: 'Federal Air',
         from: 'Lodge airstrip',
         to: fromHub,
-        flightNum: 'FA301',
-        depTime: '09:00',
-        arrTime: '10:35',
-        detail: 'Flt 301 · Lodge 09:00 → MQP 10:35 · 20kg (hard cases OK)',
-        note: 'X Class available: 32kg + hard cases (+25%)',
+        flightNum: isMadikwe ? 'FA102' : 'FA301',
+        depTime:   isMadikwe ? '10:30' : '09:00',
+        arrTime:   isMadikwe ? '12:30' : '10:35',
+        detail: isMadikwe
+          ? 'Flt 102 · Lodge 10:30 → JNB 12:30 · 20kg (hard cases OK)'
+          : 'Flt 301 · Lodge 09:00 → MQP 10:35 · 20kg (hard cases OK)',
+        note: isMadikwe
+          ? 'Also Flt 104: dep 14:30 arr JNB 15:30 · OR Tambo Atlas Rd terminal · X Class: 32kg + hard cases (+25%)'
+          : 'X Class available: 32kg + hard cases (+25%)',
         noteColor: 'rgba(212,175,55,0.5)',
       };
     }
@@ -1728,42 +1749,79 @@ function buildTransferOptions(
       carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
     }
 
-    return carrierMatrix.map((c, i) => {
-      const fare     = Math.round((liveFare ?? fallback) * c.adjust);
-      const total    = exitZar + Math.round(fare * pax);
-      const useMeta  = i === 0 ? meta : null; // only first option gets live Duffel times
-      const commLeg  = commercialLeg(originHub, 'CPT', useMeta, c.name, c.code);
+    // ── Generate one option per viable exit hub (SZK / MQP / HDS) ────────────
+    // Each hub has its own FedAir exit time + direct Airlink to CPT.
+    const LOWVELD_HUB_KEYS: Record<string,string> = {'MQP':'4Z-MQP-CPT','HDS':'4Z-HDS-CPT','SZK':'4Z-SZK-CPT'};
+    const seenHubsC1 = new Set<string>();
+    const exitHubOptions: any[] = [];
+    for (const lm of exitOptions) {
+      if (lm.mode === 'road') continue;
+      const hub = lm.fromAirport;
+      if (seenHubsC1.has(hub)) continue;
+      seenHubsC1.add(hub);
+      const schedKey = LOWVELD_HUB_KEYS[hub] ?? null;
+      if (!schedKey && hub !== 'CPT' && hub !== 'JNB') continue; // no direct to CPT from this hub
+      exitHubOptions.push({ lm, hub });
+    }
+    // Fallback to original exitRec if no hub-specific options found
+    if (!exitHubOptions.length && exitRec) exitHubOptions.push({ lm: exitRec, hub: originHub });
 
+    // Road transfer option (e.g. CPT→JNB road — rare, but for completeness)
+    const roadExitC1 = exitOptions.find((l: any) => l.mode === 'road');
+
+    const generatedC1 = exitHubOptions.map(({ lm: exitLmHub, hub }, i) => {
+      const routeKeyHub = `${hub}-CPT`;
+      const fareHub    = Math.round((hub === originHub ? (liveFare ?? fallback) : fallback) * 1.0);
+      const exitZarHub = lastMileZar(exitLmHub, usdToZar, pax);
+      const totalHub   = exitZarHub + Math.round(fareHub * pax);
+      const metaHub    = (hub === originHub) ? meta : null;
+      const commLeg    = commercialLeg(hub, 'CPT', metaHub, 'Airlink', '4Z');
+      const ex         = exitLeg(exitLmHub, hub);
       const structured: StructuredLeg[] = [];
-      if (exitRec) {
-        const ex = exitLeg(exitRec, originHub);
-        if (ex) structured.push(ex);
-      }
+      if (ex) structured.push(ex);
       structured.push(commLeg);
-
+      const isEstHub  = (hub === originHub) ? isEst : true;
+      const exitMin   = exitLmHub?.durationMin ?? 0;
+      const flightMin = metaHub?.duration_min ?? ({'MQP':160,'HDS':165,'SZK':170,'JNB':120} as any)[hub] ?? 160;
+      const totalMin  = exitMin + flightMin;
       return {
-        id: i === 0 ? 'recommended' : `${c.code}-${i}`,
+        id: i === 0 ? 'recommended' : \`4Z-via-\${hub}\`,
         mode: 'commercial' as TransferOption['mode'],
         icon: '\u2708',
-        label: `${c.name} \u2192 Cape Town`,
-        provider: `${exitRec?.label ?? ''} ${originHub}\u2192CPT via ${c.name}`.trim(),
-        duration: (() => {
-          const exitMin = exitRec?.durationMin ?? 0;
-          const flightMin = meta?.duration_min ?? ({'MQP':160,'HDS':160,'SZK':165,'MUB':150,'VFA':180,'JNB':120} as any)[originHub] ?? 150;
-          const total = exitMin + flightMin;
-          return total ? `~${durStr(total)} + hotel transfer` : '~3h 30m';
-        })(),
-        estimatedCostZAR: total,
-        badges: i === 0
-          ? [{text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'}, ...(isEst?[{text:'Est.',color:'rgba(255,255,255,0.3)'}]:[])]
-          : isEst ? [{text:'Est.',color:'rgba(255,255,255,0.3)'}] : [],
-        aiNote: i === 0 && meta
-          ? `Live fare loaded. ${c.name} ${originHub}\u2192CPT. Airport transfer to hotel handled separately by CityTransferStrip.`
-          : `${c.name} ${originHub}\u2192CPT${i>0?` \u00b7 ~${Math.round((1-c.adjust)*100)}% below Airlink`:''}. Fare indicative. Airport transfer handled separately.`,
+        label: \`Airlink via \${hub} \u2192 Cape Town\`,
+        provider: \`\${exitLmHub?.label ?? ''} \${hub}\u2192CPT\`.trim(),
+        duration: totalMin ? \`~\${durStr(totalMin)} + hotel transfer\` : '~3h',
+        estimatedCostZAR: totalHub,
+        badges: [
+          ...(i === 0 ? [{text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'}] : []),
+          ...(isEstHub ? [{text:'Est.',color:'rgba(255,255,255,0.3)'}] : []),
+          ...(exitLmHub?.mode === 'fedair' ? [{text:'\u2708 Federal Air included',color:'rgba(134,239,172,0.85)'}] : []),
+        ],
+        aiNote: \`\${hub}\u2192CPT via Airlink. \${exitLmHub?.note ?? ''}. \${isEstHub ? 'Fare indicative.' : ''}\`.trim(),
         recommended: i === 0,
         structuredLegs: structured,
       };
     });
+
+    // Add road transfer from lodge → MQP → drive to CPT (rare / excess luggage)
+    if (roadExitC1) {
+      const roadZar = lastMileZar(roadExitC1, usdToZar, pax);
+      generatedC1.push({
+        id: 'road-to-cpt',
+        mode: 'road' as TransferOption['mode'],
+        icon: '\uD83D\uDE97',
+        label: 'Private road transfer → Cape Town',
+        provider: roadExitC1.label,
+        duration: '~3.5h + road',
+        estimatedCostZAR: roadZar,
+        badges: [{text:'Road option',color:'rgba(255,255,255,0.35)'},{text:'Est.',color:'rgba(255,255,255,0.3)'}],
+        aiNote: roadExitC1.note ?? 'Road transfer to gateway — no flight required.',
+        recommended: false,
+        structuredLegs: [{kind:'road' as const, badge:'road', name:'Private road transfer', from:'Lodge', to:'MQP', detail:roadExitC1.note ?? '', noteColor:'rgba(255,255,255,0.35)'}],
+      });
+    }
+
+    return generatedC1;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -2001,6 +2059,52 @@ function buildTransferOptions(
           aiNote: `Alternative via ${ah}: Airlink ${originHub}\u2192${ah} + FedAir to lodge. Good if primary is full.`,
           recommended: false,
           structuredLegs: altLegs,
+        });
+      }
+    }
+
+    // ── Madikwe: add 13:00 FedAir departure as second option + road transfer ───
+    if (toSlug === 'madikwe' && arrRec.mode === 'fedair') {
+      // 13:00 FedAir option (allows morning JNB connections)
+      const fare1300  = Math.round((liveFare ?? fallback) * (carriersR[0]?.adjust ?? 1));
+      const struct1300: StructuredLeg[] = [];
+      if (exitRec2) { const ex = exitLeg(exitRec2, originHub); if (ex) struct1300.push(ex); }
+      struct1300.push(commercialLeg(originHub, 'JNB', null, 'Airlink', '4Z'));
+      struct1300.push(fedairLeg1300('JNB', 'Madikwe Lodge'));
+      mainOptions.push({
+        id: 'fedair-1300',
+        mode: 'commercial' as TransferOption['mode'],
+        icon: '\u2708',
+        label: 'Airlink \u2192 JNB · FedAir 13:00',
+        provider: 'FedAir Flt 101 · JNB 13:00 → Madikwe 14:00',
+        duration: '~3h 45m door-to-door',
+        estimatedCostZAR: exitZar + Math.round(fare1300 * pax) + arrZar,
+        badges: [{text:'\u2708 Afternoon FedAir',color:'rgba(134,239,172,0.85)'},{text:'Est.',color:'rgba(255,255,255,0.3)'}],
+        aiNote: 'Afternoon FedAir 13:00 departure — suits later morning commercial arrivals at JNB. OR Tambo Atlas Rd terminal.',
+        recommended: false,
+        structuredLegs: struct1300,
+      });
+      // Road transfer option
+      const roadArr = arrivalLastMiles.find((a: any) => a.mode === 'road');
+      if (roadArr) {
+        const roadArrZar = lastMileZar(roadArr, usdToZar, pax);
+        const roadCommZar = Math.round((liveFare ?? fallback) * pax);
+        const roadLegs: StructuredLeg[] = [];
+        if (exitRec2) { const ex = exitLeg(exitRec2, originHub); if (ex) roadLegs.push(ex); }
+        roadLegs.push(commercialLeg(originHub, 'JNB', null, 'Airlink', '4Z'));
+        roadLegs.push({ kind:'road' as const, badge:'road', name:'Private road transfer', from:'JNB', to:'Madikwe Lodge', detail:'4.5–5.5 hrs · no baggage restriction', note:roadArr.note, noteColor:'rgba(255,255,255,0.35)' });
+        mainOptions.push({
+          id: 'road-jnb-madikwe',
+          mode: 'road' as TransferOption['mode'],
+          icon: '\uD83D\uDE97',
+          label: 'Airlink → JNB · Road to Madikwe',
+          provider: 'Road transfer JNB → Madikwe',
+          duration: '~6h door-to-door',
+          estimatedCostZAR: exitZar + roadCommZar + roadArrZar,
+          badges: [{text:'Road option',color:'rgba(255,255,255,0.35)'},{text:'No luggage limit',color:'rgba(74,222,128,0.7)'}],
+          aiNote: `Road transfer JNB→Madikwe. ${roadArr.note ?? ''}. Good for guests with excess luggage.`,
+          recommended: false,
+          structuredLegs: roadLegs,
         });
       }
     }
@@ -4837,57 +4941,54 @@ const runBriefPlanner = (briefText: string) => {
               </div>
             )}
 
-            <div style={{ maxWidth:680, margin:'0 auto' }}>
+            <div style={{ maxWidth:680, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+              {/* Left: breakdown — inline, same row as total */}
               {(() => {
-                // Compute display breakdown inline — avoids any memo restructuring
                 const USD_ZAR = CURRENCIES.find((c:any) => c.code === 'USD')?.rate ?? 18.62;
                 const intlFlightZAR = selectedFlightOffer
                   ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
                   : 0;
-                // grandTotal already includes transfers; back out intl flights to get lodge+xfer bucket
                 const lodgesAndRest = grandTotal - intlFlightZAR;
                 const hasFlights    = intlFlightZAR > 0;
                 const nights        = itinerary.cities.reduce((s:number,c:any)=>s+c.nights,0);
                 return (
                   <>
-                    {/* Breakdown row */}
                     {grandTotal > 0 && (
-                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px', marginBottom:10, paddingBottom:10, borderBottom:'0.5px solid rgba(255,255,255,0.07)' }}>
+                      <div style={{ display:'flex', gap:20, alignItems:'flex-end' }}>
                         <div>
-                          <div style={{ fontSize:9, color:'rgba(245,240,232,0.42)', textTransform:'uppercase' as const, letterSpacing:'0.14em', marginBottom:3 }}>Lodges & transfers</div>
-                          <div style={{ fontSize:15, color:'rgba(245,240,232,0.88)', fontWeight:400 }}>{fmt(lodgesAndRest)}</div>
+                          <div style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:2 }}>Lodges & transfers</div>
+                          <div style={{ fontSize:13, color:'rgba(245,240,232,0.78)', fontWeight:400 }}>{fmt(lodgesAndRest)}</div>
                         </div>
                         <div>
-                          <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
-                            <span style={{ fontSize:9, color:'rgba(245,240,232,0.42)', textTransform:'uppercase' as const, letterSpacing:'0.14em' }}>✈ Flights</span>
-                            {hasFlights && <span style={{ fontSize:8, background:'rgba(212,175,55,0.12)', color:T.gold, border:'0.5px solid rgba(212,175,55,0.35)', borderRadius:3, padding:'1px 5px', letterSpacing:'0.1em', fontWeight:700 }}>PAID IN FULL</span>}
+                          <div style={{ display:'flex', alignItems:'center', gap:4, marginBottom:2 }}>
+                            <span style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em' }}>✈ Flights</span>
+                            {hasFlights && <span style={{ fontSize:7, background:'rgba(212,175,55,0.12)', color:T.gold, border:'0.5px solid rgba(212,175,55,0.35)', borderRadius:3, padding:'1px 4px', letterSpacing:'0.08em', fontWeight:700 }}>PAID IN FULL</span>}
                           </div>
-                          <div style={{ fontSize:15, color: hasFlights ? T.gold : 'rgba(245,240,232,0.35)', fontWeight:400 }}>
-                            {hasFlights ? fmt(intlFlightZAR) : 'Add flights above'}
+                          <div style={{ fontSize:13, color: hasFlights ? T.gold : 'rgba(245,240,232,0.28)', fontWeight:400 }}>
+                            {hasFlights ? fmt(intlFlightZAR) : <span style={{ fontSize:11 }}>Add flights</span>}
                           </div>
+                        </div>
+                        <div style={{ width:'0.5px', height:28, background:'rgba(255,255,255,0.08)', alignSelf:'center' }} />
+                        <div>
+                          <div style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:2 }}>Total · {nights}n · {adults+children} guests</div>
+                          <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
                         </div>
                       </div>
                     )}
-
-                    {/* Total + CTA */}
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+                    {grandTotal === 0 && (
                       <div>
-                        <div style={{ fontSize:9, color:'rgba(245,240,232,0.42)', textTransform:'uppercase' as const, letterSpacing:'0.14em', marginBottom:3 }}>
-                          Total · {nights} nights · {adults + children} guests
-                        </div>
-                        <div style={{ fontSize:26, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>
-                          {fmt(grandTotal || itinerary.totalEstimate)}
-                        </div>
+                        <div style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:2 }}>Package total · {itinerary.cities.reduce((s:number,c:any)=>s+c.nights,0)} nights</div>
+                        <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>{fmt(itinerary.totalEstimate)}</div>
                       </div>
-                      <button className="btn-gold" style={{ padding:'13px 26px', fontSize:14, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
-                        {checkoutLoading ? 'Saving…' : (
-                          <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
-                            <span style={{ fontWeight:600, letterSpacing:'0.02em' }}>Validate & Firm up →</span>
-                            <span style={{ fontSize:9, fontWeight:400, opacity:0.65, letterSpacing:'0.08em', textTransform:'uppercase' as const }}>Confirm & price journey</span>
-                          </span>
-                        )}
-                      </button>
-                    </div>
+                    )}
+                    <button className="btn-gold" style={{ padding:'13px 24px', fontSize:14, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
+                      {checkoutLoading ? 'Saving…' : (
+                        <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                          <span style={{ fontWeight:600 }}>Validate & Firm up →</span>
+                          <span style={{ fontSize:9, fontWeight:400, opacity:0.6, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Confirm & price journey</span>
+                        </span>
+                      )}
+                    </button>
                   </>
                 );
               })()}
