@@ -1,336 +1,121 @@
 'use client';
-// app/admin/airlines/page.tsx
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { T } from '../../lib/theme';
 
-const SUPABASE_URL = 'https://tkthsbxuyihoblpcfnml.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx';
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb = createClient(
+  'https://tkthsbxuyihoblpcfnml.supabase.co',
+  'sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx'
+);
 
-const GROUP_IATA = new Set(['FA', 'FN', 'TC', 'MK', 'MA', 'WA']);
-
-interface Airline {
-  id: string;
-  iata_code: string;
-  name: string;
-  short_name: string | null;
-  logo_url: string | null;
-  logo_white_url: string | null;
-  logo_updated_at: string | null;
-  airline_type: 'commercial_scheduled' | 'charter_safari' | 'helicopter';
-  is_duffel: boolean;
-  is_active: boolean;
-  baggage_standard_kg: number;
-  baggage_hard_case: boolean;
-  baggage_upgrade_label: string | null;
-  baggage_upgrade_kg: number | null;
-  baggage_upgrade_pct: number | null;
-  baggage_carryon_kg: number;
-  ops_note: string | null;
-  duffel_note: string | null;
-}
-
-const TYPE_CHIP: Record<string, { bg: string; color: string; label: string }> = {
-  commercial_scheduled: { bg: 'rgba(96,165,250,0.12)',  color: '#60a5fa', label: 'Scheduled'  },
-  charter_safari:       { bg: 'rgba(74,222,128,0.12)',  color: '#4ade80', label: 'Charter'    },
-  helicopter:           { bg: 'rgba(167,139,250,0.12)', color: '#a78bfa', label: 'Helicopter' },
+// ── colours ──────────────────────────────────────────────────────────────────
+const C = {
+  bg:       '#0a0a0a',
+  bg2:      '#111111',
+  surface:  '#1a1a1a',
+  gold:     '#d4af37',
+  goldL:    '#f0c040',
+  goldDim:  'rgba(212,175,55,0.12)',
+  goldBdr:  'rgba(212,175,55,0.28)',
+  text:     '#f5f0e8',
+  mid:      'rgba(245,240,232,0.58)',
+  dim:      'rgba(245,240,232,0.32)',
+  bdr:      'rgba(255,255,255,0.07)',
+  green:    '#4ade80',
+  amber:    '#fb923c',
+  blue:     '#60a5fa',
 };
 
-// ── Drag-and-drop logo zone ───────────────────────────────────────────────────
-function DropZone({ iata, variant, currentUrl, uploading, onUpload, w = 120, h = 80 }: {
-  iata: string;
-  variant: 'colour' | 'white';
-  currentUrl: string | null;
-  uploading: boolean;
-  onUpload: (file: File, iata: string, variant: 'colour' | 'white') => void;
-  w?: number;
-  h?: number;
+const GROUP = new Set(['FA','FN','TC','MK','MA','WA']);
+
+// ── DropZone ─────────────────────────────────────────────────────────────────
+function DropZone({ iata, variant, url, busy, onFile, w, h }: {
+  iata: string; variant: string; url: string | null;
+  busy: boolean; onFile: (f: File, i: string, v: string) => void;
+  w: number; h: number;
 }) {
-  const [drag, setDrag] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
-  const darkBg = variant === 'white';
+  const [over, setOver] = React.useState(false);
+  const inp = useRef<HTMLInputElement>(null);
+  const dark = variant === 'white';
 
   return (
     <div
-      onClick={() => !uploading && ref.current?.click()}
-      onDragEnter={e => { e.preventDefault(); setDrag(true); }}
-      onDragOver={e => { e.preventDefault(); setDrag(true); }}
-      onDragLeave={() => setDrag(false)}
+      onClick={() => !busy && inp.current?.click()}
+      onDragEnter={e => { e.preventDefault(); setOver(true); }}
+      onDragOver={e => { e.preventDefault(); setOver(true); }}
+      onDragLeave={() => setOver(false)}
       onDrop={e => {
-        e.preventDefault();
-        setDrag(false);
-        const file = e.dataTransfer.files[0];
-        if (file) onUpload(file, iata, variant);
+        e.preventDefault(); setOver(false);
+        const f = e.dataTransfer.files[0];
+        if (f) onFile(f, iata, variant);
       }}
       style={{
-        width: w,
-        height: h,
-        borderRadius: 10,
-        cursor: uploading ? 'wait' : 'pointer',
-        background: darkBg ? '#2a2a2a' : '#fff',
-        border: drag
-          ? `2px solid ${T.gold}`
-          : `1px solid ${darkBg ? T.border : 'rgba(220,220,220,0.2)'}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        position: 'relative',
-        flexShrink: 0,
-        boxShadow: drag ? `0 0 0 3px ${T.goldDim}` : 'none',
-        transition: 'border 0.15s, box-shadow 0.15s',
+        width: w, height: h, borderRadius: 10,
+        cursor: busy ? 'wait' : 'pointer',
+        background: dark ? '#2a2a2a' : '#fff',
+        border: over ? `2px solid ${C.gold}` : `1px solid ${dark ? C.bdr : 'rgba(0,0,0,0.12)'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden', position: 'relative', flexShrink: 0,
+        transition: 'border 0.15s',
       }}
     >
-      {currentUrl ? (
-        <img
-          src={currentUrl}
-          alt=""
-          style={{ maxWidth: '88%', maxHeight: '88%', objectFit: 'contain' }}
-        />
-      ) : (
-        <span style={{
-          fontSize: 11,
-          color: darkBg ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.22)',
-          textAlign: 'center',
-          lineHeight: 1.4,
-          padding: '0 6px',
-        }}>
-          {uploading ? 'Uploading...' : 'Drop or click'}
-        </span>
-      )}
-
-      {drag && (
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: `${T.gold}22`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 600, color: T.gold,
-        }}>
-          Drop logo
+      {url
+        ? <img src={url} alt="" style={{ maxWidth: '88%', maxHeight: '88%', objectFit: 'contain' }} />
+        : <span style={{ fontSize: 10, color: dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)', textAlign: 'center' }}>
+            {busy ? '...' : 'Drop or click'}
+          </span>
+      }
+      {over && (
+        <div style={{ position: 'absolute', inset: 0, background: `${C.gold}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: C.gold }}>
+          Drop
         </div>
       )}
-
-      {uploading && (
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'rgba(0,0,0,0.55)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <span style={{ color: T.gold, fontSize: 11 }}>Uploading...</span>
+      {busy && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: 10, color: C.gold }}>Uploading...</span>
         </div>
       )}
-
-      <input
-        ref={ref}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={e => {
-          const f = e.target.files?.[0];
-          if (f) { onUpload(f, iata, variant); e.target.value = ''; }
-        }}
-      />
+      <input ref={inp} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) { onFile(f, iata, variant); e.target.value = ''; } }} />
     </div>
   );
 }
 
-// ── Edit drawer ───────────────────────────────────────────────────────────────
-function EditDrawer({ airline, onSave, onClose, saving }: {
-  airline: Airline;
-  onSave: (a: Airline) => void;
-  onClose: () => void;
-  saving: boolean;
-}) {
-  const [form, setForm] = useState({ ...airline });
-  const upd = (k: keyof Airline) => (v: any) => setForm(p => ({ ...p, [k]: v }));
-
-  const inp: React.CSSProperties = {
-    width: '100%', padding: '8px 10px',
-    background: T.bg, border: `1px solid ${T.border}`,
-    borderRadius: 8, color: T.text, fontSize: 12,
-    outline: 'none', fontFamily: 'inherit',
-  };
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0,
-      background: 'rgba(0,0,0,0.7)', zIndex: 400,
-      display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end',
-    }}>
-      <div style={{
-        width: 420, height: '100vh',
-        background: T.bg2, borderLeft: `1px solid ${T.borderGold}`,
-        padding: 24, overflowY: 'auto',
-        display: 'flex', flexDirection: 'column', gap: 14,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: 10, color: T.gold, letterSpacing: 1.8, textTransform: 'uppercase', marginBottom: 2 }}>
-              Edit airline
-            </div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>
-              {form.iata_code} &middot; {form.name}
-            </div>
-          </div>
-          <button onClick={onClose} style={{
-            background: 'transparent', border: `1px solid ${T.border}`,
-            borderRadius: 8, padding: '6px 11px', color: T.textMid,
-            fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-          }}>x</button>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-            Standard allowance (kg)
-          </label>
-          <input type="number" value={form.baggage_standard_kg}
-            onChange={e => upd('baggage_standard_kg')(parseInt(e.target.value))}
-            style={inp} />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-            Carry-on (kg)
-          </label>
-          <input type="number" value={form.baggage_carryon_kg}
-            onChange={e => upd('baggage_carryon_kg')(parseInt(e.target.value))}
-            style={inp} />
-        </div>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: T.textMid }}>
-          <input type="checkbox" checked={form.baggage_hard_case}
-            onChange={e => upd('baggage_hard_case')(e.target.checked)}
-            style={{ accentColor: T.gold }} />
-          Hard cases permitted
-        </label>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-          <div>
-            <label style={{ display: 'block', fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
-              Upgrade label
-            </label>
-            <input value={form.baggage_upgrade_label || ''} placeholder="X Class"
-              onChange={e => upd('baggage_upgrade_label')(e.target.value || null)}
-              style={inp} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
-              Upgrade kg
-            </label>
-            <input type="number" value={form.baggage_upgrade_kg || ''} placeholder="32"
-              onChange={e => upd('baggage_upgrade_kg')(e.target.value ? parseInt(e.target.value) : null)}
-              style={inp} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
-              Upgrade %
-            </label>
-            <input type="number" value={form.baggage_upgrade_pct || ''} placeholder="25"
-              onChange={e => upd('baggage_upgrade_pct')(e.target.value ? parseFloat(e.target.value) : null)}
-              style={inp} />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 20 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12, color: T.textMid }}>
-            <input type="checkbox" checked={form.is_duffel}
-              onChange={e => upd('is_duffel')(e.target.checked)}
-              style={{ accentColor: T.gold }} />
-            Bookable via Duffel
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12, color: T.textMid }}>
-            <input type="checkbox" checked={form.is_active}
-              onChange={e => upd('is_active')(e.target.checked)}
-              style={{ accentColor: T.gold }} />
-            Active
-          </label>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-            Ops note (shown on transfer tile)
-          </label>
-          <textarea value={form.ops_note || ''} rows={3}
-            onChange={e => upd('ops_note')(e.target.value || null)}
-            style={{ ...inp, resize: 'vertical' }} />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: 10, color: T.gold, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-            Duffel note (internal)
-          </label>
-          <textarea value={form.duffel_note || ''} rows={2}
-            onChange={e => upd('duffel_note')(e.target.value || null)}
-            style={{ ...inp, resize: 'vertical' }} />
-        </div>
-
-        <div style={{ marginTop: 'auto', display: 'flex', gap: 10 }}>
-          <button onClick={() => onSave(form)} disabled={saving} style={{
-            flex: 1, padding: '11px', borderRadius: 9, border: 'none',
-            cursor: saving ? 'wait' : 'pointer',
-            background: saving
-              ? 'rgba(255,255,255,0.07)'
-              : `linear-gradient(135deg,${T.gold},${T.goldLight})`,
-            color: saving ? T.textDim : '#0a0a0a',
-            fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
-          }}>
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-          <button onClick={onClose} style={{
-            padding: '11px 18px', borderRadius: 9,
-            border: `1px solid ${T.border}`, background: 'transparent',
-            color: T.textMid, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-          }}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── main page ─────────────────────────────────────────────────────────────────
 export default function AirlinesAdmin() {
-  const [airlines, setAirlines] = useState<Airline[]>([]);
+  const [rows, setRows]       = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<Airline | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState<Record<string, boolean>>({});
-  const [filter, setFilter] = useState('all');
-  const [flash, setFlash] = useState<{ text: string; ok: boolean } | null>(null);
+  const [editing, setEditing] = useState<any>(null);
+  const [saving, setSaving]   = useState(false);
+  const [busy, setBusy]       = useState<Record<string,boolean>>({});
+  const [filter, setFilter]   = useState('all');
+  const [msg, setMsg]         = useState<{ t: string; ok: boolean } | null>(null);
 
   useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('airlines')
-      .select('*')
-      .order('is_active', { ascending: false })
-      .order('name');
-    if (error) {
-      notify('Failed to load airlines: ' + error.message, false);
-    } else {
-      const sorted = (data || []).sort((a: Airline, b: Airline) => {
-        const ag = GROUP_IATA.has(a.iata_code) ? 0 : 1;
-        const bg = GROUP_IATA.has(b.iata_code) ? 0 : 1;
-        return ag - bg || a.name.localeCompare(b.name);
-      });
-      setAirlines(sorted);
+    const { data, error } = await sb.from('airlines').select('*').order('name');
+    if (error) flash('Load failed: ' + error.message, false);
+    else {
+      const sorted = (data || []).sort((a: any, b: any) =>
+        (GROUP.has(a.iata_code) ? 0 : 1) - (GROUP.has(b.iata_code) ? 0 : 1) || a.name.localeCompare(b.name)
+      );
+      setRows(sorted);
     }
     setLoading(false);
   }
 
-  function notify(text: string, ok: boolean) {
-    setFlash({ text, ok });
-    setTimeout(() => setFlash(null), 4000);
+  function flash(t: string, ok: boolean) {
+    setMsg({ t, ok });
+    setTimeout(() => setMsg(null), 4000);
   }
 
-  async function uploadLogo(file: File, iata: string, variant: 'colour' | 'white') {
-    const key = `${iata}:${variant}`;
-    setUploading(p => ({ ...p, [key]: true }));
+  async function upload(file: File, iata: string, variant: string) {
+    const k = `${iata}:${variant}`;
+    setBusy(p => ({ ...p, [k]: true }));
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const ext = file.name.split('.').pop() || 'png';
       const fd = new FormData();
       fd.append('file', file);
       fd.append('key', `airlines/${iata}/logo${variant === 'white' ? '_white' : ''}.${ext}`);
@@ -338,232 +123,182 @@ export default function AirlinesAdmin() {
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
       if (!res.ok) throw new Error('Upload failed');
       const { url } = await res.json();
-      const update = variant === 'colour'
+      const patch = variant === 'colour'
         ? { logo_url: url, logo_updated_at: new Date().toISOString() }
         : { logo_white_url: url, logo_updated_at: new Date().toISOString() };
-      await supabase.from('airlines').update(update).eq('iata_code', iata);
-      notify(`${iata} ${variant} logo uploaded`, true);
+      await sb.from('airlines').update(patch).eq('iata_code', iata);
+      flash(`${iata} logo saved`, true);
       load();
-    } catch (e) {
-      notify(`Upload failed: ${e instanceof Error ? e.message : 'error'}`, false);
+    } catch (e: any) {
+      flash('Upload failed: ' + (e.message || 'error'), false);
     }
-    setUploading(p => { const n = { ...p }; delete n[key]; return n; });
+    setBusy(p => { const n = { ...p }; delete n[k]; return n; });
   }
 
-  async function save(form: Airline) {
+  async function save() {
+    if (!editing) return;
     setSaving(true);
-    const { error } = await supabase.from('airlines').update({
-      name:                  form.name,
-      short_name:            form.short_name,
-      airline_type:          form.airline_type,
-      is_duffel:             form.is_duffel,
-      is_active:             form.is_active,
-      baggage_standard_kg:   form.baggage_standard_kg,
-      baggage_hard_case:     form.baggage_hard_case,
-      baggage_upgrade_label: form.baggage_upgrade_label,
-      baggage_upgrade_kg:    form.baggage_upgrade_kg,
-      baggage_upgrade_pct:   form.baggage_upgrade_pct,
-      baggage_carryon_kg:    form.baggage_carryon_kg,
-      ops_note:              form.ops_note,
-      duffel_note:           form.duffel_note,
-    }).eq('id', form.id);
-    if (error) notify(`Save failed: ${error.message}`, false);
-    else { notify('Saved', true); await load(); setEditing(null); }
+    const { error } = await sb.from('airlines').update({
+      name: editing.name, short_name: editing.short_name,
+      is_duffel: editing.is_duffel, is_active: editing.is_active,
+      baggage_standard_kg: editing.baggage_standard_kg,
+      baggage_hard_case: editing.baggage_hard_case,
+      baggage_upgrade_label: editing.baggage_upgrade_label,
+      baggage_upgrade_kg: editing.baggage_upgrade_kg,
+      baggage_carryon_kg: editing.baggage_carryon_kg,
+      ops_note: editing.ops_note,
+    }).eq('id', editing.id);
+    if (error) flash('Save failed: ' + error.message, false);
+    else { flash('Saved', true); setEditing(null); await load(); }
     setSaving(false);
   }
 
-  const filtered = filter === 'all'
-    ? airlines
-    : airlines.filter(a => a.airline_type === filter);
+  const inp = { width: '100%', padding: '8px 10px', background: C.bg, border: `1px solid ${C.bdr}`, borderRadius: 8, color: C.text, fontSize: 12, outline: 'none', fontFamily: 'inherit' };
+  const lbl = { display: 'block', fontSize: 10, color: C.gold, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 4 };
+
+  const visible = filter === 'all' ? rows : rows.filter(r => r.airline_type === filter);
 
   return (
-    <div style={{
-      minHeight: '100vh', background: T.bg, color: T.text,
-      fontFamily: "'Jost','DM Sans',sans-serif", padding: '28px 32px',
-    }}>
-      <style>{`* { box-sizing: border-box; } input, textarea, select, button { font-family: inherit; }`}</style>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: 'inherit', padding: '28px 32px' }}>
+      <style>{`*{box-sizing:border-box} input,textarea,button{font-family:inherit}`}</style>
 
+      {/* Edit drawer */}
       {editing && (
-        <EditDrawer
-          airline={editing}
-          onSave={save}
-          onClose={() => setEditing(null)}
-          saving={saving}
-        />
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 400, display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ width: 400, background: C.bg2, borderLeft: `1px solid ${C.goldBdr}`, padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{editing.iata_code} &middot; {editing.name}</div>
+              <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', color: C.dim, fontSize: 18, cursor: 'pointer' }}>x</button>
+            </div>
+
+            <div><label style={lbl}>Std baggage (kg)</label>
+              <input type="number" style={inp} value={editing.baggage_standard_kg}
+                onChange={e => setEditing({ ...editing, baggage_standard_kg: +e.target.value })} /></div>
+
+            <div><label style={lbl}>Carry-on (kg)</label>
+              <input type="number" style={inp} value={editing.baggage_carryon_kg}
+                onChange={e => setEditing({ ...editing, baggage_carryon_kg: +e.target.value })} /></div>
+
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 12, color: C.mid }}>
+              <input type="checkbox" checked={editing.baggage_hard_case}
+                onChange={e => setEditing({ ...editing, baggage_hard_case: e.target.checked })} />
+              Hard cases permitted
+            </label>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div><label style={lbl}>Upgrade label</label>
+                <input style={inp} value={editing.baggage_upgrade_label || ''} placeholder="X Class"
+                  onChange={e => setEditing({ ...editing, baggage_upgrade_label: e.target.value || null })} /></div>
+              <div><label style={lbl}>Upgrade kg</label>
+                <input type="number" style={inp} value={editing.baggage_upgrade_kg || ''} placeholder="32"
+                  onChange={e => setEditing({ ...editing, baggage_upgrade_kg: e.target.value ? +e.target.value : null })} /></div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 16 }}>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 12, color: C.mid }}>
+                <input type="checkbox" checked={editing.is_duffel}
+                  onChange={e => setEditing({ ...editing, is_duffel: e.target.checked })} />
+                Duffel
+              </label>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 12, color: C.mid }}>
+                <input type="checkbox" checked={editing.is_active}
+                  onChange={e => setEditing({ ...editing, is_active: e.target.checked })} />
+                Active
+              </label>
+            </div>
+
+            <div><label style={lbl}>Ops note</label>
+              <textarea style={{ ...inp, resize: 'vertical' }} rows={3} value={editing.ops_note || ''}
+                onChange={e => setEditing({ ...editing, ops_note: e.target.value || null })} /></div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+              <button onClick={save} disabled={saving} style={{ flex: 1, padding: '11px', borderRadius: 8, border: 'none', cursor: 'pointer', background: saving ? C.bdr : `linear-gradient(135deg,${C.gold},${C.goldL})`, color: saving ? C.dim : '#0a0a0a', fontWeight: 700, fontSize: 13 }}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button onClick={() => setEditing(null)} style={{ padding: '11px 16px', borderRadius: 8, border: `1px solid ${C.bdr}`, background: 'transparent', color: C.mid, cursor: 'pointer', fontSize: 12 }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 10, color: T.gold, letterSpacing: 2.2, textTransform: 'uppercase', marginBottom: 3 }}>
-            Admin &middot; Airlines
-          </div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: T.text }}>
-            Airline Partners
-          </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 11.5, color: T.textDim, lineHeight: 1.5 }}>
-            Drag a logo onto any zone — or click to browse. R2 path:{' '}
-            <code style={{ color: T.gold }}>airlines/{'{IATA}'}/logo.png</code>
-            {' '}&middot; <span style={{ color: T.gold }}>&#10022;</span> = group carrier
+          <div style={{ fontSize: 10, color: C.gold, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2 }}>Admin · Airlines</div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: C.text }}>Airline Partners</h1>
+          <p style={{ margin: '3px 0 0', fontSize: 11, color: C.dim }}>
+            Drag a logo onto any zone or click to browse &middot; ✦ = group carrier
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-          {['all', 'commercial_scheduled', 'charter_safari', 'helicopter'].map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={{
-              padding: '6px 13px', borderRadius: 20, cursor: 'pointer', fontSize: 11,
-              border: `1px solid ${filter === f ? T.borderGold : T.border}`,
-              background: filter === f ? T.goldDim : 'transparent',
-              color: filter === f ? T.gold : T.textMid,
-            }}>
-              {f === 'all' && `All (${airlines.length})`}
-              {f === 'commercial_scheduled' && 'Scheduled'}
-              {f === 'charter_safari' && 'Charter'}
-              {f === 'helicopter' && 'Helicopter'}
+        <div style={{ display: 'flex', gap: 7 }}>
+          {[['all', `All (${rows.length})`], ['commercial_scheduled', 'Scheduled'], ['charter_safari', 'Charter'], ['helicopter', 'Helicopter']].map(([v, l]) => (
+            <button key={v} onClick={() => setFilter(v)} style={{ padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontSize: 11, border: `1px solid ${filter === v ? C.goldBdr : C.bdr}`, background: filter === v ? C.goldDim : 'transparent', color: filter === v ? C.gold : C.dim }}>
+              {l}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Flash message */}
-      {flash && (
-        <div style={{
-          padding: '9px 14px', borderRadius: 9, marginBottom: 16, fontSize: 12,
-          background: flash.ok ? 'rgba(74,222,128,0.08)' : 'rgba(248,113,113,0.08)',
-          border: `1px solid ${flash.ok ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.3)'}`,
-          color: flash.ok ? '#4ade80' : '#f87171',
-        }}>
-          {flash.text}
+      {/* Flash */}
+      {msg && (
+        <div style={{ padding: '9px 14px', borderRadius: 9, marginBottom: 14, fontSize: 12, background: msg.ok ? 'rgba(74,222,128,0.08)' : 'rgba(248,113,113,0.08)', border: `1px solid ${msg.ok ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.3)'}`, color: msg.ok ? C.green : '#f87171' }}>
+          {msg.t}
         </div>
       )}
 
-      {loading && (
-        <div style={{ color: T.textDim, fontSize: 13, padding: '40px 0' }}>
-          Loading airlines...
-        </div>
-      )}
+      {loading && <div style={{ color: C.dim, padding: '40px 0', fontSize: 13 }}>Loading...</div>}
 
-      {/* Card grid */}
-      {!loading && filtered.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
-          gap: 14,
-        }}>
-          {filtered.map(a => {
-            const isGroup = GROUP_IATA.has(a.iata_code);
-            const chip = TYPE_CHIP[a.airline_type];
-            const bagParts: string[] = [`${a.baggage_standard_kg}kg`];
-            if (!a.baggage_hard_case) bagParts.push('soft bag only');
-            if (a.baggage_upgrade_label && a.baggage_upgrade_kg) {
-              bagParts.push(`${a.baggage_upgrade_label} ${a.baggage_upgrade_kg}kg`);
-            }
+      {/* Cards */}
+      {!loading && visible.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
+          {visible.map((a: any) => {
+            const grp = GROUP.has(a.iata_code);
+            const bag = [
+              `${a.baggage_standard_kg}kg`,
+              ...(a.baggage_hard_case ? [] : ['soft bag only']),
+              ...(a.baggage_upgrade_label ? [`${a.baggage_upgrade_label} ${a.baggage_upgrade_kg}kg`] : []),
+            ].join(' · ');
+
+            const typeColor = a.airline_type === 'charter_safari' ? C.green : a.airline_type === 'helicopter' ? '#a78bfa' : C.blue;
+            const typeLabel = a.airline_type === 'charter_safari' ? 'Charter' : a.airline_type === 'helicopter' ? 'Helicopter' : 'Scheduled';
 
             return (
-              <div key={a.id} style={{
-                background: T.surface,
-                borderRadius: 14,
-                border: `1px solid ${isGroup ? T.borderGold : T.border}`,
-                padding: 16,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 13,
-                opacity: a.is_active ? 1 : 0.6,
-              }}>
+              <div key={a.id} style={{ background: C.surface, borderRadius: 14, border: `1px solid ${grp ? C.goldBdr : C.bdr}`, padding: 14, display: 'flex', flexDirection: 'column', gap: 12, opacity: a.is_active ? 1 : 0.55 }}>
 
-                {/* Name row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: T.gold, letterSpacing: 0.4 }}>
-                    {a.iata_code}
-                  </span>
-                  {isGroup && (
-                    <span title="Group carrier" style={{ color: T.gold, fontSize: 12 }}>&#10022;</span>
-                  )}
-                  <span style={{ fontSize: 13, fontWeight: 500, color: T.text }}>
-                    {a.short_name || a.name}
-                  </span>
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                    {chip && (
-                      <span style={{
-                        fontSize: 9, padding: '2px 8px', borderRadius: 12,
-                        background: chip.bg, color: chip.color, fontWeight: 600,
-                      }}>
-                        {chip.label}
-                      </span>
-                    )}
-                    {a.is_duffel && (
-                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 12, background: 'rgba(96,165,250,0.1)', color: '#60a5fa' }}>
-                        Duffel
-                      </span>
-                    )}
-                    {!a.is_active && (
-                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: T.textDim }}>
-                        Inactive
-                      </span>
-                    )}
+                {/* Top row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.gold }}>{a.iata_code}</span>
+                  {grp && <span style={{ color: C.gold, fontSize: 11 }}>✦</span>}
+                  <span style={{ fontSize: 13, color: C.text }}>{a.short_name || a.name}</span>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                    <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: `${typeColor}18`, color: typeColor, fontWeight: 600 }}>{typeLabel}</span>
+                    {a.is_duffel && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: `${C.blue}18`, color: C.blue }}>Duffel</span>}
                   </div>
                 </div>
 
-                {/* Logo drop zones */}
-                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                {/* Logo zones */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <div>
-                    <div style={{ fontSize: 9, color: T.textDim, letterSpacing: 0.8, marginBottom: 4 }}>
-                      COLOUR LOGO
-                    </div>
-                    <DropZone
-                      iata={a.iata_code}
-                      variant="colour"
-                      currentUrl={a.logo_url}
-                      uploading={!!uploading[`${a.iata_code}:colour`]}
-                      onUpload={uploadLogo}
-                      w={120}
-                      h={80}
-                    />
+                    <div style={{ fontSize: 9, color: C.dim, marginBottom: 3 }}>COLOUR</div>
+                    <DropZone iata={a.iata_code} variant="colour" url={a.logo_url} busy={!!busy[`${a.iata_code}:colour`]} onFile={upload} w={110} h={72} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 9, color: T.textDim, letterSpacing: 0.8, marginBottom: 4 }}>
-                      WHITE / DARK BG
-                    </div>
-                    <DropZone
-                      iata={a.iata_code}
-                      variant="white"
-                      currentUrl={a.logo_white_url}
-                      uploading={!!uploading[`${a.iata_code}:white`]}
-                      onUpload={uploadLogo}
-                      w={84}
-                      h={56}
-                    />
+                    <div style={{ fontSize: 9, color: C.dim, marginBottom: 3 }}>WHITE</div>
+                    <DropZone iata={a.iata_code} variant="white" url={a.logo_white_url} busy={!!busy[`${a.iata_code}:white`]} onFile={upload} w={76} h={50} />
                   </div>
-                  <div style={{ marginLeft: 'auto', textAlign: 'right', paddingTop: 18 }}>
-                    <div style={{ fontSize: 9.5, color: a.logo_url ? '#4ade80' : '#fb923c', marginBottom: 2 }}>
-                      {a.logo_url ? '✓ colour' : '⚠ no colour'}
-                    </div>
-                    <div style={{ fontSize: 9.5, color: a.logo_white_url ? '#4ade80' : T.textDim }}>
-                      {a.logo_white_url ? '✓ white' : '— no white'}
-                    </div>
-                    {a.logo_url && (
-                      <a href={a.logo_url} target="_blank" rel="noopener noreferrer"
-                        style={{ display: 'block', marginTop: 6, fontSize: 10, color: '#60a5fa' }}>
-                        View &#8599;
-                      </a>
-                    )}
+                  <div style={{ marginLeft: 'auto', textAlign: 'right', paddingTop: 14 }}>
+                    <div style={{ fontSize: 9, color: a.logo_url ? C.green : C.amber }}>{a.logo_url ? '✓ colour' : '⚠ missing'}</div>
+                    <div style={{ fontSize: 9, color: a.logo_white_url ? C.green : C.dim, marginTop: 2 }}>{a.logo_white_url ? '✓ white' : '— white'}</div>
                   </div>
                 </div>
 
                 {/* Footer */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  paddingTop: 10, borderTop: `1px solid ${T.border}`,
-                }}>
-                  <div style={{ fontSize: 11, color: T.textDim }}>
-                    {bagParts.join(' · ')}
-                  </div>
-                  <button onClick={() => setEditing({ ...a })} style={{
-                    padding: '5px 12px', borderRadius: 8,
-                    border: `1px solid ${T.borderGold}`,
-                    background: T.goldDim, color: T.gold,
-                    fontSize: 11, cursor: 'pointer',
-                  }}>
-                    Edit rules
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: `1px solid ${C.bdr}` }}>
+                  <span style={{ fontSize: 10.5, color: C.dim }}>{bag}</span>
+                  <button onClick={() => setEditing({ ...a })} style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${C.goldBdr}`, background: C.goldDim, color: C.gold, fontSize: 10.5, cursor: 'pointer' }}>
+                    Edit
                   </button>
                 </div>
               </div>
@@ -572,11 +307,9 @@ export default function AirlinesAdmin() {
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && filtered.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: T.textDim, fontSize: 13 }}>
-          No airlines yet. Add rows to the{' '}
-          <code style={{ color: T.gold }}>airlines</code> Supabase table.
+      {!loading && visible.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: C.dim, fontSize: 13 }}>
+          No airlines found.
         </div>
       )}
     </div>
