@@ -102,17 +102,23 @@ export default function AirlinesAdmin() {
     const k = `${iata}:${variant}`;
     setBusy(p => ({ ...p, [k]: true }));
     try {
-      const ext = file.name.split('.').pop() || 'png';
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('key', `airlines/${iata}/logo${variant === 'white' ? '_white' : ''}.${ext}`);
-      fd.append('bucket', 'airlines');
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
-      if (!res.ok) throw new Error('Upload API failed');
-      const { url } = await res.json();
+      const ext  = file.name.split('.').pop() || 'png';
+      const name = `${iata}${variant === 'white' ? '_white' : ''}.${ext}`;
+      const res  = await fetch(`${URL}/storage/v1/object/airline-logos/${name}`, {
+        method: 'POST',
+        headers: {
+          'apikey':        KEY,
+          'Authorization': `Bearer ${KEY}`,
+          'Content-Type':  file.type || 'image/png',
+          'x-upsert':      'true',
+        },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const publicUrl = `${URL}/storage/v1/object/public/airline-logos/${name}`;
       const patch = variant === 'colour'
-        ? { logo_url: url, logo_updated_at: new Date().toISOString() }
-        : { logo_white_url: url, logo_updated_at: new Date().toISOString() };
+        ? { logo_url: publicUrl, logo_updated_at: new Date().toISOString() }
+        : { logo_white_url: publicUrl, logo_updated_at: new Date().toISOString() };
       await sbPatch(`airlines?iata_code=eq.${iata}`, patch);
       flash(`${iata} logo saved`, true);
       load();
