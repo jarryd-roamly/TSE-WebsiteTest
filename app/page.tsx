@@ -32,6 +32,7 @@ import JourneyLoadingScreen from '@/components/JourneyLoadingScreen';
 import RegionChapter, { PropertyMiniSite, InclusionPills } from '@/components/RegionChapter';
 import type { SkeletonFinding as RegionSkeletonFinding } from '@/components/RegionChapter';
 import JourneyConfirmation from '@/components/JourneyConfirmation';
+import BudgetNudge from '@/components/BudgetNudge';
 import type { LastMile, AirportCode }        from './lib/transfers';
 import type { Screen, Pillar, InputMode, Hotel, PropertyStay,
               InterTransferState, UpgradeState, Itinerary,
@@ -1581,7 +1582,7 @@ function buildTransferOptions(
   // FedAir arrival leg: hub → lodge airstrip
   // Uses FEDAIR_BUSH lookup for specific lodge times (20–55 min direct routes).
   // Falls back to generic Lowveld Shuttle (Flt 302 13:00) or Madikwe schedule when lodge unknown.
-  const fedairLeg = (hub: string, dest: string, isLowveld: boolean, isMadikwe: boolean, lodgeName?: string): StructuredLeg => {
+  const fedairLeg = (hub: string, dest: string, isLowveld: boolean, isMadikwe: boolean, lodgeName?: string, depOverride?: string): StructuredLeg => {
     // Attempt lodge-specific route lookup
     const airstrip = lodgeName ? (LODGE_TO_AIRSTRIP[lodgeName] ?? null) : null;
     const bushKey  = airstrip ? `${hub}-${airstrip}` : null;
@@ -1611,17 +1612,19 @@ function buildTransferOptions(
       name: 'Federal Air',
       from: hub,
       to: dest,
-      flightNum: isLowveld ? 'FA302' : (isMadikwe ? 'FA103' : undefined),
-      depTime: isLowveld ? '13:00' : (isMadikwe ? '10:00' : undefined),
-      arrTime: isLowveld ? '15:00' : (isMadikwe ? '11:00' : undefined),
+      flightNum: isLowveld ? 'FA302' : (isMadikwe ? (depOverride === '13:00' ? 'FA101' : 'FA103') : undefined),
+      depTime: isLowveld ? '13:30' : (isMadikwe ? (depOverride ?? '13:00') : undefined),
+      arrTime: isLowveld ? '15:00' : (isMadikwe ? (depOverride === '10:00' ? '11:00' : '14:00') : undefined),
       detail: isLowveld
-        ? 'Flt 302 · MQP 13:00 → Lodge ~15:00 · 20kg (hard cases OK)'
+        ? 'Flt 302 · MQP 13:30 → Lodge ~15:00 · 20kg (hard cases OK) · flexible departure'
         : isMadikwe
-        ? 'Flt 103 · JNB 10:00 → Madikwe 11:00 · 20kg (hard cases OK)'
+        ? (depOverride === '10:00'
+            ? 'Flt 103 · JNB 10:00 → Madikwe 11:00 · 20kg (hard cases OK)'
+            : 'Flt 101 · JNB 13:00 → Madikwe 14:00 · 20kg (hard cases OK)')
         : 'Daily 10:00 & 13:00 · ~55–65 min · 20kg (hard cases OK)',
       note: isLowveld
         ? 'X Class available: 32kg + hard cases (+25%)'
-        : 'OR Tambo Atlas Rd terminal · allow 90 min from commercial arrival · Also Flt 101: dep 13:00 arr 14:00 · X Class: 32kg + hard cases (+25%)',
+        : 'OR Tambo Atlas Rd terminal · allow 90 min from commercial arrival · X Class: 32kg + hard cases (+25%)',
       noteColor: 'rgba(212,175,55,0.5)',
     };
   };
@@ -1684,6 +1687,83 @@ function buildTransferOptions(
     'TC-VFA-MQP':{fn:'FN8801',dep:'10:30',arr:'12:15',dur:105,bag:'20kg · hard cases OK'},
   };
 
+  // ── Multiple daily frequencies per commercial route ─────────────────────────
+  // Source: Trip.com / directflights.com schedules (verified June 2026)
+  // Only routes where 2+ daily options meaningfully change the recommendation.
+  // Single-frequency routes stay in SCHED only.
+  type SCHEDEntry = {fn:string;dep:string;arr:string;dur:number};
+  const SCHED_MULTI: Record<string, SCHEDEntry[]> = {
+    // CPT → JNB: 4 viable Airlink frequencies (Trip.com confirmed June 2026)
+    // 4Z922 dep 09:00 is the sweet-spot for FedAir 13:00 Madikwe (arrives JNB 11:05, 1h55 buffer ✅)
+    '4Z-CPT-JNB': [
+      {fn:'4Z926', dep:'06:05', arr:'08:10', dur:125},
+      {fn:'4Z920', dep:'07:00', arr:'09:05', dur:125},
+      {fn:'4Z922', dep:'09:00', arr:'11:05', dur:125}, // ← latest for FedAir 13:00 Madikwe
+      {fn:'4Z950', dep:'09:55', arr:'12:00', dur:125}, // misses FedAir 13:00 (arr 12:00 + 90min = 13:30 > 13:00)
+    ],
+    // JNB → MQP: multiple daily (Trip.com / directflights confirmed)
+    '4Z-JNB-MQP': [
+      {fn:'4Z823', dep:'07:00', arr:'07:55', dur:55},
+      {fn:'4Z829', dep:'10:05', arr:'11:00', dur:55},
+      {fn:'4Z841', dep:'11:05', arr:'12:00', dur:55},  // ← best for FedAir 13:00+ (1h15 buffer ✅)
+      {fn:'4Z845', dep:'16:10', arr:'16:50', dur:40},  // misses all FedAir
+    ],
+    // CPT → MQP: 4Z663 only connects if FedAir dep ≥ 13:45 (none currently)
+    // pickBestFlight will correctly keep 4Z661 for all current FedAir times
+    '4Z-CPT-MQP': [
+      {fn:'4Z661', dep:'07:50', arr:'10:10', dur:140},
+      {fn:'4Z663', dep:'10:25', arr:'12:45', dur:140},
+    ],
+    '4Z-CPT-HDS': [
+      {fn:'4Z655', dep:'08:35', arr:'11:05', dur:150},
+      {fn:'4Z657', dep:'10:15', arr:'12:45', dur:150},
+    ],
+  };
+
+  // Minimum connection buffer (minutes) at each regional hub before FedAir departure.
+  // JNB = 90 min (must clear international/domestic, Atlas Rd terminal transit).
+  // Lowveld hubs = 45 min (small terminal, no security re-screen).
+  const CONNECTION_BUFFER: Record<string, number> = {
+    'MQP':45, 'SZK':45, 'HDS':45, 'JNB':90,
+  };
+
+  // Generic FedAir departure times when specific lodge is unknown
+  const FEDAIR_GENERIC_DEP: Record<string, string> = {
+    'MQP':'13:30', // flexible afternoon — holds for 4Z663 (arr 12:45) and departs 13:30, lodges by 15:00
+    'HDS':'11:55', 'SZK':'13:00',
+    'JNB':'13:00', // FedAir 13:00 is primary Madikwe dep — allows 09:00 CPT departure (4Z922)
+  };
+
+  // Convert "HH:MM" to minutes since midnight for comparison
+  const t2m = (t: string): number => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+
+  // Returns the LATEST viable commercial flight that leaves enough connection time.
+  // "Latest" = best guest experience (late checkout, breakfast, civilised departure).
+  // Falls back to earliest if nothing makes the connection.
+  const pickBestFlight = (routeKey: string, fedAirDep: string | null, bag: string): (SCHEDEntry & {bag:string}) | null => {
+    const freqs = SCHED_MULTI[routeKey];
+    const primary = SCHED[routeKey] ? { fn: SCHED[routeKey].fn, dep: SCHED[routeKey].dep, arr: SCHED[routeKey].arr, dur: SCHED[routeKey].dur } : null;
+    const all: SCHEDEntry[] = freqs ?? (primary ? [primary] : []);
+    if (!all.length) return null;
+
+    if (!fedAirDep) return { ...all[0], bag };
+
+    // Extract dest hub from routeKey (e.g. '4Z-JNB-MQP' → 'MQP')
+    const destHub = routeKey.split('-').pop()!;
+    const bufferMin = CONNECTION_BUFFER[destHub] ?? 45;
+    const deadline  = t2m(fedAirDep) - bufferMin;
+
+    // All flights that arrive before the deadline
+    const viable = all.filter(f => t2m(f.arr) <= deadline);
+
+    // Pick the LATEST departure (best for guest); fall back to first if none viable
+    const best = viable.length
+      ? viable.sort((a, b) => t2m(b.dep) - t2m(a.dep))[0]
+      : all[0]; // nothing connects — show earliest, let specialist warn
+
+    return { ...best, bag };
+  };
+
   // ── Lodge name → FedAir bush airstrip code ──────────────────────────────────
   // Source: FedAir_Routes_Final.md (June 2026)
   const LODGE_TO_AIRSTRIP: Record<string, string> = {
@@ -1706,11 +1786,11 @@ function buildTransferOptions(
   type FBR = { flt:string; dep:string; arr:string; dur:number; stops:number; via?:string };
   const FEDAIR_BUSH: Record<string, FBR> = {
     // ── MQP → lodge arrivals ─────────────────────────────────────────
-    'MQP-SSX': { flt:'FA3103', dep:'13:15', arr:'13:45', dur:30,  stops:0 },
-    'MQP-LDZ': { flt:'FA3203', dep:'13:20', arr:'14:00', dur:40,  stops:1, via:'Sabi Sabi (GSS)' },
+    'MQP-SSX': { flt:'FA3103', dep:'13:30', arr:'13:45', dur:30,  stops:0 },
+    'MQP-LDZ': { flt:'FA3203', dep:'13:30', arr:'14:00', dur:40,  stops:1, via:'Sabi Sabi (GSS)' },
     'MQP-ULX': { flt:'FA3212', dep:'11:05', arr:'11:25', dur:20,  stops:0 },
-    'MQP-ASS': { flt:'FA3103', dep:'13:15', arr:'13:55', dur:40,  stops:1, via:'Singita (SSX)' },
-    'MQP-GSS': { flt:'FA3203', dep:'13:20', arr:'13:50', dur:30,  stops:0 },
+    'MQP-ASS': { flt:'FA3103', dep:'13:30', arr:'13:55', dur:40,  stops:1, via:'Singita (SSX)' },
+    'MQP-GSS': { flt:'FA3203', dep:'13:30', arr:'13:50', dur:30,  stops:0 },
     'MQP-SAT': { flt:'FA3301', dep:'08:20', arr:'09:15', dur:55,  stops:0 },
     'MQP-AAM': { flt:'FA3201', dep:'08:50', arr:'09:10', dur:20,  stops:0 },
     // ── Lodge → MQP exits ────────────────────────────────────────────
@@ -1741,11 +1821,15 @@ function buildTransferOptions(
   };
 
   // ── Helper: build a structured commercial leg ─────────────────────────────
+  // When fedAirDep is provided, selects the LATEST viable flight (best experience).
+  // Without fedAirDep, falls back to primary SCHED entry.
   // Duffel meta used ONLY for fare pricing upstream — NEVER shown on tile.
-  // Tile always uses hardcoded SCHED data for display.
-  const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string): StructuredLeg => {
-    const sc  = SCHED[`${carrierCode}-${originHub}-${destHub}`];
-    const dur = sc ? durStr(sc.dur) : '';
+  const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string, fedAirDep?: string | null): StructuredLeg => {
+    const routeKey = `${carrierCode}-${originHub}-${destHub}`;
+    const bag      = '20kg · X Class 32kg avail';
+    const sc       = pickBestFlight(routeKey, fedAirDep ?? null, bag)
+                     ?? (SCHED[routeKey] ? { ...SCHED[routeKey] } : null);
+    const dur      = sc ? durStr(sc.dur) : '';
     return {
       kind: 'commercial',
       badge: carrierCode,
@@ -1754,8 +1838,8 @@ function buildTransferOptions(
       to: destHub,
       depTime: sc?.dep || undefined,
       arrTime: sc?.arr || undefined,
-      flightNum: sc?.fn,
-      detail: ['Nonstop', dur, sc?.bag ?? '20kg checked'].filter(Boolean).join(' · '),
+      flightNum: (sc as any)?.fn,
+      detail: ['Nonstop', dur, (sc as any)?.bag ?? '20kg checked'].filter(Boolean).join(' · '),
       note: 'Schedule indicative · confirm seat availability at booking',
       noteColor: 'rgba(212,175,55,0.4)',
     };
@@ -1880,7 +1964,7 @@ function buildTransferOptions(
       const exitZarHub = lastMileZar(exitLmHub, usdToZar, pax);
       const totalHub   = exitZarHub + Math.round(fareHub * pax);
       const metaHub    = (hub === originHub) ? meta : null;
-      const commLeg    = commercialLeg(hub, 'CPT', metaHub, 'Airlink', '4Z');
+      const commLeg    = commercialLeg(hub, 'CPT', metaHub, 'Airlink', '4Z', null); // CPT = no FedAir connection needed
       const ex         = exitLeg(exitLmHub, hub, originLodge ?? undefined);
       const structured: StructuredLeg[] = [];
       if (ex) structured.push(ex);
@@ -1972,7 +2056,7 @@ function buildTransferOptions(
 
       const structured: StructuredLeg[] = [];
       if (exitRec) { const ex = exitLeg(exitRec, noFlight ? gw : originHub, originLodge ?? undefined); if (ex) structured.push(ex); }
-      if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code));
+      if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code, null) // gateway: no FedAir conn at gateway);
 
       const exitMin   = exitRec?.durationMin ?? 0;
       const flightMin = noFlight ? 0 : (meta?.duration_min ?? flightMinFallback[originHub] ?? 120);
@@ -2058,7 +2142,7 @@ function buildTransferOptions(
   const carriersR = needCommR ? carriersForRoute(originHub, destHubR) : [];
 
   // Build the arrival structured-leg(s) for a given arrival record + destination hub.
-  const buildArrivalLegs = (arr: any, destHub: string, lodgeName?: string): StructuredLeg[] => {
+  const buildArrivalLegs = (arr: any, destHub: string, lodgeName?: string, fedAirDep?: string | null): StructuredLeg[] => {
     const out: StructuredLeg[] = [];
     const isLowveld = ['MQP','HDS','SZK'].includes(destHub);
     const isMadikweArr = toSlug === 'madikwe';
@@ -2067,7 +2151,7 @@ function buildTransferOptions(
       out.push({ kind:'arrival', badge:'\u2708', name:'Charter — land at Gaborone (GBE)', from:'CPT / JNB', to:'GBE', detail:'Light aircraft · ~30 min from origin · lands Gaborone International', note:'Flat rate per charter up to 6 pax', noteColor:'rgba(212,175,55,0.5)' });
       out.push({ kind:'road', badge:'\uD83D\uDEC2', name:'\u26A0 Road transfer + 2 border crossings', from:'Gaborone Airport (GBE)', to:'Madikwe Lodge', detail:'~28km road · Botswana exit + SA entry (Kopfontein/Derdepoort border posts)', note:'Allow 2–3 hours. Border hours: 07:00–20:00. Not recommended for tight connections or evening arrivals.', noteColor:'rgba(251,146,60,0.8)' });
     } else if (arr.mode === 'fedair') {
-      out.push(fedairLeg(destHub, 'Lodge airstrip', isLowveld, isMadikweArr, lodgeName));
+      out.push(fedairLeg(destHub, 'Lodge airstrip', isLowveld, isMadikweArr, lodgeName, fedAirDep ?? undefined));
     } else if (arr.mode === 'mackair') {
       out.push({ kind:'arrival', badge:'MA', name:'Mack Air', from:destHub, to:'Camp airstrip', detail:'20kg soft bag · no hard cases · lands at camp', note:arr.note, noteColor:'rgba(74,222,128,0.6)' });
     } else if (arr.mode === 'wilderness') {
@@ -2100,16 +2184,17 @@ function buildTransferOptions(
     const arrZar   = lastMileZar(arrRec, usdToZar, pax);
 
     const destName = toSlug.replace(/-/g,' ').replace(/\b\w/g, ch => ch.toUpperCase());
+    // Pick the best commercial flight based on FedAir departure time at destination hub
+    const fedAirDepMain = destLodge ? (FEDAIR_BUSH[`${destHub}-${LODGE_TO_AIRSTRIP[destLodge] ?? ''}`]?.dep ?? FEDAIR_GENERIC_DEP[destHub] ?? null) : (FEDAIR_GENERIC_DEP[destHub] ?? null);
     const mainOptions: TransferOption[] = carriersR.map((c, i) => {
       const fare  = Math.round((liveFare ?? fallback) * c.adjust);
       const total = exitZar + Math.round(fare * pax) + arrZar;
-      // Only attach live Duffel times if the live carrier matches this option's carrier
       const metaForThis = (liveMeta && (liveMeta.carrier === c.code)) ? liveMeta : null;
 
       const structured: StructuredLeg[] = [];
       if (exitRec2) { const ex = exitLeg(exitRec2, originHub, originLodge ?? undefined); if (ex) structured.push(ex); }
-      structured.push(commercialLeg(originHub, destHub, metaForThis, c.name, c.code));
-      buildArrivalLegs(arrRec, destHub, destLodge ?? undefined).forEach(l => structured.push(l));
+      structured.push(commercialLeg(originHub, destHub, metaForThis, c.name, c.code, fedAirDepMain));
+      buildArrivalLegs(arrRec, destHub, destLodge ?? undefined, fedAirDepMain).forEach(l => structured.push(l));
 
       const flightMin = liveMeta?.duration_min ?? SCHED[`${c.code}-${originHub}-${destHub}`]?.dur ?? commDurFallback[routeKey] ?? 120;
       const totalMin  = (exitRec2?.durationMin ?? 0) + flightMin + (arrRec.durationMin ?? 0);
@@ -2150,7 +2235,8 @@ function buildTransferOptions(
         const altTotMin = (exitRec2?.durationMin ?? 0) + altFlMin + (arrRec.durationMin ?? 0);
         const altLegs: StructuredLeg[] = [];
         if (exitRec2) { const ex = exitLeg(exitRec2, originHub); if (ex) altLegs.push(ex); }
-        altLegs.push(commercialLeg(originHub, ah, altMeta, 'Airlink', '4Z'));
+        const fedAirDepAlt = destLodge ? (FEDAIR_BUSH[`${ah}-${LODGE_TO_AIRSTRIP[destLodge] ?? ''}`]?.dep ?? FEDAIR_GENERIC_DEP[ah] ?? null) : (FEDAIR_GENERIC_DEP[ah] ?? null);
+        altLegs.push(commercialLeg(originHub, ah, altMeta, 'Airlink', '4Z', fedAirDepAlt));
         altLegs.push(fedairLeg(ah, 'Lodge airstrip', true, false, destLodge ?? undefined));
         mainOptions.push({
           id: `4Z-via-${ah}`,
@@ -2174,7 +2260,7 @@ function buildTransferOptions(
       const fare1300  = Math.round((liveFare ?? fallback) * (carriersR[0]?.adjust ?? 1));
       const struct1300: StructuredLeg[] = [];
       if (exitRec2) { const ex = exitLeg(exitRec2, originHub); if (ex) struct1300.push(ex); }
-      struct1300.push(commercialLeg(originHub, 'JNB', null, 'Airlink', '4Z'));
+      struct1300.push(commercialLeg(originHub, 'JNB', null, 'Airlink', '4Z', '13:00'));
       struct1300.push(fedairLeg1300('JNB', 'Madikwe Lodge'));
       mainOptions.push({
         id: 'fedair-1300',
@@ -2196,7 +2282,7 @@ function buildTransferOptions(
         const roadCommZar = Math.round((liveFare ?? fallback) * pax);
         const roadLegs: StructuredLeg[] = [];
         if (exitRec2) { const ex = exitLeg(exitRec2, originHub); if (ex) roadLegs.push(ex); }
-        roadLegs.push(commercialLeg(originHub, 'JNB', null, 'Airlink', '4Z'));
+        roadLegs.push(commercialLeg(originHub, 'JNB', null, 'Airlink', '4Z', null));
         roadLegs.push({ kind:'road' as const, badge:'road', name:'Private road transfer', from:'JNB', to:'Madikwe Lodge', detail:'4.5–5.5 hrs · no baggage restriction', note:roadArr.note, noteColor:'rgba(255,255,255,0.35)' });
         mainOptions.push({
           id: 'road-jnb-madikwe',
@@ -2239,9 +2325,9 @@ function buildTransferOptions(
       const hasLiveMeta = meta && (meta.carrier || meta.departing_at);
       const carrierCode = hasLiveMeta ? (meta.carrier ?? '4Z') : '4Z';
       const carrierName = AIRLINE_META[carrierCode]?.name ?? 'Airlink';
-      structured.push(commercialLeg(originHub, destHub, meta, carrierName, carrierCode));
+      structured.push(commercialLeg(originHub, destHub, meta, carrierName, carrierCode, fedAirDepMain));
     }
-    buildArrivalLegs(arr, destHub, destLodge ?? undefined).forEach(l => structured.push(l));
+    buildArrivalLegs(arr, destHub, destLodge ?? undefined, fedAirDepMain).forEach(l => structured.push(l));
 
     const commDur = meta?.duration_min ?? commDurFallback[routeKey] ?? 120;
     const totalMin = (exitRec2?.durationMin ?? 0) + commDur + arr.durationMin;
@@ -4687,7 +4773,16 @@ const runBriefPlanner = (briefText: string) => {
                   <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
                 </div>
               </div>
-
+                  <BudgetNudge
+                cities={itinerary.cities}
+                cityStays={cityStays}
+                hotels={hotelsByMargin}
+                budget={budget}
+                grandTotal={grandTotal}
+                marginMult={M.hotels}
+                fmt={fmt}
+                onApply={handleRoomUpgrade}
+              />
               <div style={{ marginTop:12, paddingTop:12, borderTop:`0.5px solid ${T.border}`, display:'flex', alignItems:'center', gap:12 }}>
                 <div style={{ width:40, height:40, borderRadius:'50%', background:'rgba(212,175,55,0.08)', border:`1.5px solid ${T.borderGold}`, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <span style={{ fontSize:16, color:T.gold, opacity:0.8 }}>&#10022;</span>
