@@ -1601,34 +1601,43 @@ function buildTransferOptions(
 
   // ── Confirmed Airlink / Fastjet schedule — GDS verified (ExpertFlyer) ────
   // Only carriers with confirmed schedule data. No CemAir, FlySafair, SAA.
+  // ── Confirmed schedule — source: ExpertFlyer GDS + Cirium screenshots ──────
   const SCHED: Record<string,{fn:string;dep:string;arr:string;dur:number;bag:string}> = {
-    '4Z-CPT-MQP':{fn:'4Z661',dep:'09:00',arr:'10:45',dur:105,bag:'20kg · X Class 32kg avail'},
-    '4Z-CPT-SZK':{fn:'4Z651',dep:'06:55',arr:'08:15',dur:80, bag:'20kg · X Class 32kg avail'},
-    '4Z-CPT-HDS':{fn:'4Z655',dep:'06:35',arr:'08:00',dur:85, bag:'20kg · X Class 32kg avail'},
+    // CPT ↔ JNB (trunk — multiple daily; primary frequency shown)
+    '4Z-CPT-JNB':{fn:'4Z926',dep:'06:05',arr:'08:10',dur:125,bag:'20kg · X Class 32kg avail'},
+    '4Z-JNB-CPT':{fn:'4Z921',dep:'07:30',arr:'09:45',dur:135,bag:'20kg · X Class 32kg avail'},
+    // CPT ↔ Kruger
+    '4Z-CPT-MQP':{fn:'4Z661',dep:'07:50',arr:'10:10',dur:140,bag:'20kg · X Class 32kg avail'},
+    '4Z-MQP-CPT':{fn:'4Z664',dep:'13:25',arr:'16:05',dur:160,bag:'20kg · X Class 32kg avail'},
+    '4Z-CPT-SZK':{fn:'4Z651',dep:'10:30',arr:'12:55',dur:145,bag:'20kg · X Class 32kg avail'},
+    '4Z-SZK-CPT':{fn:'4Z652',dep:'11:40',arr:'14:25',dur:165,bag:'20kg · X Class 32kg avail'},
+    '4Z-CPT-HDS':{fn:'4Z655',dep:'08:35',arr:'11:05',dur:150,bag:'20kg · X Class 32kg avail'},
+    '4Z-HDS-CPT':{fn:'4Z658',dep:'13:25',arr:'16:10',dur:165,bag:'20kg · X Class 32kg avail'},
+    // CPT ↔ Other regions
     '4Z-CPT-VFA':{fn:'4Z390',dep:'09:45',arr:'12:40',dur:175,bag:'20kg · X Class 32kg avail'},
-    '4Z-CPT-MUB':{fn:'4Z314',dep:'10:35',arr:'13:05',dur:150,bag:'20kg · X Class 32kg avail'},
-    '4Z-CPT-BBK':{fn:'4Z306',dep:'11:50',arr:'13:40',dur:110,bag:'20kg · X Class 32kg avail'},
-    '4Z-MQP-CPT':{fn:'4Z662',dep:'11:10',arr:'12:55',dur:105,bag:'20kg · X Class 32kg avail'},
-    '4Z-SZK-CPT':{fn:'4Z652',dep:'09:00',arr:'10:25',dur:85, bag:'20kg · X Class 32kg avail'},
-    '4Z-HDS-CPT':{fn:'4Z658',dep:'09:00',arr:'10:25',dur:85, bag:'20kg · X Class 32kg avail'},
     '4Z-VFA-CPT':{fn:'4Z391',dep:'13:25',arr:'16:30',dur:185,bag:'20kg · X Class 32kg avail'},
-    '4Z-MUB-CPT':{fn:'4Z315',dep:'13:50',arr:'16:20',dur:150,bag:'20kg · X Class 32kg avail'},
-    '4Z-JNB-MQP':{fn:'4Z823',dep:'06:50',arr:'08:00',dur:70, bag:'20kg · X Class 32kg avail'},
+    '4Z-CPT-MUB':{fn:'4Z314',dep:'10:35',arr:'13:10',dur:155,bag:'20kg · X Class 32kg avail'},
+    '4Z-MUB-CPT':{fn:'4Z315',dep:'13:40',arr:'16:20',dur:160,bag:'20kg · X Class 32kg avail'},
+    // JNB ↔ Kruger
+    '4Z-JNB-MQP':{fn:'4Z823',dep:'07:00',arr:'07:55',dur:55, bag:'20kg · X Class 32kg avail'},
+    '4Z-MQP-JNB':{fn:'4Z824',dep:'08:25',arr:'09:20',dur:55, bag:'20kg · X Class 32kg avail'},
     '4Z-JNB-SZK':{fn:'4Z861',dep:'10:05',arr:'11:05',dur:60, bag:'20kg · X Class 32kg avail'},
     '4Z-SZK-JNB':{fn:'4Z862',dep:'13:35',arr:'14:40',dur:65, bag:'20kg · X Class 32kg avail'},
     '4Z-JNB-HDS':{fn:'4Z871',dep:'10:30',arr:'11:30',dur:60, bag:'20kg · X Class 32kg avail'},
     '4Z-HDS-JNB':{fn:'4Z876',dep:'11:45',arr:'12:50',dur:65, bag:'20kg · X Class 32kg avail'},
-    '4Z-JNB-VFA':{fn:'4Z492',dep:'09:25',arr:'11:45',dur:140,bag:'20kg · X Class 32kg avail'},
+    // JNB ↔ Other regions
+    '4Z-JNB-VFA':{fn:'4Z492',dep:'10:00',arr:'11:45',dur:105,bag:'20kg · X Class 32kg avail'},
+    '4Z-VFA-JNB':{fn:'4Z493',dep:'12:30',arr:'14:15',dur:105,bag:'20kg · X Class 32kg avail'},
     '4Z-JNB-MUB':{fn:'4Z302',dep:'10:55',arr:'12:35',dur:100,bag:'20kg · X Class 32kg avail'},
-    '4Z-JNB-BBK':{fn:'4Z306',dep:'11:50',arr:'13:40',dur:110,bag:'20kg · X Class 32kg avail'},
-    '4Z-MQP-JNB':{fn:'4Z824',dep:'08:30',arr:'09:35',dur:65, bag:'20kg · X Class 32kg avail'},
+    '4Z-MUB-JNB':{fn:'4Z303',dep:'13:05',arr:'14:45',dur:100, bag:'20kg · X Class 32kg avail'},
+    '4Z-JNB-BBK':{fn:'4Z306',dep:'11:50',arr:'13:35',dur:105,bag:'20kg · X Class 32kg avail'},
+    '4Z-BBK-JNB':{fn:'4Z307',dep:'14:15',arr:'15:55',dur:100,bag:'20kg · X Class 32kg avail'},
+    // Cross-regional
     '4Z-MQP-VFA':{fn:'4Z476',dep:'11:35',arr:'13:25',dur:110,bag:'20kg · X Class 32kg avail'},
     '4Z-VFA-MQP':{fn:'4Z477',dep:'14:00',arr:'15:40',dur:100,bag:'20kg · X Class 32kg avail'},
-    '4Z-VFA-JNB':{fn:'4Z493',dep:'12:40',arr:'15:00',dur:140,bag:'20kg · X Class 32kg avail'},
-    '4Z-MUB-JNB':{fn:'4Z303',dep:'13:15',arr:'14:45',dur:90, bag:'20kg · X Class 32kg avail'},
-    '4Z-BBK-VFA':{fn:'4Z307',dep:'14:15',arr:'15:55',dur:100,bag:'20kg · X Class 32kg avail'},
-    'TC-JNB-VFA':{fn:'FN8508',dep:'09:25',arr:'11:10',dur:105,bag:'20kg · hard cases OK'},
-    'TC-VFA-JNB':{fn:'FN8503',dep:'11:50',arr:'13:30',dur:100,bag:'20kg · hard cases OK'},
+    // Fastjet (TC)
+    'TC-JNB-VFA':{fn:'FN8508',dep:'09:55',arr:'11:45',dur:110,bag:'20kg · hard cases OK'},
+    'TC-VFA-JNB':{fn:'FN8503',dep:'12:45',arr:'14:35',dur:110,bag:'20kg · hard cases OK'},
     'TC-MQP-VFA':{fn:'FN8802',dep:'12:45',arr:'14:30',dur:105,bag:'20kg · hard cases OK'},
     'TC-VFA-MQP':{fn:'FN8801',dep:'10:30',arr:'12:15',dur:105,bag:'20kg · hard cases OK'},
   };
