@@ -3467,8 +3467,10 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [itinerary?.cities, cityStays, checkinDate, adults, children, hotelsByMargin]);
 
-  const grandTotal = useMemo(() => {
-    if (!itinerary?.cities || cityStays.length===0) return 0;
+  // ── Price components memo — exposes breakdown for the price bar ──────────
+  const priceComponents = useMemo(() => {
+    const zero = { lodgeCost:0, transferCost:0, activityCost:0, cityXferCost:0, flightCostZAR:0, grandTotal:0 };
+    if (!itinerary?.cities || cityStays.length===0) return zero;
     const lodgeCost = itinerary.cities.reduce((sum, city, i) => {
       const stay = cityStays[i]; if (!stay) return sum;
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
@@ -3486,11 +3488,9 @@ useEffect(() => {
       const toSlug   = CITY_TO_SLUG[nextCity.city.toLowerCase().trim()] ?? '';
       if (!fromSlug || !toSlug) return sum;
       const legKey  = `${fromSlug}→${toSlug}`;
-      // Destination lodge for this leg (the next city's chosen hotel) resolves the airport.
       const nextStay = cityStays[i + 1];
       const nextPool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
       const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
-      // Origin lodge for the EXIT leg = this city's chosen hotel.
       const thisStay = cityStays[i];
       const thisPool = fromSlug ? hotelsByMargin.filter(h => h.subRegion === fromSlug) : hotelsByMargin;
       const originHotel = thisPool.find(h => String(h.id) === String(thisStay?.hotelId)) ?? thisPool[0];
@@ -3504,7 +3504,7 @@ useEffect(() => {
     const activityCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
       const sel = selectedActivities[slug] ?? [];
-      const pax = Math.max(adults + children, 1); // infants = 0 cost
+      const pax = Math.max(adults + children, 1);
       return sum + activities.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + Math.round(a.netRate * M.activities) * pax, 0);
     }, 0);
     const cityXferCost = itinerary.cities.reduce((sum, city) => {
@@ -3516,14 +3516,22 @@ useEffect(() => {
       const chosen = selId ? opts.find(o => o.id === selId) : opts.find(o => o.recommended) ?? opts[0];
       return sum + (chosen?.estimatedCostZAR ?? 0);
     }, 0);
-    // [V7.1] International flights — Duffel offer price is in USD; grandTotal is ZAR.
-    // Convert USD -> ZAR using the fixed USD rate so the package total stays in ZAR.
     const USD_ZAR = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
     const flightCostZAR = selectedFlightOffer
       ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
       : 0;
-    return lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
+    const grandTotal = lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
+    return { lodgeCost, transferCost, activityCost, cityXferCost, flightCostZAR, grandTotal };
   }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children, activities, transferFares]);
+  const grandTotal      = priceComponents.grandTotal;
+  const _lodgeCost      = priceComponents.lodgeCost;
+  const _transferCost   = priceComponents.transferCost + priceComponents.cityXferCost;
+  const _activityCost   = priceComponents.activityCost;
+  const _flightCostZAR  = priceComponents.flightCostZAR;
+  // Flights & transfers bucket = intl flights + all regional transfers (incl. commercial legs)
+  const _flightsAndTransfers = _flightCostZAR + _transferCost;
+  // Lodges & experiences bucket
+  const _lodgesAndExp   = _lodgeCost + _activityCost;
 
   // [V7-4] Route reversal — uses real INTERNAL_LEGS transfer costs. Fires after itinerary builds.
   const routeReversalResult = useMemo(() => {
@@ -4827,8 +4835,10 @@ const runBriefPlanner = (briefText: string) => {
             {infants>0&&<div style={{ background:'rgba(251,191,36,0.07)', border:'0.5px solid rgba(251,191,36,0.2)', borderRadius:12, padding:'12px 16px', marginBottom:16, fontSize:12, color:T.amber }}>⚠ {infants} infant{infants>1?'s':''} on this trip. Journey Specialist will confirm age policies with each property.</div>}
           </div>
 
-          {/* Sticky bottom price bar */}
-          <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:90, background:'rgba(10,10,10,0.97)', backdropFilter:'blur(20px)', borderTop:`0.5px solid ${T.borderGold}`, padding:'8px 16px' }}>
+          {/* ── Sticky bottom price bar ─────────────────────────────────────── */}
+          <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:90, background:'rgba(8,8,8,0.98)', backdropFilter:'blur(24px)', borderTop:`0.5px solid ${T.borderGold}`, padding:'10px 16px 12px' }}>
+
+            {/* Route reversal tip */}
             {routeReversalResult?.is_cheaper && !routeReversalDismissed && (
               <div style={{ maxWidth:680, margin:'0 auto 10px', padding:'9px 12px', background:'rgba(74,222,128,0.06)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:8, display:'flex', alignItems:'center', gap:10 }}>
                 <span style={{ fontSize:14 }}>🔄</span>
@@ -4837,21 +4847,53 @@ const runBriefPlanner = (briefText: string) => {
                 <button onClick={() => setRouteReversalDismissed(true)} style={{ background:'none', border:'none', color:T.textDim, cursor:'pointer', fontSize:14, fontFamily:'inherit' }}>×</button>
               </div>
             )}
-            {selectedFlightOffer && (
-              <div style={{ maxWidth:680, margin:'0 auto 6px', fontSize:11, color:T.textDim, display:'flex', justifyContent:'space-between' }}>
-                <span>✈ Flights included ({adults + children} pax) · paid in full at booking</span>
-                <span style={{ color:T.gold }}>{fmt((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * (currency.rate || 18.62))}</span>
-              </div>
-            )}
-            <div style={{ maxWidth:680, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
-              <div>
-                <div style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>Package total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights</div>
-                <div style={{ fontSize:24, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>{fmt(grandTotal)}</div>
 
+            <div style={{ maxWidth:680, margin:'0 auto' }}>
+
+              {/* Price breakdown rows — only show when we have a priced itinerary */}
+              {grandTotal > 0 && (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 24px', marginBottom:10, paddingBottom:10, borderBottom:'0.5px solid rgba(255,255,255,0.07)' }}>
+
+                  {/* Lodges & experiences */}
+                  <div>
+                    <div style={{ fontSize:9, color:'rgba(245,240,232,0.45)', textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:400, marginBottom:3 }}>Lodges & experiences</div>
+                    <div style={{ fontSize:15, color:'rgba(245,240,232,0.85)', fontWeight:400 }}>{fmt(_lodgesAndExp)}</div>
+                  </div>
+
+                  {/* Flights & transfers */}
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
+                      <span style={{ fontSize:9, color:'rgba(245,240,232,0.45)', textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:400 }}>✈ Flights & transfers</span>
+                      {(_flightCostZAR > 0 || _transferCost > 0) && (
+                        <span style={{ fontSize:8, background:'rgba(212,175,55,0.12)', color:T.gold, border:`0.5px solid rgba(212,175,55,0.35)`, borderRadius:3, padding:'1px 5px', letterSpacing:'0.1em', fontWeight:700 }}>PAID IN FULL</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize:15, color: _flightCostZAR > 0 ? T.gold : 'rgba(245,240,232,0.85)', fontWeight:400 }}>
+                      {_flightsAndTransfers > 0 ? fmt(_flightsAndTransfers) : <span style={{ fontSize:12, color:'rgba(245,240,232,0.35)' }}>Add flights above</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Total + CTA */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+                <div>
+                  <div style={{ fontSize:9, color:'rgba(245,240,232,0.45)', textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:400, marginBottom:3 }}>
+                    Total · {itinerary.cities.reduce((s,c)=>s+c.nights,0)} nights · {adults + children} guests
+                  </div>
+                  <div style={{ fontSize:26, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>
+                    {fmt(grandTotal || itinerary.totalEstimate)}
+                  </div>
+                </div>
+                <button className="btn-gold" style={{ padding:'13px 26px', fontSize:14, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
+                  {checkoutLoading ? 'Saving…' : (
+                    <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                      <span style={{ fontWeight:600, letterSpacing:'0.02em' }}>Validate & Firm up →</span>
+                      <span style={{ fontSize:9, fontWeight:400, opacity:0.65, letterSpacing:'0.08em', textTransform:'uppercase' }}>Confirm & price journey</span>
+                    </span>
+                  )}
+                </button>
               </div>
-              <button className="btn-gold" style={{ padding:'14px 28px', fontSize:15, flexShrink:0 }} onClick={handleValidateAndPay} disabled={checkoutLoading}>
-                {checkoutLoading ? 'Saving…' : (                   <span style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1 }}>                     <span>Validate & Firm up my choices →</span>                     <span style={{ fontSize:10, fontWeight:400, opacity:0.7, letterSpacing:'0.05em' }}>Price the journey</span>                   </span>                 )}
-              </button>
             </div>
           </div>
 
