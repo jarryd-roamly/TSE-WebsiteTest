@@ -159,8 +159,9 @@ function scoreSupplier(
   return {
     id:                   s.id,
     name:                 s.name,
-    score,
+   score,
     displayPricePerNight: disp,
+    netPricePerNight:     net,
     displayPrice:         disp * nights,
     trustScore:           Number(s.trust_score)   || 50,
     contentScore:         Number(s.content_score) || 40,
@@ -363,6 +364,65 @@ function orderRegions(slugs: string[]): string[] {
   return [...slugs].sort((a, b) => (orderPriority[a] || 99) - (orderPriority[b] || 99));
 }
 
+// ── BUILD-TO-BUDGET OPTIMISER ─────────────────────────────────────────────────
+// Picks the property per city that MAXIMISES total margin RAND while staying
+// within budget and never dropping more than QUALITY_BAND score points below
+// that city's best-scored option. Lodges get LODGE_BUDGET_SHARE of total budget
+// (the rest is reserved for flights/transfers/activities added later in the flow).
+// Greedy: start at the highest-score pick, then repeatedly apply the single swap
+// that adds the most margin rand and still fits the lodge budget.
+const QUALITY_BAND       = 12;     // never swap to a property >12 score pts worse
+const LODGE_BUDGET_SHARE = 0.72;   // share of total budget allocated to lodges
+const LODGE_FILL_CEILING = 0.98;   // never fill lodges past 98% of the lodge budget
+
+function marginRandPerNight(p: any): number {
+  return Math.max(0, (p?.displayPricePerNight || 0) - (p?.netPricePerNight || 0));
+}
+
+function optimiseSelectionToBudget(
+  scoredByCity: any[][],
+  nightsByCity: number[],
+  totalBudget:  number,
+): number[] {
+  const chosen = scoredByCity.map(() => 0);                 // index into each city's candidates
+  const lodgeBudget = totalBudget * LODGE_BUDGET_SHARE;
+  if (lodgeBudget <= 0) return chosen;
+
+  const displayOf = () =>
+    chosen.reduce((sum, ci, i) => sum + (scoredByCity[i][ci]?.displayPricePerNight || 0) * nightsByCity[i], 0);
+
+  let guard = 0;
+  while (guard++ < 50) {
+    const current = displayOf();
+    let bestSwap: { city: number; idx: number; gain: number } | null = null;
+
+    for (let i = 0; i < scoredByCity.length; i++) {
+      const cands      = scoredByCity[i];
+      const topScore   = cands[0]?.score ?? 0;
+      const curr       = cands[chosen[i]];
+      const currMargin = marginRandPerNight(curr) * nightsByCity[i];
+
+      for (let j = 0; j < cands.length; j++) {
+        if (j === chosen[i]) continue;
+        const cand = cands[j];
+        if ((topScore - (cand?.score ?? 0)) > QUALITY_BAND) continue;        // quality floor
+        const gain = marginRandPerNight(cand) * nightsByCity[i] - currMargin;
+        if (gain <= 0) continue;                                              // only margin-positive swaps
+        const newDisplay = current
+          - (curr?.displayPricePerNight || 0) * nightsByCity[i]
+          + (cand?.displayPricePerNight || 0) * nightsByCity[i];
+        if (newDisplay > lodgeBudget * LODGE_FILL_CEILING) continue;          // never breach budget
+        if (!bestSwap || gain > bestSwap.gain) bestSwap = { city: i, idx: j, gain };
+      }
+    }
+
+    if (!bestSwap) break;
+    chosen[bestSwap.city] = bestSwap.idx;
+  }
+
+  return chosen;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -469,29 +529,30 @@ export async function POST(req: NextRequest) {
       ];
     }
 
-    // ── Step 8: Score and assign property per city (KB-aware) ─────────────────
+   // ── Step 8: Score every city, optimise selection to budget, then price ────
     const cityStays:     any[] = [];
     const pricedCities:  any[] = [];
     const kbMatchedIds:  string[] = [];
     let displayTotal = 0;
 
-    for (const city of cities) {
+    // 8a. Score candidates for every city (KB-aware)
+    const scoredByCity: any[][] = cities.map((city: any) => {
       const pool = suppliers.filter((s: any) => s.region_slug === city.regionSlug);
-
-      // Apply KB override blocks — remove any property the KB says not to recommend
-      const eligiblePool = pool.filter((s: any) =>
-        !isBlockedByKB(s.id, s.name, overrideEntries)
-      );
-
-      const scored = eligiblePool
-        .map((s: any) => scoreSupplier(
-          s, checkinDate, city.nights, themeTags,
-          kbForSkeleton.bySupplier,
-          marginRankMap,
-        ))
+      const eligiblePool = pool.filter((s: any) => !isBlockedByKB(s.id, s.name, overrideEntries));
+      return eligiblePool
+        .map((s: any) => scoreSupplier(s, checkinDate, city.nights, themeTags, kbForSkeleton.bySupplier, marginRankMap))
         .sort((a: any, b: any) => b.score - a.score);
+    });
 
-      const best     = scored[0];
+    // 8b. BUILD-TO-BUDGET — choose the property mix that maximises margin RAND within budget
+    const nightsByCity = cities.map((c: any) => c.nights);
+    const chosenIdx    = optimiseSelectionToBudget(scoredByCity, nightsByCity, effectiveBudget);
+
+    // 8c. Price the optimised selection
+    cities.forEach((city: any, i: number) => {
+      const scored   = scoredByCity[i];
+      const best     = scored[chosenIdx[i]] ?? scored[0];
+      const baseBest = scored[0];
       const hotelId  = best?.id ?? 0;
 
       cityStays.push({ hotelId, nights: city.nights, prefs: { rooms: 0, basis: 0, flexibility: 0 } });
@@ -499,7 +560,6 @@ export async function POST(req: NextRequest) {
       const lodgeCost = (best?.displayPricePerNight ?? 0) * city.nights;
       displayTotal += lodgeCost;
 
-      // Collect KB entry IDs matched to this city
       const cityKBEntries = kbForSkeleton.byRegion[city.regionSlug] ?? [];
       kbMatchedIds.push(...cityKBEntries.map(e => e.id));
 
@@ -507,12 +567,14 @@ export async function POST(req: NextRequest) {
         ...city,
         hotelRate:      best?.displayPricePerNight ?? 0,
         estimatedCost:  lodgeCost,
+        optimisedForBudget: best?.id !== baseBest?.id,   // audit trace: true when the engine upgraded for margin
         flightCost: 0, transferCost: 0, activityCost: 0,
         arrivalGap:   'Arrive midday — first drive at 16:00',
         departureGap: 'Final morning drive before departure',
         propertyOptions: scored.slice(0, 4).map((s: any) => ({
           id: s.id, name: s.name, score: s.score,
           displayPricePerNight: s.displayPricePerNight,
+          netPricePerNight: s.netPricePerNight,
           image: s.image, funFact: s.funFact,
           trustScore: s.trustScore, contentScore: s.contentScore,
           malariaFree: s.malariaFree, tags: s.tags,
@@ -520,8 +582,7 @@ export async function POST(req: NextRequest) {
           upgrades: s.upgrades,
         })),
       });
-    }
-
+    });
     // ── Step 9: Final integrity check ─────────────────────────────────────────
     if (effectiveRegions.length > 0 && pricedCities.length !== effectiveRegions.length) {
       return NextResponse.json({
