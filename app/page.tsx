@@ -13,7 +13,7 @@
 //         Reads `reels` JSONB column: {source, video_id, start, end, speed, caption, status}
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
 import { T, GLOBAL_CSS }                     from './lib/theme';
 import { buildKBContext, runPlannerEngine,
          answerFactual, applyCreativeDiff,
