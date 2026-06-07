@@ -81,6 +81,8 @@ export default function FlightSelector({
 
   // ── State ──
   const [city,      setCity]      = useState(originIata || '');
+  // Sync city if originIata prop arrives after mount
+  React.useEffect(() => { if (originIata && !city) setCity(originIata); }, [originIata]);
   const [depDate,   setDepDate]   = useState(travelDates?.start || '');
   const [cabin,     setCabin]     = useState('economy');
   const [offers,    setOffers]    = useState([]);
