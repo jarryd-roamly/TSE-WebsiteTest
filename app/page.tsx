@@ -4094,6 +4094,10 @@ const runBriefPlanner = (briefText: string) => {
 
   const navProps = { edition, setScreen, currency, setCurrency, chatOpen, setChatOpen, totalZAR:grandTotal, fmt, hasPricedItems:grandTotal>0 };
 
+  const handleRoomUpgrade = (cityIdx: number, tier: number) => {
+    setCityStays(prev => prev.map((s, i) => i === cityIdx ? { ...s, prefs: { ...s.prefs, rooms: tier } } : s));
+  };
+
   if (!unlocked) return <LoginGate onUnlock={()=>setUnlocked(true)} />;
 
   return (
@@ -4773,9 +4777,6 @@ const runBriefPlanner = (briefText: string) => {
                   <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
                 </div>
               </div>
-                     const handleRoomUpgrade = (cityIdx: number, tier: number) => {
-           setCityStays(prev => prev.map((s, i) => i === cityIdx ? { ...s, prefs: { ...s.prefs, rooms: tier } } : s));
-                  };
                   <BudgetNudge
                 cities={itinerary.cities}
                 cityStays={cityStays}
