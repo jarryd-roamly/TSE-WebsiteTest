@@ -2056,7 +2056,7 @@ function buildTransferOptions(
 
       const structured: StructuredLeg[] = [];
       if (exitRec) { const ex = exitLeg(exitRec, noFlight ? gw : originHub, originLodge ?? undefined); if (ex) structured.push(ex); }
-      if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code, null) // gateway: no FedAir conn at gateway);
+     if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code, null)); // gateway: no FedAir conn at gateway
 
       const exitMin   = exitRec?.durationMin ?? 0;
       const flightMin = noFlight ? 0 : (meta?.duration_min ?? flightMinFallback[originHub] ?? 120);
