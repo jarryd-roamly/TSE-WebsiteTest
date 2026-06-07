@@ -4773,6 +4773,9 @@ const runBriefPlanner = (briefText: string) => {
                   <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif" }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
                 </div>
               </div>
+                     const handleRoomUpgrade = (cityIdx: number, tier: number) => {
+           setCityStays(prev => prev.map((s, i) => i === cityIdx ? { ...s, prefs: { ...s.prefs, rooms: tier } } : s));
+                  };
                   <BudgetNudge
                 cities={itinerary.cities}
                 cityStays={cityStays}
