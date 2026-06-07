@@ -1785,19 +1785,19 @@ function buildTransferOptions(
       const flightMin = metaHub?.duration_min ?? ({'MQP':160,'HDS':165,'SZK':170,'JNB':120} as any)[hub] ?? 160;
       const totalMin  = exitMin + flightMin;
       return {
-        id: i === 0 ? 'recommended' : \`4Z-via-\${hub}\`,
+        id: i === 0 ? 'recommended' : `4Z-via-${hub}`,
         mode: 'commercial' as TransferOption['mode'],
         icon: '\u2708',
-        label: \`Airlink via \${hub} \u2192 Cape Town\`,
-        provider: \`\${exitLmHub?.label ?? ''} \${hub}\u2192CPT\`.trim(),
-        duration: totalMin ? \`~\${durStr(totalMin)} + hotel transfer\` : '~3h',
+        label: `Airlink via ${hub} → Cape Town`,
+        provider: `${exitLmHub?.label ?? ''} ${hub}→CPT`.trim(),
+        duration: totalMin ? `~${durStr(totalMin)} + hotel transfer` : '~3h',
         estimatedCostZAR: totalHub,
         badges: [
           ...(i === 0 ? [{text:'\u2726 Recommended',color:'rgba(212,175,55,0.9)'}] : []),
           ...(isEstHub ? [{text:'Est.',color:'rgba(255,255,255,0.3)'}] : []),
           ...(exitLmHub?.mode === 'fedair' ? [{text:'\u2708 Federal Air included',color:'rgba(134,239,172,0.85)'}] : []),
         ],
-        aiNote: \`\${hub}\u2192CPT via Airlink. \${exitLmHub?.note ?? ''}. \${isEstHub ? 'Fare indicative.' : ''}\`.trim(),
+        aiNote: `${hub}→CPT via Airlink. ${exitLmHub?.note ?? ''}. ${isEstHub ? 'Fare indicative.' : ''}`.trim(),
         recommended: i === 0,
         structuredLegs: structured,
       };
