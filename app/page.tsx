@@ -2018,16 +2018,33 @@ const AIRLINE_META: Record<string,{name:string;code:string;color:string}> = {
   'Mack Air':   {name:'Mack Air',       code:'MA', color:'#5d4037'},
 };
 
+const _lc: Record<string, string | null> = {};
+let _ll = false; let _lp: Promise<void> | null = null;
+function _loadLogos() {
+  if (_ll) return Promise.resolve();
+  if (_lp) return _lp;
+  _lp = fetch('https://tkthsbxuyihoblpcfnml.supabase.co/rest/v1/airlines?select=iata_code,logo_url&is_active=eq.true', {
+    headers: { 'apikey': 'sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx', 'Authorization': 'Bearer sb_publishable_N1f-OiHXmxQiQTv_EkELcA_IvNtnHsx' }
+  }).then(r => r.json()).then((d: any[]) => { d.forEach((a: any) => { _lc[a.iata_code] = a.logo_url; }); _ll = true; }).catch(() => { _ll = true; });
+  return _lp;
+}
+
 function AirlineBadge({ code, size=28 }: { code:string; size?:number }) {
   const meta = AIRLINE_META[code] ?? {name:code, code:code.slice(0,2).toUpperCase(), color:'#1a1a2e'};
+  const [logo, setLogo] = useState<string|null>(_lc[code] !== undefined ? _lc[code] : null);
+  useEffect(() => {
+    if (_lc[code] !== undefined) { setLogo(_lc[code]); return; }
+    _loadLogos().then(() => setLogo(_lc[code] ?? null));
+  }, [code]);
+  if (logo) return (
+    <div style={{ width:size, height:size, borderRadius:6, background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', flexShrink:0, border:'0.5px solid rgba(255,255,255,0.15)' }}>
+      <img src={logo} alt={meta.name} style={{ width:'90%', height:'90%', objectFit:'contain' }} />
+    </div>
+  );
   return (
-    <div style={{
-      width:size, height:size, borderRadius:6,
-      background:meta.color,
-      display:'flex', alignItems:'center', justifyContent:'center',
-      fontSize:size<30?9:10, fontWeight:700, color:'#fff', letterSpacing:'0.04em',
-      flexShrink:0, border:'0.5px solid rgba(255,255,255,0.15)',
-    }}>{meta.code}</div>
+    <div style={{ width:size, height:size, borderRadius:6, background:meta.color, display:'flex', alignItems:'center', justifyContent:'center', fontSize:size<30?9:10, fontWeight:700, color:'#fff', letterSpacing:'0.04em', flexShrink:0, border:'0.5px solid rgba(255,255,255,0.15)' }}>
+      {meta.code}
+    </div>
   );
 }
 
@@ -2188,9 +2205,7 @@ function TransferHeader({ fromLabel, toLabel }: { fromLabel: string; toLabel: st
 }
 
 // ── JourneyCardBody ────────────────────────────────────────────────────────────
-// Full luxury redesign. Gold palette. Serif type for route labels.
-// Clean leg timeline with connector lines. Expert aiNote as a briefing note.
-// Pagination styled as an option counter, not a clunky prev/next.
+// Horizontal left-to-right timeline with real carrier logos.
 
 function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeIdx, onPrev, onNext, isSelected, onSelect, fmt, cost }: {
   legs: TransferLeg[]; duration: string; aiNote: string;
@@ -2198,264 +2213,86 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
   onPrev: () => void; onNext: () => void; isSelected: boolean; onSelect?: () => void;
   fmt: (n: number) => string; cost: number;
 }) {
-  // Clean duration: remove qualifiers, fix "0h" display artifact
-  const durDisplay = duration
-    .replace(/~|total\s*door-to-door|door-to-door/gi, '')
-    .replace(/\b0h\s*/g, '')   // remove "0h" prefix (renders as "oh" in some fonts)
-    .trim();
+  const durDisplay = duration.replace(/~|total\s*door-to-door|door-to-door/gi,'').replace(/\b0h\s*/g,'').trim();
   const isRec = badges.some(b => b.text.toLowerCase().includes('recommended'));
-
-  // Determine option label for header
-  const optLabel = isRec
-    ? 'Recommended routing'
-    : `Option ${activeIdx + 1} of ${optionCount}`;
+  const optLabel = isRec ? 'Recommended routing' : `Option ${activeIdx + 1} of ${optionCount}`;
+  const mainLegs = legs.filter(l => l.type !== 'info');
+  const infoLegs = legs.filter(l => l.type === 'info');
+  const arrowStyle = { position:'absolute' as const, top:'50%', transform:'translateY(-50%)', zIndex:20, background:T.gold, border:`1px solid ${T.gold}`, color:'#0a0a0a', width:34, height:52, cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 16px rgba(0,0,0,0.55)', fontWeight:700 };
 
   return (
-    <div style={{
-      background: 'rgba(8,7,12,0.96)',
-      border: `0.5px solid ${isSelected ? `${T.gold}55` : 'rgba(212,175,55,0.12)'}`,
-      borderRadius: 10,
-      overflow: 'visible',
-      position: 'relative' as const,
-      transition: 'border-color 0.25s ease',
-      boxShadow: isSelected ? `0 0 0 1px ${T.gold}18, 0 4px 24px rgba(0,0,0,0.4)` : '0 2px 12px rgba(0,0,0,0.3)',
-    }}>
+    <div style={{ background:'rgba(8,7,12,0.96)', border:`0.5px solid ${isSelected?`${T.gold}55`:'rgba(212,175,55,0.12)'}`, borderRadius:10, overflow:'visible', position:'relative' as const, transition:'border-color 0.25s ease', boxShadow:isSelected?`0 0 0 1px ${T.gold}18, 0 4px 24px rgba(0,0,0,0.4)`:'0 2px 12px rgba(0,0,0,0.3)' }}>
 
-      {/* ── Prominent option arrows (match property carousel) ── */}
-      {optionCount > 1 && activeIdx > 0 && (
-        <button onClick={onPrev} aria-label="Previous option" style={{ position:'absolute', left:-16, top:'50%', transform:'translateY(-50%)', zIndex:20, background:T.gold, border:`1px solid ${T.gold}`, color:'#0a0a0a', width:34, height:52, borderRadius:'0 10px 10px 0', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'3px 0 16px rgba(0,0,0,0.55)', fontWeight:700 }}>◂</button>
-      )}
-      {optionCount > 1 && activeIdx < optionCount - 1 && (
-        <button onClick={onNext} aria-label="Next option" style={{ position:'absolute', right:-16, top:'50%', transform:'translateY(-50%)', zIndex:20, background:T.gold, border:`1px solid ${T.gold}`, color:'#0a0a0a', width:34, height:52, borderRadius:'10px 0 0 10px', cursor:'pointer', fontSize:18, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'-3px 0 16px rgba(0,0,0,0.55)', fontWeight:700 }}>▸</button>
-      )}
+      {optionCount > 1 && activeIdx > 0             && <button onClick={onPrev} aria-label="Previous" style={{...arrowStyle, left:-16,  borderRadius:'0 10px 10px 0'}}>◂</button>}
+      {optionCount > 1 && activeIdx < optionCount-1 && <button onClick={onNext} aria-label="Next"     style={{...arrowStyle, right:-16, borderRadius:'10px 0 0 10px'}}>▸</button>}
 
-      {/* ── Top bar: label + duration + page counter ── */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '10px 14px 9px',
-        borderBottom: `0.5px solid rgba(212,175,55,0.08)`,
-        background: 'rgba(212,175,55,0.03)',
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 1 }}>
-          <span style={{
-            fontSize: 9, fontWeight: 700, letterSpacing: '0.15em',
-            textTransform: 'uppercase' as const,
-            color: isRec ? T.gold : T.textDim,
-            fontFamily: "'Jost', sans-serif",
-          }}>
-            {isRec && <span style={{ marginRight: 5, opacity: 0.8 }}>✦</span>}
-            {optLabel}
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px 9px', borderBottom:'0.5px solid rgba(212,175,55,0.08)', background:'rgba(212,175,55,0.03)' }}>
+        <div>
+          <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.15em', textTransform:'uppercase' as const, color:isRec?T.gold:T.textDim, fontFamily:"'Jost',sans-serif" }}>
+            {isRec && <span style={{marginRight:5,opacity:0.8}}>✦</span>}{optLabel}
           </span>
-          {durDisplay && (
-            <span style={{
-              fontSize: 15, fontWeight: 300, color: T.text,
-              fontFamily: "'Cormorant Garamond', serif",
-              letterSpacing: '0.02em',
-            }}>
-              {durDisplay}
-            </span>
-          )}
+          {durDisplay && <div style={{ fontSize:15, fontWeight:300, color:T.text, fontFamily:"'Cormorant Garamond',serif", letterSpacing:'0.02em', marginTop:1 }}>{durDisplay}</div>}
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Option counter + nav */}
-          {optionCount > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{
-                fontSize: 9, color: T.gold, letterSpacing: '0.08em',
-                fontFamily: "'Jost', sans-serif", fontWeight: 700,
-                background: T.goldDim, border: `0.5px solid ${T.borderGold}`,
-                borderRadius: 20, padding: '3px 10px',
-              }}>
-                {activeIdx + 1} of {optionCount} options
-              </span>
-            </div>
-          )}
-        </div>
+        {optionCount > 1 && (
+          <span style={{ fontSize:9, color:T.gold, letterSpacing:'0.08em', fontFamily:"'Jost',sans-serif", fontWeight:700, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'3px 10px' }}>
+            {activeIdx+1} of {optionCount} options
+          </span>
+        )}
       </div>
 
-      {/* ── Leg rows — timeline style ── */}
-      <div style={{ padding: '10px 14px 4px' }}>
-        {legs.map((leg, i) => {
-          const isLast = i === legs.length - 1;
-          const isInfo = leg.type === 'info';
-
-          return (
-            <div key={i} style={{
-              display: 'flex', gap: 10, alignItems: 'flex-start',
-              marginBottom: isLast ? 4 : 10,
-              position: 'relative' as const,
-            }}>
-              {/* Timeline connector */}
-              {!isLast && !isInfo && (
-                <div style={{
-                  position: 'absolute' as const,
-                  left: 15, top: 34, bottom: -8,
-                  width: '0.5px',
-                  background: `linear-gradient(to bottom, ${T.gold}25, transparent)`,
-                  zIndex: 0,
-                }} />
-              )}
-
-              {/* Operator badge */}
-              <div style={{ flexShrink: 0, zIndex: 1 }}>
-                {leg.type === 'airline' || leg.type === 'charter'
-                  ? <AirlineBadge code={leg.badge} size={30} />
-                  : isInfo
-                  ? (
-                    <div style={{
-                      width: 30, height: 30, borderRadius: 5,
-                      background: 'rgba(251,146,60,0.06)',
-                      border: '0.5px solid rgba(251,146,60,0.2)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, color: 'rgba(251,146,60,0.8)', flexShrink: 0,
-                    }}>
-                      {leg.badge}
-                    </div>
-                  ) : (
-                    <div style={{
-                      width: 30, height: 30, borderRadius: 5,
-                      background: 'rgba(74,222,128,0.06)',
-                      border: '0.5px solid rgba(74,222,128,0.18)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 13, flexShrink: 0,
-                    }}>
-                      {leg.badge}
-                    </div>
-                  )
-                }
-              </div>
-
-              {/* Leg content */}
-              <div style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'baseline', gap: 6,
-                }}>
-                  <span style={{
-                    fontSize: isInfo ? 9.5 : 12, fontWeight: isInfo ? 400 : 600,
-                    color: isInfo ? 'rgba(251,146,60,0.8)' : T.text,
-                    lineHeight: 1.25,
-                    fontFamily: isInfo ? "'Jost', sans-serif" : "'Cormorant Garamond', serif",
-                    letterSpacing: isInfo ? '0.02em' : '0.01em',
-                  }}>
-                    {leg.primary}
-                  </span>
-                  {leg.route && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, flexShrink: 0,
-                      color: leg.type === 'airline'
-                        ? 'rgba(147,197,253,0.85)'
-                        : leg.type === 'charter'
-                        ? 'rgba(134,239,172,0.75)'
-                        : T.textDim,
-                      fontFamily: "'Jost', sans-serif",
-                      letterSpacing: '0.06em',
-                    }}>
-                      {leg.route}
-                    </span>
-                  )}
+      {/* Horizontal timeline */}
+      <div style={{ padding:'14px 14px 10px', overflowX:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', minWidth:'min-content' }}>
+          {mainLegs.map((leg, i) => (
+            <React.Fragment key={i}>
+              <div style={{ display:'flex', flexDirection:'column' as const, alignItems:'center', gap:6, minWidth:110, flex:'0 0 auto', padding:'0 10px' }}>
+                <AirlineBadge code={leg.badge} size={44} />
+                <div style={{ textAlign:'center' as const }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:T.text, fontFamily:"'Cormorant Garamond',serif", lineHeight:1.2 }}>{leg.primary}</div>
+                  {leg.route && <div style={{ fontSize:9.5, color:'rgba(147,197,253,0.85)', fontFamily:"'Jost',sans-serif", fontWeight:700, letterSpacing:'0.05em', marginTop:2 }}>{leg.route}</div>}
+                  {leg.detail && <div style={{ fontSize:9, color:T.textMid, fontFamily:"'Jost',sans-serif", marginTop:1, lineHeight:1.4 }}>{leg.detail.split(' · ')[0].trim()}</div>}
                 </div>
-                {leg.detail && (
-                  <div style={{
-                    fontSize: 10, color: T.textMid, marginTop: 2,
-                    lineHeight: 1.5, fontFamily: "'Jost', sans-serif",
-                  }}>
-                    {leg.detail}
-                  </div>
-                )}
-                {leg.note && (
-                  <div style={{
-                    fontSize: 9.5, color: leg.noteColor ?? T.textDim,
-                    marginTop: 2, lineHeight: 1.5,
-                    fontFamily: "'Jost', sans-serif",
-                    opacity: 0.8,
-                  }}>
-                    {leg.note}
-                  </div>
-                )}
               </div>
-            </div>
-          );
-        })}
+              {i < mainLegs.length-1 && <div style={{ color:`${T.gold}55`, fontSize:18, flexShrink:0, paddingBottom:16 }}>›</div>}
+            </React.Fragment>
+          ))}
+        </div>
       </div>
 
-      {/* ── Specialist briefing note ── */}
-      {aiNote && (
-        <div style={{
-          margin: '4px 14px 0',
-          padding: '8px 10px',
-          background: 'rgba(212,175,55,0.04)',
-          borderLeft: `1.5px solid ${T.gold}35`,
-          borderRadius: '0 5px 5px 0',
-        }}>
-          <div style={{
-            fontSize: 9, fontWeight: 700, letterSpacing: '0.12em',
-            textTransform: 'uppercase' as const,
-            color: `${T.gold}70`, marginBottom: 3,
-            fontFamily: "'Jost', sans-serif",
-          }}>
-            Routing note
-          </div>
-          <div style={{
-            fontSize: 10.5, color: T.textMid, lineHeight: 1.65,
-            fontFamily: "'Jost', sans-serif",
-            fontStyle: 'italic',
-          }}>
-            {aiNote}
-          </div>
+      {/* Baggage / info pills */}
+      {infoLegs.length > 0 && (
+        <div style={{ padding:'0 14px 10px', display:'flex', gap:6, flexWrap:'wrap' as const }}>
+          {infoLegs.map((leg,i) => (
+            <span key={i} style={{ fontSize:9.5, padding:'2px 8px', borderRadius:6, background:'rgba(251,191,36,0.08)', border:'0.5px solid rgba(251,191,36,0.2)', color:'rgba(251,191,36,0.8)', fontFamily:"'Jost',sans-serif" }}>
+              {leg.primary}
+            </span>
+          ))}
         </div>
       )}
 
-      {/* ── Select row (pricing removed — tallied in the journey total) ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '9px 14px 11px',
-        marginTop: 8,
-        borderTop: `0.5px solid rgba(212,175,55,0.07)`,
-      }}>
-        <span style={{
-          fontSize: 9, color: T.textDim, letterSpacing: '0.06em',
-          fontFamily: "'Jost', sans-serif",
-        }}>
-          Included in your journey · confirmed by specialist
-        </span>
+      {/* Routing note */}
+      {aiNote && (
+        <div style={{ margin:'0 14px 8px', padding:'7px 10px', background:'rgba(212,175,55,0.04)', borderLeft:`1.5px solid ${T.gold}35`, borderRadius:'0 5px 5px 0' }}>
+          <div style={{ fontSize:9, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase' as const, color:`${T.gold}70`, marginBottom:2, fontFamily:"'Jost',sans-serif" }}>Routing note</div>
+          <div style={{ fontSize:10.5, color:T.textMid, lineHeight:1.65, fontFamily:"'Jost',sans-serif", fontStyle:'italic' }}>{aiNote}</div>
+        </div>
+      )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isSelected && (
-            <span style={{
-              fontSize: 9, fontWeight: 700, letterSpacing: '0.12em',
-              textTransform: 'uppercase' as const,
-              color: T.gold, fontFamily: "'Jost', sans-serif",
-            }}>
-              ✦ Selected
-            </span>
-          )}
+      {/* Select row */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px 11px', marginTop:8, borderTop:'0.5px solid rgba(212,175,55,0.07)' }}>
+        <span style={{ fontSize:9, color:T.textDim, letterSpacing:'0.06em', fontFamily:"'Jost',sans-serif" }}>Included in your journey · confirmed by specialist</span>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {isSelected && <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase' as const, color:T.gold, fontFamily:"'Jost',sans-serif" }}>✦ Selected</span>}
           {onSelect && optionCount > 1 && !isSelected && (
-            <button
-              onClick={onSelect}
-              style={{
-                fontSize: 10, fontWeight: 600,
-                color: T.gold,
-                background: 'transparent',
-                border: `0.5px solid ${T.gold}40`,
-                borderRadius: 4,
-                padding: '5px 12px',
-                cursor: 'pointer',
-                fontFamily: "'Jost', sans-serif",
-                letterSpacing: '0.06em',
-                transition: 'all 0.2s',
-              }}
-            >
-              Select
-            </button>
+            <button onClick={onSelect} style={{ fontSize:10, fontWeight:600, color:T.gold, background:'transparent', border:`0.5px solid ${T.gold}40`, borderRadius:4, padding:'5px 12px', cursor:'pointer', fontFamily:"'Jost',sans-serif", letterSpacing:'0.06em', transition:'all 0.2s' }}>Select</button>
           )}
         </div>
       </div>
+
     </div>
   );
 }
-
 
 // ── The JourneyCard component ────────────────────────────────────────────────
 function TransferCarousel({
