@@ -2245,7 +2245,7 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
       <div style={{ padding:'14px 14px 10px', overflowX:'auto' }}>
         <div style={{ display:'flex', alignItems:'center', minWidth:'min-content' }}>
           {mainLegs.map((leg, i) => (
-            <React.Fragment key={i}>
+            <div key={i} style={{display:'contents'}}>
               <div style={{ display:'flex', flexDirection:'column' as const, alignItems:'center', gap:6, minWidth:110, flex:'0 0 auto', padding:'0 10px' }}>
                 <AirlineBadge code={leg.badge} size={44} />
                 <div style={{ textAlign:'center' as const }}>
@@ -2255,7 +2255,7 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
                 </div>
               </div>
               {i < mainLegs.length-1 && <div style={{ color:`${T.gold}55`, fontSize:18, flexShrink:0, paddingBottom:16 }}>›</div>}
-            </React.Fragment>
+            </div>
           ))}
         </div>
       </div>
