@@ -2218,7 +2218,7 @@ function buildTransferOptions(
       if (gw === 'CPT') {
         if (['MQP','HDS','SZK'].includes(originHub)) { return [{code:'4Z',name:'Airlink',adjust:1.0}]; }
         if (originHub === 'MUB') return [{code:'4Z',name:'Airlink',adjust:1.0}];
-        if (['VFA','LVI'].includes(originHub)) return [{code:'4Z',name:'Airlink',adjust:1.0},{code:'FN',name:'Fastjet',adjust:1.05}];
+        if (['VFA','LVI'].includes(originHub)) return [{code:'4Z',name:'Airlink',adjust:1.0}]; // Fastjet does NOT operate VFA/LVI→CPT
         return [{code:'4Z',name:'Airlink',adjust:1.0}];
       }
       // gw === 'JNB'
