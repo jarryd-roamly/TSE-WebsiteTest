@@ -246,9 +246,10 @@ function buildMarginRankMap(kbEntries: KBEntry[]): Record<string, number> {
 function isBlockedByKB(supplierId: string, supplierName: string, overrideEntries: KBEntry[]): boolean {
   return overrideEntries.some(e => {
     // Match by supplier_id, supplier name, or linked_name (covers entries created by name)
+    const linkedWords = (e.linked_name || '').toLowerCase().split(' ').filter((w: string) => w.length > 3);
     const nameMatch = supplierName && (
       e.linked_name?.toLowerCase().includes(supplierName.toLowerCase()) ||
-      supplierName.toLowerCase().includes((e.linked_name || '').toLowerCase().split(' ')[0]) ||
+      linkedWords.some((w: string) => supplierName.toLowerCase().includes(w)) ||
       e.supplier_id === supplierId
     );
     if (!nameMatch) return false;
@@ -274,9 +275,10 @@ function isBlockedByKB(supplierId: string, supplierName: string, overrideEntries
 function kbDemotionScore(supplierId: string, supplierName: string, overrideEntries: KBEntry[]): number {
   let demotion = 0;
   overrideEntries.forEach(e => {
+    const linkedWords = (e.linked_name || '').toLowerCase().split(' ').filter((w: string) => w.length > 3);
     const nameMatch = supplierName && (
       e.linked_name?.toLowerCase().includes(supplierName.toLowerCase()) ||
-      supplierName.toLowerCase().includes((e.linked_name || '').toLowerCase().split(' ')[0]) ||
+      linkedWords.some((w: string) => supplierName.toLowerCase().includes(w)) ||
       e.supplier_id === supplierId
     );
     if (!nameMatch) return;
