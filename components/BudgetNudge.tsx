@@ -66,11 +66,16 @@ export default function BudgetNudge({ cities, cityStays, hotels, budget, grandTo
 
   return (
     <div style={{ marginTop: 12, paddingTop: 12, borderTop: `0.5px solid ${T.border}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 9 }}>
-        <span style={{ fontSize: 13, color: T.gold }}>&#10022;</span>
-        <span style={{ fontSize: 12, color: T.gold, fontWeight: 600 }}>
-          You have {fmt(headroom)} to elevate this journey
-        </span>
+      <div style={{ display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13, color: T.gold }}>&#10022;</span>
+          <span style={{ fontSize: 12, color: T.gold, fontWeight: 600 }}>
+            Room upgrades available — {fmt(headroom)} within budget
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: T.textDim, paddingLeft: 20, lineHeight: 1.55 }}>
+          These are optional room upgrades at your selected lodges. Tap to apply — your total updates immediately.
+        </div>
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {top.map((c, k) => (
@@ -83,7 +88,9 @@ export default function BudgetNudge({ cities, cityStays, hotels, budget, grandTo
               cursor: 'pointer', textAlign: 'left', lineHeight: 1.35, maxWidth: 280,
             }}
           >
-            <div style={{ color: T.gold, fontWeight: 600 }}>{c.hotelName} · {c.label}</div>
+            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+              color: 'rgba(212,175,55,0.7)', marginBottom: 3 }}>Room upgrade</div>
+            <div style={{ color: T.gold, fontWeight: 600 }}>{c.hotelName} — {c.label}</div>
             <div style={{ color: T.textMid, fontSize: 11, marginTop: 2 }}>{c.cityName} · +{fmt(c.delta)}</div>
           </button>
         ))}
