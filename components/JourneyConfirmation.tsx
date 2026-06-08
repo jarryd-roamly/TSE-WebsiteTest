@@ -556,10 +556,7 @@ export default function JourneyConfirmation({
                         <div className="jc-lodge-loc">{hotel.destination} · {hotel.country}</div>
                         <div className="jc-lodge-trust">★ {hotel.trustScore}/100 trust score{hotel.malariaFree ? ' · ✓ Malaria-free' : ''}</div>
                       </div>
-                      <div className="jc-lodge-rate">
-                        <div className="jc-lodge-rate-num">{fmt(hotel.netRate * 1.15)}</div>
-                        <div className="jc-lodge-rate-sub">per night</div>
-                      </div>
+
                     </div>
 
                     {/* Activities */}
