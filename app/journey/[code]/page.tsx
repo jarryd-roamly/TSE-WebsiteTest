@@ -12,7 +12,7 @@
 
 import { getJourney } from '@/app/lib/journey';
 import JourneyTimeline from '@/components/JourneyTimeline';
-import JourneyMiniSite from '@/components/JourneyMiniSite';
+import JourneyMiniSite from '@/components/JourneyMinisite';
 import OpsValidation from '@/components/OpsValidation';
 
 export default async function JourneyPage({
