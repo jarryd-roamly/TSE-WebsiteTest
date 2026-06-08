@@ -5453,9 +5453,28 @@ const runBriefPlanner = (briefText: string) => {
                     return dest.includes(cityName) || cityName.includes(dest.split(',')[0].trim()) || name.includes(cityName);
                   });
               // Never filter by pax — all properties shown; specialist confirms family suitability
-              const safePool = pool.length > 0
+              const rawPool = pool.length > 0
                 ? pool.slice(0, 20)
                 : hotelsByMargin.filter(h => (h.country ?? '') === (itinerary.cities[cityIdx]?.country ?? '')).slice(0, 6);
+
+              // Apply KB override demotions to carousel order
+              // Entries with override_ai=true and guardrail keywords push matched properties to end
+              const kbOverrides = kbEntries.filter((e: any) => e.override_ai && e.active !== false);
+              const safePool = kbOverrides.length === 0 ? rawPool : [...rawPool].sort((a: any, b: any) => {
+                const demote = (hotel: any) => {
+                  return kbOverrides.some((e: any) => {
+                    const words = (e.linkedTo || e.linked_name || '').toLowerCase().split(' ').filter((w: string) => w.length > 3);
+                    const matches = words.some((w: string) => (hotel.name || '').toLowerCase().includes(w));
+                    if (!matches) return false;
+                    const guardrails: string[] = e.guardrails || e.specialist_notes || '';
+                    const guardrailText = Array.isArray(guardrails) ? guardrails.join(' ') : String(guardrails);
+                    return /avoid|do not|block|end of|last|exclude/i.test(guardrailText);
+                  });
+                };
+                const da = demote(a) ? 1 : 0;
+                const db = demote(b) ? 1 : 0;
+                return da - db; // demoted properties sort to end
+              });
               const currentStay = cityStays[cityIdx] ?? { hotelId:safePool[0]?.id??0, nights:city.nights, prefs:{ rooms:0, basis:0, flexibility:0 } };
 
               const isCityAlways = CITY_TYPE_ALWAYS.has(slug);
