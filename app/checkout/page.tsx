@@ -716,6 +716,7 @@ function CheckoutForm() {
         backdropFilter: 'blur(12px)',
         transform: scrolled ? 'translateY(0)' : 'translateY(100%)',
         transition: 'transform 0.3s ease',
+        display: typeof window !== 'undefined' && window.innerWidth > 768 ? 'none' : 'flex',
       }}>
         <div>
           <div style={{ fontSize: 10, color: T.textDim, letterSpacing: '0.1em' }}>
