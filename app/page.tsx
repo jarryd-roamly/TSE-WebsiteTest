@@ -109,16 +109,15 @@ const CITY_TYPE_SLUGS = new Set([...CITY_TYPE_ALWAYS, ...CITY_TYPE_KB]);
 
 type CityTransferOption = { id:string; icon:string; label:string; provider:string; duration:string; estimatedCostZAR:number; note:string; recommended:boolean; };
 const CITY_TRANSFERS: Record<string, CityTransferOption[]> = {
+  // CPT: private transfer only. No helicopters (removed), no shared shuttles (not appropriate for luxury guests).
   'cape-town': [
-    { id:'private-car',  icon:'🚗', label:'Private transfer',    provider:'Private vehicle — door to door',    duration:'30–45 min', estimatedCostZAR:2800,  note:'Most popular. Driver meets you at arrivals with name board. Includes luggage handling.', recommended:true },
-    // helicopter REMOVED: airport→hotel is road only across all regions
-    { id:'shuttle',      icon:'🚌', label:'Shared shuttle',       provider:'Backpacker Bus / Myciti',           duration:'45–75 min', estimatedCostZAR:850,   note:'Budget option. Shared with other passengers, scheduled times only.', recommended:false },
+    { id:'private-car', icon:'🚗', label:'Private transfer', provider:'Private vehicle — door to door', duration:'30–45 min', estimatedCostZAR:850, note:'Driver meets you at arrivals with name board. Includes luggage handling and Cape Town welcome brief. R850 per transfer, per direction.', recommended:true },
   ],
   // VFA ARRIVAL: road transfer only. 20-30 min from VFA airport to any lodge in town.
   // NOTE: The departure options (VFA→JNB via Airlink/Fastjet) are handled by the
   // inter-region routing engine — NOT shown here as arrival transfers.
   'chobe-vic-falls': [
-    { id:'vfa-road', icon:'🚗', label:'Private road transfer', provider:'Private vehicle — VFA airport to lodge', duration:'20–30 min', estimatedCostZAR:0, note:'VFA airport is 20 min from Victoria Falls town. Most lodges include airport collection at no extra charge — confirm at booking.', recommended:true },
+    { id:'vfa-road', icon:'🚗', label:'Private road transfer', provider:'Private vehicle — VFA airport to lodge', duration:'20–30 min', estimatedCostZAR:0, note:'Victoria Falls airport is a 20-minute drive from town. Your lodge vehicle will collect you at arrivals — included in your stay. No need to arrange separately.', recommended:true },
   ],
   'masai-mara': [
     { id:'light-aircraft', icon:'✈', label:'Light aircraft charter', provider:'Safarilink / Air Kenya charter', duration:'45 min',    estimatedCostZAR:6800,  note:'Nairobi to Mara airstrip. Most camps have their own airstrip — vehicle transfer included.', recommended:true },
@@ -700,7 +699,7 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode,
     return { title:`${nights}-Night ${dest.label}`, summary:`A focused ${nights}-night journey in ${dest.label}.`, routing:`JNB → ${dest.label} (${nights}n) → JNB`, bestTiming:'June–September: dry season.', cities:[{ city:dest.label, country:dest.country, nights, why:dest.why, highlights:dest.highlights, estimatedCost:Math.round(budget*0.92), hotelRate:45000, flightCost:7600, transferCost:3800, activityCost:0, arrivalGap:'Arrive midday, first drive at 16:00', departureGap:'Final morning drive before departure' }], totalEstimate:Math.round(budget*0.92), aiInsights:['Our rates are 20–27% below booking direct'], warnings:[], inputMode:mode };
   }
 
-  // 2+ destinations — distribute nights proportionally, minimum 2 per city
+  // 2+ destinations — distribute nights, HARD MINIMUM 2 nights per city (1-night stays are not viable)
   const rawSplit = validSlugs.map((_, i) => {
     const share = i === 0 ? 0.45 : i === validSlugs.length - 1 ? 0.25 : 0.30 / Math.max(1, validSlugs.length - 2);
     return Math.max(2, Math.round(nights * share));
@@ -710,7 +709,8 @@ function buildFallbackItinerary(nights: number, budget: number, mode: InputMode,
 
   const cities = validSlugs.map((slug, i) => {
     const dest = destMap[slug];
-    return { city:dest.label, country:dest.country, nights:rawSplit[i], why:dest.why, highlights:dest.highlights, estimatedCost:Math.round(budget*(rawSplit[i]/nights)), hotelRate:48000, flightCost:8000, transferCost:3500, activityCost:0, arrivalGap:'Arrive midday, first activity at 16:00', departureGap:'Final morning activity before departure' };
+    const cityNights = Math.max(2, rawSplit[i]); // Hard minimum 2 nights per destination
+    return { city:dest.label, country:dest.country, nights:cityNights, why:dest.why, highlights:dest.highlights, estimatedCost:Math.round(budget*(cityNights/nights)), hotelRate:48000, flightCost:8000, transferCost:3500, activityCost:0, arrivalGap:'Arrive midday, first activity at 16:00', departureGap:'Final morning activity before departure' };
   });
 
   const isGrand = validSlugs.length >= 3;
@@ -2174,23 +2174,10 @@ function buildTransferOptions(
       };
     });
 
-    // Add road transfer from lodge → MQP → drive to CPT (rare / excess luggage)
-    if (roadExitC1) {
-      const roadZar = lastMileZar(roadExitC1, usdToZar, pax);
-      generatedC1.push({
-        id: 'road-to-cpt',
-        mode: 'road' as TransferOption['mode'],
-        icon: '\uD83D\uDE97',
-        label: 'Private road transfer → Cape Town',
-        provider: roadExitC1.label,
-        duration: '~3.5h + road',
-        estimatedCostZAR: roadZar,
-        badges: [{text:'Road option',color:'rgba(255,255,255,0.35)'},{text:'Est.',color:'rgba(255,255,255,0.3)'}],
-        aiNote: roadExitC1.note ?? 'Road transfer to gateway — no flight required.',
-        recommended: false,
-        structuredLegs: [{kind:'road' as const, badge:'road', name:'Private road transfer', from:'Lodge', to:'MQP', detail:roadExitC1.note ?? '', noteColor:'rgba(255,255,255,0.35)'}],
-      });
-    }
+    // Road transfer between regions intentionally omitted — we do not offer
+    // lodge-to-airport road drives as an inter-region option. Too slow, loses
+    // safari time, and TSE is responsible for any resulting flight costs.
+    // (roadExitC1 retained in scope for excess-luggage override requests only)
 
     return generatedC1;
   }
@@ -2313,9 +2300,11 @@ function buildTransferOptions(
     const key = `${oHub}-${dHub}`;
     // Fastjet (TC) DIRECT routes — listed FIRST so they are the recommended option.
     // MQP↔VFA confirmed direct (Fastjet 8802, daily exc. Thu, MQP–VFA 12:45–14:30).
+    // Fastjet confirmed routes ONLY. JNB↔MUB removed — Fastjet does NOT serve Maun.
     const FASTJET_DIRECT = new Set([
-      'JNB-VFA','VFA-JNB','JNB-MUB','MUB-JNB','JNB-LVI','LVI-JNB',
-      'MQP-VFA','VFA-MQP',
+      'JNB-VFA','VFA-JNB',   // Fastjet Zimbabwe confirmed JNB↔VFA
+      'MQP-VFA','VFA-MQP',   // Fastjet Zimbabwe confirmed MQP↔VFA
+      // JNB-MUB / MUB-JNB intentionally absent — Airlink only on this route
     ]);
     if (FASTJET_DIRECT.has(key)) {
       return [
@@ -2378,7 +2367,10 @@ function buildTransferOptions(
 
   // GUARDRAIL: if the hub-to-hub route requires a JNB connection, build a proper
   // multi-leg structured option instead of falling through to a generic text description.
-  const routeRequiresJNB = VIA_JNB_REQUIRED.has(`${originHub}-${destHubR}`);
+  // Madikwe exits via JNB (FedAir arr 12:30) — 4Z302 JNB→MUB dep 10:55 always missed.
+  // Force overnight even though the hub pair is JNB-MUB (not in VIA_JNB_REQUIRED set).
+  const madikweToOkavango = fromSlug === 'madikwe' && toSlug === 'okavango-delta';
+  const routeRequiresJNB = VIA_JNB_REQUIRED.has(`${originHub}-${destHubR}`) || madikweToOkavango;
 
   if (routeRequiresJNB) {
     const viaOpt = buildViaJNBOption(fromSlug, toSlug, originHub, exitRec2, arrRec, pax ?? 2);
@@ -3098,11 +3090,13 @@ function DepartureCard({
     HDS:'Hoedspruit (HDS)', MQP:'Kruger Mpumalanga (MQP)', SZK:'Skukuza (SZK)', BBK:'Kasane (BBK)',
   };
 
-  // PRIORITY: gateway comes from the selected international flight. Only fall back
-  // to a manual choice if no flight is selected and none has been chosen yet.
+  // PRIORITY: gateway comes from the selected international flight.
+  // Auto-default: if last slug is VFA or chobe-vic-falls, default to JNB (most common).
+  // CPT: default to CPT. Other regions: JNB.
+  const autoDefaultHub = lastSlug === 'cape-town' ? 'CPT' : 'JNB';
   const resolvedGateway =
     (flightSelected && departureGateway) ? departureGateway
-    : departureHubId || '';
+    : departureHubId || autoDefaultHub;
 
   // International airports we can route a real departure transfer to.
   const INTL_GATEWAYS = new Set(['JNB','CPT']);
@@ -3131,12 +3125,15 @@ function DepartureCard({
             : "Select your departure airport — we'll show real transfer options from your final lodge."}
       </div>
 
-      {/* Manual selector ONLY when nothing is resolved yet */}
-      {!resolvedGateway && !includeIntlFlight && (
+      {/* Hub selector — always shown when no gateway resolved yet.
+           Previously gated on !includeIntlFlight which left guests stranded (Screenshot 11).
+           Now always visible so departure routing is never a dead end. */}
+      {!resolvedGateway && (
         <div style={{ display:'flex', flexDirection:'column' as const, gap:8, marginBottom:4 }}>
+          <div style={{ fontSize:11, color:T.textDim, marginBottom:4 }}>Select where you're flying home from — we'll show transfer options from your final lodge:</div>
           {fallbackHubs.map(hub => (
             <button key={hub.code} onClick={() => setDepartureHubId(hub.code)} style={{ width:'100%', padding:'11px 14px', background:T.surface, border:`1.5px solid ${T.border}`, borderRadius:10, cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const }}>
-              <div style={{ fontSize:13, fontWeight:400, color:T.text }}>{hub.label}</div>
+              <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{hub.label}</div>
               <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{hub.note}</div>
             </button>
           ))}
@@ -5228,10 +5225,23 @@ const runBriefPlanner = (briefText: string) => {
                   return regionEntry.highlights;
                 // Fallback: pull traveller-safe fields from structuredFields
                 const sf = regionEntry.structuredFields ?? regionEntry.structured_fields ?? {};
-                const safeKeys = ['why_visit','best_sightings','best_season','ideal_nights'];
+                // Only include traveller-oriented fields. 'specialist_notes', 'booking_notes',
+                // 'margin_notes', and anything starting with ops context is excluded.
+                const safeKeys = ['best_sightings','best_season','ideal_nights'];
                 return safeKeys.map(k => sf[k]).filter((v:any) => typeof v === 'string' && v.length > 10) as string[];
               })();
-              const kbTips: string[] = Array.isArray(regionEntry?.tips) ? regionEntry.tips : [];
+              // Filter out consultant-coded language not appropriate for travellers.
+              // Tips starting with "Lead with", "Route via", "For honeymooners:" etc.
+              // should stay in the specialist KB, not surface to the traveller.
+              const SPECIALIST_PREFIXES = [
+                'lead with','route via','for honeymooners','for guests with','for multi-family',
+                'our rates','DMC','override','book via','commission','margin',
+              ];
+              const kbTips: string[] = (Array.isArray(regionEntry?.tips) ? regionEntry.tips : [])
+                .filter((tip: string) => {
+                  const lower = tip.toLowerCase();
+                  return !SPECIALIST_PREFIXES.some(p => lower.startsWith(p));
+                });
               const seasonalNote: string | undefined = (() => {
                 if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
                 const m = new Date(checkinDate).toLocaleString('en',{month:'short'}).toLowerCase();
@@ -5276,7 +5286,18 @@ const runBriefPlanner = (briefText: string) => {
                   kbTips={kbTips}
                   skeletonFindings={regionFindings}
                   selectedHotelName={selectedHotel?.name}
-                  selectedHotelIncludes={[]}
+                  selectedHotelIncludes={(() => {
+                    // Cape Town properties always include breakfast (standard in CPT market).
+                    // Other regions: pull from hotel.rate_includes.
+                    const hotelIncludes = selectedHotel?.rate_includes ?? [];
+                    if (slug === 'cape-town') {
+                      // Always include breakfast for Cape Town, even if rate_includes is empty
+                      return hotelIncludes.includes('all_meals')
+                        ? hotelIncludes
+                        : ['accommodation', ...hotelIncludes.filter((i:string) => i !== 'accommodation'), 'breakfast_included'].filter(Boolean);
+                    }
+                    return hotelIncludes;
+                  })()}
                   malariaFree={hotelMalariaFree}
                   seasonalNote={seasonalNote}
                   specialistNote={specialistNote}
@@ -5290,6 +5311,16 @@ const runBriefPlanner = (briefText: string) => {
                   )}
 
                   {/* ── STEP 2: PROPERTY ── */}
+                  {/* ── Minimum nights guardrail — visible BEFORE traveller gets to Validate ── */}
+                  {currentStay.nights < 2 && (
+                    <div style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 14px', background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.4)', borderRadius:9, marginBottom:12 }}>
+                      <span style={{ fontSize:14 }}>⚠</span>
+                      <div>
+                        <div style={{ fontSize:11, fontWeight:700, color:'#f87171', marginBottom:2 }}>1 night is too short for {destLabel}</div>
+                        <div style={{ fontSize:11, color:'rgba(248,113,113,0.8)', lineHeight:1.5 }}>We recommend a minimum of 2 nights at any destination — guests need time to arrive, settle in, and experience at least two game drives. Use the + button above to add a night.</div>
+                      </div>
+                    </div>
+                  )}
                   <BuildInstruction step={isCityDest && cityXferOpts.length > 0 ? 2 : 1} text={`Select your ${destLabel} property — swipe to compare options`} />
                   <NestedPropertyCarousel
                     destinationLabel={destLabel}
@@ -5314,6 +5345,7 @@ const runBriefPlanner = (briefText: string) => {
 
                   {/* ── STEP 3: EXPERIENCES ── */}
                   <BuildInstruction step={isCityDest && cityXferOpts.length > 0 ? 3 : 2} text={`Add ${destLabel} experiences to your package — priced per person × ${Math.max(adults+children,1)}`} subdued />
+                  {/* Step numbering reference: city=1(airport)+2(prop)+3(exp)+4(dep), non-city=1(prop)+2(exp)+3(dep) */}
                   {/* [V6-3] ACTIVITY SPOOL */}
                   <ActivitySpool
                     regionSlug={slug}
@@ -5363,7 +5395,12 @@ const runBriefPlanner = (briefText: string) => {
                     const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
                     return (
                       <>
-                        <BuildInstruction step={slug === 'cape-town' ? 5 : 4} text={`Select your flight from ${itinerary.cities[cityIdx].city} to ${nextCity.city} — options include commercial routes and charter connections`} />
+                        {/* Departure step: non-city=3, city-with-airport=4, CPT-with-return=5 */}
+                        <BuildInstruction step={(() => {
+                          if (!isCityDest || cityXferOpts.length === 0) return 3;
+                          if (slug === 'cape-town' && cityIdx < itinerary.cities.length - 1) return 5;
+                          return 4;
+                        })()} text={`Select your flight from ${itinerary.cities[cityIdx].city} to ${nextCity.city} — options include commercial routes and charter connections`} />
                         <TransferCarousel key={legKey} fromSlug={fromSlug} toSlug={toSlug} fromLabel={itinerary.cities[cityIdx].city} toLabel={nextCity.city} fmt={fmt} kbEntries={kbEntries} selectedTransferId={selectedTransferIds[legKey] ?? null} onSelect={id => setSelectedTransferIds(prev => ({ ...prev, [legKey]: id }))} destLodge={destHotel?.name} pax={Math.max(adults + children, 1)} usdToZar={usdRate} commercialFares={transferFares} commercialMeta={transferMeta} originLodge={originHotel?.name} />
                       </>
                     );
