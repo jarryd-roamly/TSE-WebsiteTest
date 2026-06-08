@@ -47,17 +47,15 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
         if (rows?.length > 0) {
           const baseRate = hotel?.displayRate || hotel?.netRate || 0;
           const upgradesList = hotel?.upgrades?.rooms ?? [];
-        setRooms(rows.map((r,rowIdx) => {
+          setRooms(rows.map((r, rowIdx) => {
             const cat = (r.category||'').toLowerCase();
-            // Use actual net_rate_zar from room_types table, or hotel.upgrades extra
-            const roomNetRate = r.net_rate_zar && r.net_rate_zar > 0 ? r.net_rate_zar : 0;
-            const upgradeEntry = upgradesList[rowIdx];
-            const extra = roomNetRate > 0
-              ? Math.max(0, roomNetRate - baseRate)
-              : upgradeEntry?.extra !== undefined
-              ? upgradeEntry.extra
-              : (cat==='premium' ? Math.round(baseRate*0.20)
-                : (cat==='villa'||cat==='exclusive-use') ? Math.round(baseRate*0.45) : 0);
+            // Prefer hotel.upgrades.rooms[index].extra for precise pricing
+            const upgEntry = upgradesList[rowIdx];
+            const upgExtra = (upgEntry && typeof upgEntry.extra === 'number') ? upgEntry.extra : -1;
+            const extra = upgExtra >= 0 ? upgExtra
+              : cat === 'premium' ? Math.round(baseRate * 0.20)
+              : (cat === 'villa' || cat === 'exclusive-use') ? Math.round(baseRate * 0.45)
+              : 0;
             const imgs = (() => { try {
               const arr = Array.isArray(r.images) ? r.images : (r.images ? JSON.parse(r.images) : []);
               return arr.map((img:any)=>typeof img==='string'?img:img?.url).filter(Boolean);
