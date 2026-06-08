@@ -58,6 +58,22 @@ export default function LandingHero({
   currency: currencyProp, onCurrencyChange, currencies: currenciesProp,
 }: LandingHeroProps) {
   const [heroBg,          setHeroBg]          = useState<string | null>(null);
+  const [accredLogos,     setAccredLogos]     = useState<Record<string,string>>({});
+
+  // Load accreditation logos from site_content.accreditation column
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    fetch(`${url}/rest/v1/site_content?select=accreditation&edition_id=eq.safari&limit=1`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: any[]) => {
+        if (rows?.[0]?.accreditation) setAccredLogos(rows[0].accreditation);
+      })
+      .catch(() => {});
+  }, []);
   const [circleVideo,     setCircleVideo]     = useState<string | null>(null);
   const [logoUrl,         setLogoUrl]         = useState<string | null>(null);
   const [logoFailed,      setLogoFailed]      = useState(false);
@@ -372,7 +388,7 @@ export default function LandingHero({
               {[
                 { label: 'Plan My Journey',  action: () => { setMenuOpen(false); onPlanJourney(); } },
                 { label: 'Curated Journeys', action: () => { setMenuOpen(false); onCuratedJourneys(); } },
-                { label: 'Send a Brief',     action: () => { setMenuOpen(false); onSendBrief(); } },
+
                 { label: 'How It Works',     action: () => setMenuOpen(false) },
                 { label: 'About',            action: () => setMenuOpen(false) },
               ].map(item => (
@@ -438,7 +454,7 @@ export default function LandingHero({
               </button>
               <div className="m-cta-row">
                 <button className="m-cta-ghost" onClick={onCuratedJourneys}>Curated Journeys</button>
-                <button className="m-cta-ghost" onClick={onSendBrief}>Send a Brief</button>
+
               </div>
             </div>
           </section>
@@ -540,7 +556,7 @@ export default function LandingHero({
                 <ul>
                   <li><a href="#" onClick={e => { e.preventDefault(); onPlanJourney(); }}>Plan My Journey</a></li>
                   <li><a href="#" onClick={e => { e.preventDefault(); onCuratedJourneys(); }}>Curated Journeys</a></li>
-                  <li><a href="#" onClick={e => { e.preventDefault(); onSendBrief(); }}>Send a Brief</a></li>
+
                   <li><a href="/how-it-works">How It Works</a></li>
                 </ul>
               </div>
@@ -831,10 +847,7 @@ export default function LandingHero({
                     <span className="lh2-cta-title">Curated Journeys</span>
                     <span className="lh2-cta-sub">Ready to book · from price</span>
                   </button>
-                  <button className="lh2-cta-ghost" onClick={onSendBrief}>
-                    <span className="lh2-cta-title">Send Your Brief</span>
-                    <span className="lh2-cta-sub">We handle everything</span>
-                  </button>
+                  
                 </div>
               </div>
             </div>
@@ -881,17 +894,22 @@ export default function LandingHero({
             <p style={{ textAlign: 'center' as const, fontWeight: 200, fontSize: 9, letterSpacing: '0.42em', textTransform: 'uppercase' as const, color: 'rgba(245,240,232,0.2)', marginBottom: 24 }}>Accreditation &amp; Industry Partnerships</p>
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'clamp(24px,5vw,64px)', flexWrap: 'wrap' as const }}>
               {[
-                { abbr: 'ASATA', full: 'Association of Southern African Travel Agents', note: 'Member' },
-                { abbr: 'SATSA', full: 'Southern Africa Tourism Services Association', note: 'Member' },
-                { abbr: 'ATTA',  full: 'African Travel & Tourism Association', note: 'Applying 2026' },
-                { abbr: 'SA Tourism', full: 'South African Tourism Board', note: 'Partner' },
-              ].map(org => (
-                <div key={org.abbr} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 4, opacity: org.note === 'Applying 2026' ? 0.45 : 0.7 }}>
-                  <div style={{ fontFamily: "'Cormorant Garamond',serif", fontWeight: 400, fontSize: 15, color: 'rgba(200,169,110,0.8)', letterSpacing: '0.08em' }}>{org.abbr}</div>
-                  <div style={{ fontWeight: 200, fontSize: 8, letterSpacing: '0.22em', textTransform: 'uppercase' as const, color: 'rgba(245,240,232,0.25)', textAlign: 'center' as const, maxWidth: 120 }}>{org.full}</div>
-                  <div style={{ fontWeight: 300, fontSize: 8, letterSpacing: '0.18em', color: org.note === 'Applying 2026' ? 'rgba(167,139,250,0.6)' : 'rgba(74,222,128,0.55)', textTransform: 'uppercase' as const }}>{org.note === 'Applying 2026' ? '◌ ' : '✓ '}{org.note}</div>
-                </div>
-              ))}
+                { key: 'logo_asata',    abbr: 'ASATA',      note: 'Member' },
+                { key: 'logo_satsa',    abbr: 'SATSA',      note: 'Member' },
+                { key: 'logo_atta',     abbr: 'ATTA',       note: 'Applying 2026' },
+                { key: 'logo_uk_insurance', abbr: 'UK Insurance', note: 'Partner' },
+              ].map(org => {
+                const logoUrl = (accredLogos as any)[org.key];
+                return (
+                  <div key={org.key} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 6, opacity: org.note === 'Applying 2026' ? 0.5 : 0.85 }}>
+                    {logoUrl
+                      ? <img src={logoUrl} alt={org.abbr} style={{ height: 40, maxWidth: 120, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: org.note === 'Applying 2026' ? 0.45 : 0.7 }} />
+                      : <div style={{ fontFamily: "'Cormorant Garamond',serif", fontWeight: 400, fontSize: 15, color: 'rgba(200,169,110,0.8)', letterSpacing: '0.08em', height: 40, display: 'flex', alignItems: 'center' }}>{org.abbr}</div>
+                    }
+                    <div style={{ fontWeight: 300, fontSize: 8, letterSpacing: '0.18em', color: org.note === 'Applying 2026' ? 'rgba(167,139,250,0.6)' : 'rgba(74,222,128,0.55)', textTransform: 'uppercase' as const }}>{org.note === 'Applying 2026' ? '◌ ' : '✓ '}{org.note}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -949,7 +967,7 @@ export default function LandingHero({
               <div className="lh2-footer-col"><h4>Journey</h4><ul>
                 <li><a href="#" onClick={e=>{e.preventDefault();onPlanJourney();}}>Plan My Journey</a></li>
                 <li><a href="#" onClick={e=>{e.preventDefault();onCuratedJourneys();}}>Curated Journeys</a></li>
-                <li><a href="#" onClick={e=>{e.preventDefault();onSendBrief();}}>Send a Brief</a></li>
+
                 <li><a href="/how-it-works">How It Works</a></li>
               </ul></div>
               <div className="lh2-footer-col"><h4>Company</h4><ul>
