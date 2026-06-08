@@ -184,14 +184,7 @@ function LodgeCard({ comp, isLast }: { comp: any; isLast: boolean }) {
               <div style={{ fontSize: 10, color: T.textDim, marginTop: 2 }}>{comp.meal_basis}</div>
             )}
           </div>
-          {comp.price_per_night_usd && (
-            <div style={{ textAlign: 'right' as const, flexShrink: 0 }}>
-              <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: T.text }}>
-                {fmtUSD(comp.price_per_night_usd)}
-              </div>
-              <div style={{ fontSize: 10, color: T.textDim }}>per night</div>
-            </div>
-          )}
+          {/* per-night price removed from confirmation page */}
         </div>
 
         {/* Trust score */}
