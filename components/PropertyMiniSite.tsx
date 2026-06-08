@@ -354,8 +354,7 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
         if (propTips.length > 0) {
           sections.push({
             title: 'Specialist Recommendations',
-            body: propTips.map((t:string, i:number) => `${i+1}. ${t}`).join('
-'),
+            body: propTips.map((t:string, i:number) => `${i+1}. ${t}`).join('\n'),
           });
         }
 
@@ -369,9 +368,7 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
         if (rooms.length > 0) {
           sections.push({
             title: 'Room Categories',
-            body: rooms.map(r => `${r.name}${r.extra_zar > 0 ? ` (+R ${r.extra_zar.toLocaleString()}/night supplement)` : ''}: ${r.description || 'Details available from your specialist.'}`).join('
-
-'),
+            body: rooms.map(r => `${r.name}${r.extra_zar > 0 ? ` (+R ${r.extra_zar.toLocaleString()}/night supplement)` : ''}: ${r.description || 'Details available from your specialist.'}`).join('\n\n'),
           });
         }
 
