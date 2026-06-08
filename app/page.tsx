@@ -1919,8 +1919,11 @@ function buildTransferOptions(
     const all: SCHEDEntry[] = freqs ?? (primary ? [primary] : []);
     if (!all.length) return null;
 
-    // Filter by minDep first (for post-FedAir exit connections)
+    // Filter by minDep (connection buffer after FedAir exit).
+    // CRITICAL: when minDep is set and NO flights meet it, return null.
+    // Do NOT fall back to `all` — that defeats the entire buffer guard.
     const afterMin = minDep ? all.filter(f => t2m(f.dep) >= t2m(minDep)) : all;
+    if (minDep && afterMin.length === 0) return null;  // no valid connection — caller drops this option
     const pool = afterMin.length ? afterMin : all;
 
     if (!fedAirDep) return { ...pool[0], bag };
