@@ -1298,7 +1298,9 @@ function NestedPropertyCarousel({
 
   useEffect(() => {
     const idx = hotels.findIndex(h => String(h.id) === String(selectedHotelId));
-    if (idx > 0) setTimeout(() => scrollToIdx(idx), 100);
+    // If selected hotel is at the end (demoted by KB), scroll to first instead
+    const isAtEnd = idx === hotels.length - 1 || idx >= hotels.length - 2;
+    if (idx > 0 && !isAtEnd) setTimeout(() => scrollToIdx(idx), 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -4267,11 +4269,20 @@ const runEngine = async (request: any, mode: InputMode) => {
         data.itinerary.inputMode = mode;
         setItinerary(data.itinerary);
         // Map server hotel IDs back to local hotel objects for the builder UI
+        const _kbOverrides = kbEntries.filter((e: any) => e.override_ai && e.active !== false);
+        const _isDemoted = (hotel: any) => _kbOverrides.some((e: any) => {
+          const words = (e.linkedTo || e.linked_name || '').toLowerCase().split(' ').filter((w: string) => w.length > 3);
+          if (!words.some((w: string) => (hotel.name || '').toLowerCase().includes(w))) return false;
+          const gt = Array.isArray(e.guardrails) ? e.guardrails.join(' ') : String(e.guardrails || '');
+          return /avoid|do not|block|end of|last|exclude/i.test(gt);
+        });
         const mappedStays = (data.itinerary.cities as any[]).map((city: any, i: number) => {
           const slug = CITY_TO_SLUG[city.city?.toLowerCase().trim() ?? ''] ?? '';
           const pool = slug ? hotelsByMargin.filter(h => h.subRegion === slug) : hotelsByMargin;
           const serverHotelId = data.cityStays?.[i]?.hotelId;
-          const match = pool.find(h => String(h.id) === String(serverHotelId)) ?? pool[0] ?? hotelsByMargin[0];
+          const serverMatch = pool.find(h => String(h.id) === String(serverHotelId)) ?? pool[0] ?? hotelsByMargin[0];
+          // If AI selected a KB-demoted hotel, use first non-demoted hotel instead
+          const match = _isDemoted(serverMatch) ? (pool.find(h => !_isDemoted(h)) ?? serverMatch) : serverMatch;
           return { hotelId: match?.id ?? 0, nights: city.nights, prefs: { rooms:0, basis:0, flexibility:0 } };
         });
         setCityStays(mappedStays);
