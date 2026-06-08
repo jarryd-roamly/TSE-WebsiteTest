@@ -4473,6 +4473,65 @@ const runBriefPlanner = (briefText: string) => {
           type: 'accommodation',
         };
       }).filter(Boolean) as BookingComponent[];
+
+      // Add inter-region transfer components so checkout/mini-site show logistics
+      const transferComponents: BookingComponent[] = [];
+      (itinerary.cities ?? []).forEach((city: any, i: number) => {
+        if (i >= (itinerary.cities?.length ?? 0) - 1) return;
+        const nextCity = (itinerary.cities ?? [])[i + 1];
+        const fromSlug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
+        const toSlug   = CITY_TO_SLUG[nextCity.city.toLowerCase().trim()] ?? '';
+        if (!fromSlug || !toSlug) return;
+        const legKey   = `${fromSlug}→${toSlug}`;
+        const nextStay = cityStays[i + 1];
+        const nextPool = toSlug ? hotelsByMargin.filter(h => h.subRegion === toSlug) : hotelsByMargin;
+        const destHotel = nextPool.find(h => String(h.id) === String(nextStay?.hotelId)) ?? nextPool[0];
+        const thisStay  = cityStays[i];
+        const thisPool  = fromSlug ? hotelsByMargin.filter(h => h.subRegion === fromSlug) : hotelsByMargin;
+        const originHotel = thisPool.find(h => String(h.id) === String(thisStay?.hotelId)) ?? thisPool[0];
+        const usdRate   = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
+        const options   = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate, transferFares, transferMeta, originHotel?.name);
+        if (!options.length) return;
+        const selId   = selectedTransferIds[legKey];
+        const chosen  = selId ? options.find(o => o.id === selId) : options.find(o => o.recommended) ?? options[0];
+        if (!chosen) return;
+        transferComponents.push({
+          pillar: 'transfer' as any,
+          type: 'transfer',
+          name: chosen.label || `Transfer: ${city.city} → ${nextCity.city}`,
+          description: chosen.description || chosen.aiNote || '',
+          from_region: fromSlug,
+          to_region: toSlug,
+          from_label: city.city,
+          to_label: nextCity.city,
+          provider: chosen.provider || '',
+          duration: chosen.duration || '',
+          price_display_zar: chosen.estimatedCostZAR || 0,
+          is_confirmed: false,
+        } as any);
+      });
+
+      // Add selected activities as components
+      const activityComponents: BookingComponent[] = [];
+      (itinerary.cities ?? []).forEach((city: any) => {
+        const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
+        const sel  = selectedActivities[slug] ?? [];
+        const pax  = Math.max(adults + children, 1);
+        activities.filter(a => sel.includes(String(a.id))).forEach(a => {
+          activityComponents.push({
+            pillar: 'activity' as any,
+            type: 'activity',
+            name: a.name,
+            region_slug: slug,
+            region_label: city.city,
+            price_display_zar: Math.round(a.netRate * M.activities) * pax,
+            duration: a.duration || '',
+          } as any);
+        });
+      });
+
+      const allComponents = [...components, ...transferComponents, ...activityComponents];
+
       // Deposit = flights+transfers 100% + lodges 30% (per V7-5 spec)
       const _bd = costBreakdown;
       const _USD = CURRENCIES.find(cur => cur.code === 'USD')?.rate ?? 18.62;
@@ -4484,7 +4543,7 @@ const runBriefPlanner = (briefText: string) => {
       // Guard: checkinDate may be empty when dateMode='flexible'. addDays('') throws "Invalid time value".
       const safeCheckIn  = checkinDate && /^\d{4}-\d{2}-\d{2}$/.test(checkinDate) ? checkinDate : null;
       const safeCheckOut = safeCheckIn ? addDays(safeCheckIn, nights) : null;
-      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:safeCheckIn ?? '', check_out:safeCheckOut ?? '', total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), /* deposit_zar derived at checkout */ budget_zar:budget, components, input_mode:inputMode };
+      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:safeCheckIn ?? '', check_out:safeCheckOut ?? '', total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), /* deposit_zar derived at checkout */ budget_zar:budget, components:allComponents, input_mode:inputMode };
       const res  = await fetch('/api/itinerary', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(booking) });
       const data = await res.json();
       if (data.success&&data.id) { track('checkout_started',edition.id,{bookingId:data.id,grandTotal}); window.location.href=`/checkout?id=${data.id}`; }
