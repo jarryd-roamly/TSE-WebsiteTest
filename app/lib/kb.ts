@@ -196,7 +196,7 @@ function sbHeaders() {
 async function sbGet<T>(path: string): Promise<T[]> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: sbHeaders(),
-    next: { revalidate: 300 }, // 5-minute cache on server-side fetches
+    next: { revalidate: 0 }, // No cache — KB overrides must always be fresh
   });
   if (!res.ok) throw new Error(`KB fetch failed: ${res.status} ${path}`);
   return res.json();
@@ -263,7 +263,7 @@ export async function fetchOverrideEntries(
   if (!regionSlugs.length) return [];
 
   const slugFilter = regionSlugs.map(s => `region_slug.eq.${s}`).join(',');
-  const path = `knowledge_base?select=*`
+  const path = `knowledge_base?select=id,kb_ref,linked_name,supplier_id,region_slug,entry_type,claim_type,guardrails,specialist_recs,guidance_importance,override_ai,status`
     + `&edition_id=eq.${editionId}`
     + `&status=eq.active`
     + `&override_ai=eq.true`
