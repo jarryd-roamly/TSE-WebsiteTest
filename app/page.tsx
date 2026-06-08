@@ -117,7 +117,7 @@ const CITY_TRANSFERS: Record<string, CityTransferOption[]> = {
   // NOTE: The departure options (VFA→JNB via Airlink/Fastjet) are handled by the
   // inter-region routing engine — NOT shown here as arrival transfers.
   'chobe-vic-falls': [
-    { id:'vfa-road', icon:'🚗', label:'Private road transfer', provider:'Private vehicle — VFA airport to lodge', duration:'20–30 min', estimatedCostZAR:0, note:'Victoria Falls airport is a 20-minute drive from town. Your lodge vehicle will collect you at arrivals — included in your stay. No need to arrange separately.', recommended:true },
+    { id:'vfa-road-included', icon:'✅', label:'Lodge vehicle included', provider:'No separate transfer needed', duration:'20–30 min', estimatedCostZAR:0, note:'Victoria Falls airport is 20 min from town. Your lodge vehicle collects you at arrivals — included in your stay rate.', recommended:true, includedInLodge:true },
   ],
   'masai-mara': [
     { id:'light-aircraft', icon:'✈', label:'Light aircraft charter', provider:'Safarilink / Air Kenya charter', duration:'45 min',    estimatedCostZAR:6800,  note:'Nairobi to Mara airstrip. Most camps have their own airstrip — vehicle transfer included.', recommended:true },
@@ -1892,8 +1892,10 @@ function buildTransferOptions(
   // Minimum connection buffer (minutes) at each regional hub before FedAir departure.
   // JNB = 90 min (must clear international/domestic, Atlas Rd terminal transit).
   // Lowveld hubs = 45 min (small terminal, no security re-screen).
+  // [v14] MQP buffer increased to 60 min per operator requirement.
+  // 10-min Fastjet connections after FedAir exit are impossible — need customs + terminal walk.
   const CONNECTION_BUFFER: Record<string, number> = {
-    'MQP':45, 'SZK':45, 'HDS':45, 'JNB':90,
+    'MQP':60, 'SZK':60, 'HDS':60, 'JNB':90,
   };
 
   // Generic FedAir departure times when specific lodge is unknown
@@ -2407,8 +2409,21 @@ function buildTransferOptions(
       const metaForThis = (liveMeta && (liveMeta.carrier === c.code)) ? liveMeta : null;
 
       const structured: StructuredLeg[] = [];
+      // Compute FedAir exit arrival at hub, then enforce 60-min buffer for onward commercial.
+      let interMinDep: string | undefined;
+      if (exitRec2?.mode === 'fedair') {
+        const airstrip = originLodge ? (LODGE_TO_AIRSTRIP[originLodge] ?? null) : null;
+        const bushKey  = airstrip ? `${airstrip}-${originHub}` : null;
+        const br2      = bushKey ? (FEDAIR_BUSH[bushKey] ?? null) : null;
+        const arrStr   = br2?.arr ?? exitRec2?.arrTime ?? null;
+        if (arrStr) {
+          const bufMin = CONNECTION_BUFFER[originHub] ?? 60;
+          const depMin = t2m(arrStr) + bufMin;
+          interMinDep = `${Math.floor(depMin/60).toString().padStart(2,'0')}:${(depMin%60).toString().padStart(2,'0')}`;
+        }
+      }
       if (exitRec2) { const ex = exitLeg(exitRec2, originHub, originLodge ?? undefined); if (ex) structured.push(ex); }
-      structured.push(commercialLeg(originHub, destHub, metaForThis, c.name, c.code, fedAirDepMain));
+      structured.push(commercialLeg(originHub, destHub, metaForThis, c.name, c.code, fedAirDepMain, interMinDep));
       buildArrivalLegs(arrRec, destHub, destLodge ?? undefined, fedAirDepMain).forEach(l => structured.push(l));
 
       const flightMin = liveMeta?.duration_min ?? SCHED[`${c.code}-${originHub}-${destHub}`]?.dur ?? commDurFallback[routeKey] ?? 120;
@@ -5416,7 +5431,8 @@ const runBriefPlanner = (briefText: string) => {
                   specialistNote={specialistNote}
                 >
                   {/* ── STEP 1: ARRIVAL TRANSFER ── */}
-                  {isCityDest && cityXferOpts.length > 0 && (
+                  {/* Hide transfer carousel when ONLY option is included in lodge (e.g. VFA) */}
+                  {isCityDest && cityXferOpts.length > 0 && !(cityXferOpts.length === 1 && (cityXferOpts[0] as any).includedInLodge) && (
                     <>
                       <BuildInstruction step={1} text={`Select how you'd like to get from ${destLabel === 'Cape Town' ? 'Cape Town International Airport' : destLabel + ' Airport'} to your hotel`} />
                       <CityTransferStrip slug={slug} destLabel={destLabel} opts={cityXferOpts} selectedId={selCityXferId} onSelect={id => setCityTransferIds(prev => ({ ...prev, [slug]: id }))} fmt={fmt} />
