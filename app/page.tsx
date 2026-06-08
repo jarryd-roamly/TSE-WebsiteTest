@@ -4254,11 +4254,9 @@ const runEngine = async (request: any, mode: InputMode) => {
           return { hotelId: match?.id ?? 0, nights: city.nights, prefs: { rooms:0, basis:0, flexibility:0 } };
         });
         setCityStays(mappedStays);
-               setCityStays(mappedStays);
 
-  // Fire skeleton engine — runs in background, does NOT block the builder screen.
-  // Results stored in state for BCC tip panel and Selection Load page.
-  fetch('/api/itinerary/skeleton', {
+        // Fire skeleton engine in background — does NOT block the builder screen.
+        fetch('/api/itinerary/skeleton', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -4442,7 +4440,10 @@ const runBriefPlanner = (briefText: string) => {
       const _transfersTotal = _bd.transferCost + _bd.cityXferCost + _intl;
       const _lodgesTotal    = _bd.lodgeCost + _bd.activityCost;
       const depositZar = _transfersTotal + Math.round(_lodgesTotal * (edition.payment.depositPercent/100));
-      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:checkinDate, check_out:addDays(checkinDate,nights), total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), /* deposit_zar derived at checkout — not persisted to itineraries */ budget_zar:budget, components, input_mode:inputMode };
+      // Guard: checkinDate may be empty when dateMode='flexible'. addDays('') throws "Invalid time value".
+      const safeCheckIn  = checkinDate && /^\d{4}-\d{2}-\d{2}$/.test(checkinDate) ? checkinDate : null;
+      const safeCheckOut = safeCheckIn ? addDays(safeCheckIn, nights) : null;
+      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:safeCheckIn ?? '', check_out:safeCheckOut ?? '', total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), /* deposit_zar derived at checkout */ budget_zar:budget, components, input_mode:inputMode };
       const res  = await fetch('/api/itinerary', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(booking) });
       const data = await res.json();
       if (data.success&&data.id) { track('checkout_started',edition.id,{bookingId:data.id,grandTotal}); window.location.href=`/checkout?id=${data.id}`; }
