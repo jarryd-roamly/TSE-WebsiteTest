@@ -36,37 +36,43 @@ function buildPayFastUrl(params: {
 }) {
   const merchantId  = process.env.PAYFAST_MERCHANT_ID  || '10000100'
   const merchantKey = process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a'
-  const passphrase  = process.env.PAYFAST_PASSPHRASE   || ''
+  // PayFast sandbox test account passphrase is 'payfast' — set PAYFAST_PASSPHRASE in env for production
+  const passphrase  = process.env.PAYFAST_PASSPHRASE   ?? 'payfast'
 
-  const data: Record<string, string> = {
-    merchant_id:  merchantId,
-    merchant_key: merchantKey,
-    return_url:   params.returnUrl,
-    cancel_url:   params.cancelUrl,
-    notify_url:   params.notifyUrl,
-    email_address: params.email,
-    name_first:   params.name.split(' ')[0] || params.name,
-    name_last:    params.name.split(' ').slice(1).join(' ') || '',
-    m_payment_id: params.bookingRef,
-    amount:       params.amount.toFixed(2),
-    item_name:    params.itemName,
-    custom_str1:  params.bookingRef,
-  }
+  const nameParts = params.name.trim().split(' ')
+  const firstName = nameParts[0] || 'Traveller'
+  const lastName  = nameParts.slice(1).join(' ') || 'Guest'
 
-  // Remove empty values (PayFast rejects blank fields)
-  Object.keys(data).forEach(k => { if (!data[k]) delete data[k] })
+  // PayFast requires fields in this exact order for correct signature
+  const orderedFields: [string, string][] = [
+    ['merchant_id',   merchantId],
+    ['merchant_key',  merchantKey],
+    ['return_url',    params.returnUrl],
+    ['cancel_url',    params.cancelUrl],
+    ['notify_url',    params.notifyUrl],
+    ['name_first',    firstName],
+    ['name_last',     lastName],
+    ['email_address', params.email],
+    ['m_payment_id',  params.bookingRef],
+    ['amount',        params.amount.toFixed(2)],
+    ['item_name',     params.itemName],
+    ['custom_str1',   params.bookingRef],
+  ]
 
-  const sigString = Object.entries(data)
-    .map(([k, v]) => `${k}=${encodeURIComponent(v).replace(/%20/g, '+')}`)
+  // Build signature string — PayFast uses urlencoded values, spaces as +
+  const pfEncode = (v: string) => encodeURIComponent(v).replace(/%20/g, '+')
+
+  const sigString = orderedFields
+    .filter(([, v]) => v !== '' && v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${pfEncode(v)}`)
     .join('&')
 
   const sigWithPassphrase = passphrase
-    ? `${sigString}&passphrase=${encodeURIComponent(passphrase).replace(/%20/g, '+')}`
+    ? `${sigString}&passphrase=${pfEncode(passphrase)}`
     : sigString
 
   const signature = crypto.createHash('md5').update(sigWithPassphrase).digest('hex')
 
-  // Use sandbox in non-production, live otherwise
   const host = process.env.PAYFAST_LIVE === 'true'
     ? 'https://www.payfast.co.za/eng/process'
     : 'https://sandbox.payfast.co.za/eng/process'
