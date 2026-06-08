@@ -96,50 +96,68 @@ function mapToJourney(booking: any, itinerary: any): Journey {
   const totalZAR = booking.total_display_zar || itinerary?.total_display_zar || 0;
   const components: any[] = itinerary?.components || [];
 
-  // Build segments from components or cities
-  const cities: any[] = itinerary?.cities || [];
-  const segments: Segment[] = cities.map((city: any, i: number) => {
-    const slug   = city.regionSlug || '';
-    const lodge  = city.selectedHotel?.name || city.hotel || 'Lodge TBC';
-    const cNights = city.nights || 1;
+  // Build segments from enriched components (saved from page.tsx)
+  const hotelComponents = components.filter((c: any) => 
+    c.pillar === 'hotel' || c.type === 'accommodation'
+  );
+
+  // Calculate per-segment dates
+  let runningDate = checkIn ? new Date(checkIn) : null;
+
+  const segments: Segment[] = hotelComponents.map((comp: any, i: number) => {
+    const slug    = comp.region_slug || '';
+    const lodge   = comp.name || 'Lodge TBC';
+    const cNights = comp.nights || 1;
+    
+    const segCheckIn  = runningDate ? new Date(runningDate) : null;
+    const segCheckOut = segCheckIn  ? new Date(new Date(segCheckIn).setDate(segCheckIn.getDate() + cNights)) : null;
+    if (runningDate) runningDate.setDate(runningDate.getDate() + cNights);
+
+    const segDates = segCheckIn && segCheckOut
+      ? formatDateRange(segCheckIn.toISOString().slice(0,10), segCheckOut.toISOString().slice(0,10))
+      : formatDateRange(checkIn, checkOut);
+
+    const badges: Badge[] = [];
+    if (comp.malaria_free) badges.push({ type: 'care', label: 'Malaria-free' });
+
     return {
-      id:          `seg-${i}`,
-      scene:       sceneForRegion(slug),
-      bandRegion:  regionLabel(slug),
-      bandName:    lodge,
-      region:      regionLabel(slug),
+      id:         `seg-${i}`,
+      scene:      sceneForRegion(slug),
+      bandRegion: comp.region_label || regionLabel(slug),
+      bandName:   lodge,
+      region:     comp.region_label || regionLabel(slug),
       lodge,
-      day:         `${cNights}`,
-      dayWord:     cNights === 1 ? 'Day' : 'Days' as 'Days',
-      dates:       checkIn ? formatDateRange(checkIn, checkOut) : 'Dates TBC',
-      narrative:   city.why || '',
-      detail:      city.highlights || [],
-      badges:      [],
-      acts:        city.activities || [],
-      tone:        '',
-      img:         city.heroImage || city.image || undefined,
-      value:       city.estimatedCost || 0,
-      ref:         booking.booking_reference || '',
-      status:      'confirming' as LegStatus,
-      gameCamp:    slug.includes('kruger') || slug.includes('okavango') || slug.includes('madikwe'),
-      cancel:      [[45, 50], [30, 100]] as [number, number][],
+      day:        `${cNights}`,
+      dayWord:    (cNights === 1 ? 'Day' : 'Days') as 'Day' | 'Days',
+      dates:      segDates,
+      narrative:  comp.fun_fact || '',
+      detail:     comp.inclusions?.slice(0, 4) || [],
+      badges,
+      acts:       [],
+      tone:       '',
+      img:        comp.hero_image_url || undefined,
+      value:      comp.display_rate_zar || 0,
+      ref:        booking.booking_reference || '',
+      status:     'confirming' as LegStatus,
+      gameCamp:   slug.includes('kruger') || slug.includes('okavango') || slug.includes('madikwe') || slug.includes('chobe'),
+      cancel:     [[45, 50], [30, 100]] as [number, number][],
     };
   });
 
-  // Fallback: if no cities, create one segment from booking data
+  // Fallback if no hotel components
   if (segments.length === 0) {
     segments.push({
-      id: 'seg-0', scene: 'kruger', bandRegion: 'Your Safari',
+      id: 'seg-0', scene: 'kruger' as SceneName, bandRegion: 'Your Safari',
       bandName: 'Lodge TBC', region: 'Your Safari', lodge: 'Lodge TBC',
-      day: `${nights}`, dayWord: 'Days', dates: formatDateRange(checkIn, checkOut),
+      day: `${nights}`, dayWord: 'Days' as 'Days', dates: formatDateRange(checkIn, checkOut),
       narrative: '', detail: [], badges: [], acts: [], tone: '',
       value: totalZAR, ref: booking.booking_reference || '',
-      status: 'confirming', gameCamp: true, cancel: [[45, 50], [30, 100]],
+      status: 'confirming' as LegStatus, gameCamp: true, cancel: [[45, 50], [30, 100]] as [number, number][],
     });
   }
 
-  const route = cities.length > 0
-    ? cities.map((c: any) => regionLabel(c.regionSlug || '')).filter(Boolean)
+  const route = hotelComponents.length > 0
+    ? [...new Set(hotelComponents.map((c: any) => c.region_label || regionLabel(c.region_slug || '')).filter(Boolean))]
     : ['Your Safari'];
 
   const EXCHANGE = { GBP: 0.042, USD: 0.054, EUR: 0.049 };
