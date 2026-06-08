@@ -39,6 +39,9 @@ function buildPayFastUrl(params: {
   // PayFast sandbox test account passphrase is 'payfast' — set PAYFAST_PASSPHRASE in env for production
   const passphrase  = process.env.PAYFAST_PASSPHRASE   ?? 'payfast'
 
+  // Sanitize item_name - PayFast only accepts ASCII characters
+  const sanitizedItemName = params.itemName.replace(/[^\x00-\x7F]/g, '-').substring(0, 100)
+
   const nameParts = params.name.trim().split(' ')
   const firstName = nameParts[0] || 'Traveller'
   const lastName  = nameParts.slice(1).join(' ') || 'Guest'
@@ -55,7 +58,7 @@ function buildPayFastUrl(params: {
     ['email_address', params.email],
     ['m_payment_id',  params.bookingRef],
     ['amount',        params.amount.toFixed(2)],
-    ['item_name',     params.itemName],
+    ['item_name',     sanitizedItemName],
     ['custom_str1',   params.bookingRef],
   ]
 
@@ -304,8 +307,8 @@ export async function POST(req: NextRequest) {
       }
 
       const payfastUrl = buildPayFastUrl({
-        amount:    Math.round(depositTotal * 100) / 100,
-        itemName:  `The Safari Edition — ${bookingRef}`,
+        amount:    parseFloat((Math.round(depositTotal * 100) / 100).toFixed(2)),
+        itemName:  `The Safari Edition - ${bookingRef}`,
         bookingRef,
         email:     traveller_email,
         name:      traveller_name || '',
