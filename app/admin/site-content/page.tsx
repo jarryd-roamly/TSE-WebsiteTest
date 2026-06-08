@@ -313,6 +313,8 @@ export default function SiteContentAdmin() {
   const [server, setServer] = useState<SiteContent | null>(null);
   // Local working copies — one per section
   const [brand, setBrand]               = useState<Brand | null>(null);
+  const [accred,      setAccred]      = useState<Record<string,string>>({});
+  const [accredDirty, setAccredDirty] = useState(false);
   const [hero, setHero]                 = useState<Hero | null>(null);
   const [reels, setReels]               = useState<LoadingReel[] | null>(null);
   const [cards, setCards]               = useState<TrustCard[] | null>(null);
@@ -351,6 +353,7 @@ export default function SiteContentAdmin() {
         setCards(sc.trust_cards);
         setNavLabels(sc.nav_labels);
         setFooter(sc.footer);
+        if (row.accreditation) setAccred(row.accreditation);
         setLoading(false);
       })
       .catch(e => { setLoadError(e?.message ?? 'Load failed'); setLoading(false); });
@@ -589,6 +592,35 @@ export default function SiteContentAdmin() {
           <div>
             <Label text="SUPPORT EMAIL" />
             <TextInput value={footer.support} onChange={v => setFooter({ ...footer, support: v })} placeholder="journeys@thesafariedition.com" />
+          </div>
+        </Section>
+
+        <Section title="Accreditation logos" subtitle="ATTA, SATSA, ASATA and UK Insurance partner logos" icon="🏅" dirty={!!accredDirty} saving={saving === 'accred'} onSave={() => saveSection('accreditation', accred)}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+            {[
+              { key: 'logo_asata',        label: 'ASATA',        hint: 'Association of Southern African Travel Agents' },
+              { key: 'logo_satsa',        label: 'SATSA',        hint: 'Southern Africa Tourism Services Association' },
+              { key: 'logo_atta',         label: 'ATTA',         hint: 'African Travel & Tourism Association' },
+              { key: 'logo_uk_insurance', label: 'UK Insurance', hint: 'UK insurance partner logo' },
+            ].map(item => (
+              <div key={item.key}>
+                <label style={{ fontSize: 11, color: 'rgba(245,240,232,0.5)', letterSpacing: '0.1em', textTransform: 'uppercase' as const, display: 'block', marginBottom: 6 }}>{item.label}</label>
+                <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.3)', marginBottom: 8 }}>{item.hint}</div>
+                <MediaUploader
+                  value={accred[item.key] || null}
+                  onChange={(v: string | null) => { setAccred((a: any) => ({ ...a, [item.key]: v || '' })); setAccredDirty(true); }}
+                  accept="image/*"
+                  maxMB={2}
+                  kind="image"
+                  hint="SVG or PNG · white or transparent background works best"
+                />
+                {accred[item.key] && (
+                  <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 6, display: 'inline-block' }}>
+                    <img src={accred[item.key]} alt={item.label} style={{ height: 36, objectFit: 'contain', filter: 'invert(1)', opacity: 0.7 }} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </Section>
 
