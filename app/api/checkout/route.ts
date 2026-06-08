@@ -143,7 +143,9 @@ async function sendQuoteEmail(params: {
     body: JSON.stringify({
       from:    'The Safari Edition <journeys@thesafariedition.com>',
       to:      params.email,
-      subject: `Your Safari Journey Quote · ${params.bookingRef}`,
+      subject: (params as any).isDeposit
+        ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
+        : `Your Safari Journey Quote · ${params.bookingRef}`,
       html,
     }),
   })
@@ -331,7 +333,21 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── Deposit → PayFast ────────────────────────────────────────────────────
+    // ── Deposit → send confirmation email + PayFast ─────────────────────────
+    // Send booking confirmation email (non-blocking — don't fail payment if email fails)
+    try {
+      await sendQuoteEmail({
+        email:       traveller_email,
+        name:        traveller_name || '',
+        bookingRef,
+        itinerary,
+        depositTotal,
+        totalZAR,
+        baseUrl,
+        isDeposit:   true,
+      })
+    } catch { /* email failure must never block PayFast redirect */ }
+
     const payfastUrl = buildPayFastUrl({
       amount:    Math.round(depositTotal * 100) / 100,
       itemName:  `The Safari Edition — ${bookingRef}`,
