@@ -174,6 +174,7 @@ function HeroImageUpload({ value, onChange }: { value: string; onChange: (url: s
     fd.append('file', file);
     fd.append('supplier_id', 'system');
     fd.append('media_type', 'images');
+    fd.append('upload_context', 'curated');
     fd.append('caption', 'curated-hero');
     fd.append('uploaded_by', 'admin');
     try {
