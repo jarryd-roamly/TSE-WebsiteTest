@@ -1,22 +1,19 @@
-// app/lib/journey.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// THE SINGLE SOURCE. One canonical Journey powers all three surfaces:
-//   • JourneyTimeline   (in-builder review — cream/editorial skin)
-//   • JourneyMiniSite    (post-booking / quote companion — dark/cinematic skin)
-//   • OpsValidation      (staff sequencing check)
-// In production, getJourney(code) reads Supabase and returns this shape.
-// ─────────────────────────────────────────────────────────────────────────────
+// app/lib/journey.ts — PRODUCTION VERSION
+// getJourney() now reads from Supabase bookings + itineraries tables
+// Falls back to DEMO_JOURNEY if booking not found (for demo URLs)
+
+import { createClient } from '@supabase/supabase-js';
 
 export type Currency = 'ZAR' | 'GBP' | 'USD' | 'EUR';
-export type Money = { sym: string; acc: number; fly: number };  // acc = land/lodges, fly = ALL air+charter (paid in full)
+export type Money = { sym: string; acc: number; fly: number };
 export type Badge = { type: 'free' | 'care' | 'visa' | 'family'; label: string };
-export type SceneName = 'cape' | 'madikwe' | 'falls' | 'delta';
+export type SceneName = 'cape' | 'madikwe' | 'falls' | 'delta' | 'kruger' | 'chobe';
 export type LegStatus = 'confirmed' | 'confirming';
 
 export type Leg = {
   kind: 'air' | 'bush' | 'longhaul' | 'road';
   carrier: string; no: string; depApt: string; arrApt: string;
-  dep: string; arr: string;            // ISO datetimes (drive both display + sequencing)
+  dep: string; arr: string;
   status: LegStatus; cross?: boolean;
 };
 export type TransferNote = { good?: boolean; text: string };
@@ -24,14 +21,12 @@ export type Transfer = { tag: string; legs: Leg[]; notes: TransferNote[] };
 
 export type Segment = {
   id: string;
-  // ── editorial / review (cream) ──
   scene: SceneName; bandRegion: string; bandName: string; region: string; lodge: string;
   day: string; dayWord: 'Day' | 'Days'; dates: string;
   narrative: string; detail: string[]; badges: Badge[]; acts: string[];
-  // ── companion / commerce (dark mini-site + ops) ──
   tone: string; img?: string; reel?: string; sensory?: string; kb?: string;
   value: number; ref: string; status: LegStatus; gameCamp: boolean; vehPerDay?: number;
-  cancel: [number, number][];          // supplier-specific [daysBefore, penalty%] tiers
+  cancel: [number, number][];
 };
 
 export type Journey = {
@@ -43,134 +38,224 @@ export type Journey = {
   specialist: { initials: string; name: string; role: string; rec: string; years?: number; fav?: string; response?: string };
   heroReel?: string;
   segments: Segment[];
-  transfers: Transfer[];   // transfers[i] = how the traveller reaches segments[i]; [0] is the inbound arrival
+  transfers: Transfer[];
   homeward: Transfer;
 };
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-const D = (day: number, hm: string) => `2026-09-${String(day).padStart(2, '0')}T${hm}:00`;
+// ── helpers ───────────────────────────────────────────────────────────────────
 const durStr = (a: string, b: string) => {
   const m = Math.round((+new Date(b) - +new Date(a)) / 6e4);
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 };
-const leg = (kind: Leg['kind'], carrier: string, no: string, depApt: string, dep: string,
-             arrApt: string, arr: string, status: LegStatus, cross = false): Leg =>
-  ({ kind, carrier, no, depApt, arrApt, dep, arr, status, cross });
 
-// ── DEMO_JOURNEY (replace with Supabase row mapped to this shape) ────────────
-export const DEMO_JOURNEY: Journey = {
-  ref: 'KR7P2MX4',
-  eyebrow: 'The Safari Edition · Bespoke Journey',
-  title: 'An Untamed Honeymoon',
-  subtitle: 'Sabi Sand · Okavango · Victoria Falls · Cape Town',
-  route: ['Sabi Sand', 'Okavango', 'Victoria Falls', 'Cape Town'],
-  nights: 11, dates: '15 – 26 Sept 2026', departIn: 98, startISO: D(15, '00:00'),
-  travellers: ['James Harrington', 'Eleanor Harrington'], pax: 2, surname: 'Harrington', email: 'j.harrington@example.com',
-  price: {
-    GBP: { sym: '£', acc: 38500, fly: 7000 },
-    ZAR: { sym: 'R', acc: 895000, fly: 163000 },
-    USD: { sym: 'US$', acc: 48500, fly: 8800 },
-    EUR: { sym: '€', acc: 45000, fly: 8200 },
-  },
-  included: [
-    'All accommodation — 11 nights across 4 camps', 'All meals & game activities on safari',
-    'All internal flights, charters & private transfers', 'Park, conservation & concession fees',
-    'Zimbabwe / KAZA entry arranged for you', 'Dedicated specialist + 24/7 concierge',
-  ],
-  prep: [
-    { title: 'Passport valid 6+ months', body: 'two blank pages for stamps.', daysBefore: 180 },
-    { title: 'KAZA Univisa & SA entry', body: 'arranged for you — we send the brief.', daysBefore: 120 },
-    { title: 'Malaria prophylaxis', body: 'for the Delta & Falls; Cape Town is malaria-free.', daysBefore: 42 },
-    { title: 'Pack soft & light', body: 'bush flights take soft bags, 20kg per guest.', daysBefore: 14 },
-  ],
-  specialist: { initials: 'SK', name: 'Sarah Kemp',
-    role: 'Your Journey Specialist · 12 years · has stayed at Mombo Camp',
-    rec: '“I’ve put Mombo in the middle on purpose — you’ll have found your safari rhythm by the Delta, and the mokoro mornings are the ones you’ll never forget.”',
-    years: 12, fav: 'Mombo Camp, Okavango', response: 'Replies in ~15 min · 8am–8pm SAST' },
-  heroReel: '',
-  segments: [
-    { id: 'singita', scene: 'madikwe', bandRegion: 'South Africa', bandName: 'Sabi Sand', region: 'Big-cat country',
-      lodge: 'Singita Boulders Lodge', day: '1–3', dayWord: 'Days', dates: '15–18 Sept',
-      narrative: 'Begin above the Sand River — leopards at first light and the benchmark of Sabi Sand luxury.',
-      detail: ['3 nights', 'Suite', 'all meals & game drives'], badges: [{ type: 'care', label: 'Malaria area · guidance sent' }],
-      acts: ['Morning game drive', 'Leopard tracking on foot', 'Bush breakfast', 'Photographic hide', 'Spa treatment'],
-      tone: 'linear-gradient(135deg,#3a2c17,#6b4a23 55%,#241a0e)', img: 'https://images.unsplash.com/photo-1516426122078-c23e76319801?w=1600&q=80', reel: '',
-      sensory: 'Leopards at first light, the river murmuring below your deck.',
-      kb: 'Malaria area — begin prophylaxis before arrival. Neutral tones, a warm layer for dawn drives. We request the north-facing Boulders Suite.',
-      value: 14200, ref: 'SG-49217', status: 'confirmed', gameCamp: true, vehPerDay: 260, cancel: [[60, 25], [30, 50], [0, 100]] },
-    { id: 'mombo', scene: 'delta', bandRegion: 'Botswana', bandName: 'Okavango Delta', region: 'Water wilderness',
-      lodge: 'Mombo Camp', day: '4–7', dayWord: 'Days', dates: '18–22 Sept',
-      narrative: 'The crescendo — water, wildlife and silence on Chief’s Island in the world’s greatest inland delta.',
-      detail: ['4 nights', 'Tented suite', 'fully inclusive'], badges: [{ type: 'care', label: 'Malaria area · guidance sent' }],
-      acts: ['Mokoro at dawn', 'Big-game drive', 'Guided bush walk', 'Helicopter flight (add-on)', 'Night drive'],
-      tone: 'linear-gradient(135deg,#16312e,#1f5a4d 55%,#0c211d)', img: 'https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=1600&q=80', reel: '',
-      sensory: 'Gliding by mokoro through lily-strewn channels as the sun lifts the mist.',
-      kb: 'Light aircraft only — soft bags, 20kg incl. hand luggage. Water peaks Jun–Aug, ideal for mokoro.',
-      value: 16800, ref: '—', status: 'confirming', gameCamp: true, vehPerDay: 290, cancel: [[45, 20], [21, 50], [0, 100]] },
-    { id: 'vicfalls', scene: 'falls', bandRegion: 'Zimbabwe', bandName: 'Victoria Falls', region: 'The Smoke that Thunders',
-      lodge: 'Victoria Falls Island Treehouse', day: '8–9', dayWord: 'Days', dates: '22–24 Sept',
-      narrative: 'A treehouse on a private island above the Falls — copper sunsets on the Zambezi.',
-      detail: ['2 nights', 'Treehouse suite', 'B&B + tours'], badges: [{ type: 'visa', label: 'Zimbabwe entry · visa handled' }, { type: 'care', label: 'Malaria area · guidance sent' }],
-      acts: ['Guided Falls tour', 'Sunset Zambezi cruise', 'Helicopter over the Falls (add-on)', "Devil's Pool"],
-      tone: 'linear-gradient(135deg,#173042,#225a6b 55%,#0f2230)', img: 'https://images.unsplash.com/photo-1610552050890-fe99536c2615?w=1600&q=80', reel: '',
-      sensory: 'Waking to the spray of the Falls on the horizon and fish-eagles overhead.',
-      kb: 'Most UK passports get the KAZA Univisa on arrival. Falls fullest Mar–Jul.',
-      value: 4300, ref: 'VF-1182', status: 'confirmed', gameCamp: false, cancel: [[30, 15], [14, 50], [0, 100]] },
-    { id: 'ellerman', scene: 'cape', bandRegion: 'South Africa', bandName: 'Cape Town', region: 'The Mother City',
-      lodge: 'Ellerman House', day: '10–11', dayWord: 'Days', dates: '24–26 Sept',
-      narrative: 'Close gently above Bantry Bay — Atlantic sunsets, a cliffside cellar, the city before home.',
-      detail: ['2 nights', 'Sea-facing suite', 'breakfast daily'], badges: [{ type: 'free', label: 'Malaria-free' }],
-      acts: ['Table Mountain', 'Cape Winelands tour', 'Cape Point drive', 'Private art-collection tour'],
-      tone: 'linear-gradient(135deg,#1d2536,#2f4a6b 55%,#121826)', img: 'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=1600&q=80', reel: '',
-      sensory: 'Atlantic sunsets, a wine cellar carved into the rock, the city humming below.',
-      kb: 'No malaria. Layered weather. Book the Table Mountain cableway early; it closes in high wind.',
-      value: 3200, ref: 'EH-7741', status: 'confirmed', gameCamp: false, cancel: [[21, 10], [7, 50], [0, 100]] },
-  ],
-  transfers: [
-    { tag: 'Arrival · 14–15 Sept', legs: [
-      leg('longhaul', 'British Airways', 'BA 055', 'LHR', D(14, '19:05'), 'JNB', D(15, '07:25'), 'confirmed'),
-      leg('air', 'Airlink', '4Z 121', 'JNB', D(15, '10:15'), 'Sabi airstrip', D(15, '11:25'), 'confirmed'),
-      leg('road', 'Singita transfer', 'road', 'airstrip', D(15, '11:40'), 'Singita', D(15, '12:00'), 'confirmed') ],
-      notes: [{ good: true, text: 'Overnight long-haul, then one short hop — no second flight the day you land.' },
-              { good: true, text: 'A ranger meets you planeside; you’re never left to find your own way.' }] },
-    { tag: 'Transfer · Day 4 · 18 Sept', legs: [
-      leg('air', 'Federal Air (charter)', 'FA chtr', 'Sabi', D(18, '11:00'), 'JNB', D(18, '12:20'), 'confirmed'),
-      leg('air', 'Airlink', '4Z 224', 'JNB', D(18, '14:30'), 'MUB Maun', D(18, '16:25'), 'confirmed', true),
-      leg('bush', 'Wilderness Air', 'WA lt', 'MUB Maun', D(18, '17:10'), 'Mombo airstrip', D(18, '17:45'), 'confirming') ],
-      notes: [{ good: true, text: 'A 2h05 buffer on the Johannesburg cross-border connection — never rushed, bags checked through.' }] },
-    { tag: 'Transfer · Day 8 · 22 Sept', legs: [
-      leg('bush', 'Wilderness Air', 'WA lt', 'Mombo', D(22, '09:30'), 'BBK Kasane', D(22, '10:40'), 'confirming'),
-      leg('road', 'Private road transfer', 'road', 'Kasane', D(22, '11:10'), 'Victoria Falls ZW', D(22, '12:25'), 'confirmed', true) ],
-      notes: [{ good: false, text: 'The Kasane road leg crosses into Zimbabwe on the KAZA Univisa, issued on arrival — brief sent ahead.' }] },
-    { tag: 'Transfer · Day 10 · 24 Sept', legs: [
-      leg('air', 'Airlink', '4Z 142', 'VFA', D(24, '13:55'), 'JNB', D(24, '15:45'), 'confirmed'),
-      leg('air', 'Airlink', '4Z 388', 'JNB', D(24, '17:30'), 'CPT Cape Town', D(24, '19:35'), 'confirmed') ],
-      notes: [{ good: true, text: 'Routed via Johannesburg with lounge access during the 1h45 layover — comfortable, not a scramble.' }] },
-  ],
-  homeward: { tag: 'Departure · Day 12 · 26 Sept', legs: [
-    leg('longhaul', 'British Airways', 'BA 058', 'CPT', D(26, '19:20'), 'LHR London', D(27, '06:05'), 'confirmed') ],
-    notes: [{ good: true, text: 'An evening departure leaves your final Cape Town day completely free.' }] },
-};
-
-// ── data access (swap the body for Supabase in production) ───────────────────
-export async function getJourney(code: string): Promise<Journey> {
-  // const { data } = await supabase.from('journeys').select('*, segments(*), transfers(*)').eq('ref', code).single();
-  // return mapRowToJourney(data);
-  return DEMO_JOURNEY;
+function formatDateRange(checkIn: string, checkOut: string): string {
+  if (!checkIn) return 'Dates TBC';
+  const a = new Date(checkIn);
+  const b = checkOut ? new Date(checkOut) : null;
+  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return b ? `${fmt(a)} — ${fmt(b)}` : fmt(a);
 }
-export function getJourneySync(): Journey { return DEMO_JOURNEY; } // for client default props / demos
 
-// ── one price + deposit rule (used by every surface) ─────────────────────────
+function daysUntil(dateStr: string): number {
+  if (!dateStr) return 0;
+  return Math.max(0, Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000));
+}
+
+function sceneForRegion(slug: string): SceneName {
+  if (slug.includes('cape')) return 'cape';
+  if (slug.includes('madikwe')) return 'madikwe';
+  if (slug.includes('vic') || slug.includes('chobe') || slug.includes('falls')) return 'falls';
+  if (slug.includes('okavango') || slug.includes('delta')) return 'delta';
+  if (slug.includes('kruger') || slug.includes('sabi')) return 'kruger';
+  return 'kruger';
+}
+
+function regionLabel(slug: string): string {
+  const map: Record<string, string> = {
+    'kruger-sabi-sand': 'Kruger / Sabi Sand',
+    'okavango-delta':   'Okavango Delta',
+    'cape-town':        'Cape Town',
+    'madikwe':          'Madikwe',
+    'chobe-vic-falls':  'Chobe / Victoria Falls',
+    'masai-mara':       'Masai Mara',
+    'bwindi':           'Bwindi',
+  };
+  return map[slug] || slug;
+}
+
+// ── Map booking + itinerary rows → Journey shape ─────────────────────────────
+function mapToJourney(booking: any, itinerary: any): Journey {
+  const snap     = booking.lead_traveller_snapshot || {};
+  const name     = snap.name || 'Traveller';
+  const parts    = name.trim().split(' ');
+  const surname  = parts.length > 1 ? parts[parts.length - 1] : name;
+  const checkIn  = itinerary?.check_in  || booking.check_in  || '';
+  const checkOut = itinerary?.check_out || booking.check_out || '';
+  const nights   = itinerary?.nights    || booking.nights    || 0;
+  const adults   = itinerary?.adults    || booking.adults    || 2;
+  const totalZAR = booking.total_display_zar || itinerary?.total_display_zar || 0;
+  const components: any[] = itinerary?.components || [];
+
+  // Build segments from components or cities
+  const cities: any[] = itinerary?.cities || [];
+  const segments: Segment[] = cities.map((city: any, i: number) => {
+    const slug   = city.regionSlug || '';
+    const lodge  = city.selectedHotel?.name || city.hotel || 'Lodge TBC';
+    const cNights = city.nights || 1;
+    return {
+      id:          `seg-${i}`,
+      scene:       sceneForRegion(slug),
+      bandRegion:  regionLabel(slug),
+      bandName:    lodge,
+      region:      regionLabel(slug),
+      lodge,
+      day:         `${cNights}`,
+      dayWord:     cNights === 1 ? 'Day' : 'Days' as 'Days',
+      dates:       checkIn ? formatDateRange(checkIn, checkOut) : 'Dates TBC',
+      narrative:   city.why || '',
+      detail:      city.highlights || [],
+      badges:      [],
+      acts:        city.activities || [],
+      tone:        '',
+      img:         city.heroImage || city.image || undefined,
+      value:       city.estimatedCost || 0,
+      ref:         booking.booking_reference || '',
+      status:      'confirming' as LegStatus,
+      gameCamp:    slug.includes('kruger') || slug.includes('okavango') || slug.includes('madikwe'),
+      cancel:      [[45, 50], [30, 100]] as [number, number][],
+    };
+  });
+
+  // Fallback: if no cities, create one segment from booking data
+  if (segments.length === 0) {
+    segments.push({
+      id: 'seg-0', scene: 'kruger', bandRegion: 'Your Safari',
+      bandName: 'Lodge TBC', region: 'Your Safari', lodge: 'Lodge TBC',
+      day: `${nights}`, dayWord: 'Days', dates: formatDateRange(checkIn, checkOut),
+      narrative: '', detail: [], badges: [], acts: [], tone: '',
+      value: totalZAR, ref: booking.booking_reference || '',
+      status: 'confirming', gameCamp: true, cancel: [[45, 50], [30, 100]],
+    });
+  }
+
+  const route = cities.length > 0
+    ? cities.map((c: any) => regionLabel(c.regionSlug || '')).filter(Boolean)
+    : ['Your Safari'];
+
+  const EXCHANGE = { GBP: 0.042, USD: 0.054, EUR: 0.049 };
+  const flyZAR   = components
+    .filter(c => (c.type || '').toLowerCase().includes('flight'))
+    .reduce((s, c) => s + (c.price_display_zar || 0), 0);
+  const accZAR   = totalZAR - flyZAR;
+
+  return {
+    ref:       booking.booking_reference || booking.idempotency_key || 'TSE-DEMO',
+    eyebrow:   'The Safari Edition · Bespoke Journey',
+    title:     itinerary?.title || `${nights}-Night Safari`,
+    subtitle:  route.join(' · '),
+    route,
+    nights,
+    dates:     formatDateRange(checkIn, checkOut),
+    departIn:  daysUntil(checkIn),
+    startISO:  checkIn ? new Date(checkIn).toISOString() : new Date().toISOString(),
+    travellers: [name],
+    pax:       adults,
+    surname,
+    email:     snap.email || '',
+    price: {
+      ZAR: { sym: 'R',   acc: accZAR,                          fly: flyZAR },
+      GBP: { sym: '£',   acc: Math.round(accZAR * EXCHANGE.GBP), fly: Math.round(flyZAR * EXCHANGE.GBP) },
+      USD: { sym: 'US$', acc: Math.round(accZAR * EXCHANGE.USD), fly: Math.round(flyZAR * EXCHANGE.USD) },
+      EUR: { sym: '€',   acc: Math.round(accZAR * EXCHANGE.EUR), fly: Math.round(flyZAR * EXCHANGE.EUR) },
+    },
+    included: [
+      `All accommodation — ${nights} nights`,
+      'All meals & game activities on safari',
+      'All internal flights, charters & private transfers',
+      'Park, conservation & concession fees',
+      'Dedicated specialist + 24/7 concierge',
+    ],
+    prep: [
+      { title: 'Pack light for bush legs', body: '20kg soft bag limit on light aircraft. Hard cases can be stored at your gateway hotel.', daysBefore: 60 },
+      { title: 'Visa requirements', body: 'Check requirements for all countries on your itinerary well in advance.', daysBefore: 90 },
+      { title: 'Malaria prophylactics', body: 'Consult your GP 6 weeks before travel for safari regions.', daysBefore: 45 },
+    ],
+    specialist: {
+      initials: 'SM',
+      name:     'Sarah Mitchell',
+      role:     'Senior Safari Specialist',
+      rec:      'Your journey specialist — available on WhatsApp & email.',
+      years:    8,
+    },
+    segments,
+    transfers: segments.map(() => ({
+      tag:   'Transfer confirmed by specialist',
+      legs:  [],
+      notes: [{ good: true, text: 'Your specialist will confirm all transfer details within 2 hours.' }],
+    })),
+    homeward: {
+      tag:   'Homeward journey',
+      legs:  [],
+      notes: [{ good: true, text: 'Return transfer details confirmed by your specialist.' }],
+    },
+  };
+}
+
+// ── getJourney — reads Supabase, falls back to demo ──────────────────────────
+export async function getJourney(code: string): Promise<Journey> {
+  // Demo codes — return demo journey immediately
+  if (!code || code === 'KR7P2MX4' || code === 'DEMO') return DEMO_JOURNEY;
+
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return DEMO_JOURNEY;
+
+    const supabase = createClient(url, key);
+
+    // Look up booking by booking_reference
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('booking_reference', code)
+      .single();
+
+    if (bErr || !booking) return DEMO_JOURNEY;
+
+    // Load the itinerary if linked
+    let itinerary = null;
+    if (booking.itinerary_id) {
+      const { data: itin } = await supabase
+        .from('itineraries')
+        .select('*')
+        .eq('id', booking.itinerary_id)
+        .single();
+      itinerary = itin;
+    }
+
+    return mapToJourney(booking, itinerary);
+
+  } catch {
+    return DEMO_JOURNEY;
+  }
+}
+
+export function getJourneySync(): Journey { return DEMO_JOURNEY; }
+
+// ── totals helper ─────────────────────────────────────────────────────────────
 export function totals(j: Journey, cur: Currency = 'GBP', vehTotal = 0, repriceDelta = 0) {
   const p = j.price[cur];
-  const total = p.acc + p.fly + vehTotal + repriceDelta;
-  const deposit = p.fly + Math.round(p.acc * 0.3);   // flights in full + 30% of land
+  const total   = p.acc + p.fly + vehTotal + repriceDelta;
+  const deposit = p.fly + Math.round(p.acc * 0.3);
   return { sym: p.sym, acc: p.acc, fly: p.fly, total, deposit, paid: deposit, balance: total - deposit };
 }
-export const balanceDue = (j: Journey) => { const d = new Date(j.startISO); d.setDate(d.getDate() - 45); return d; }; // 45 days before travel
 
-// ── ADAPTER: canonical Journey → the cream JourneyTimeline `items[]` shape ───
-// Keeps the editorial renderer untouched; it just consumes this output.
+export const balanceDue = (j: Journey) => {
+  const d = new Date(j.startISO);
+  d.setDate(d.getDate() - 45);
+  return d;
+};
+
 const hm = (iso: string) => new Date(iso).toTimeString().slice(0, 5);
 const logoOf = (carrier: string) =>
   carrier.startsWith('British') ? 'BA' : carrier.startsWith('Airlink') ? '4Z'
@@ -192,7 +277,7 @@ export function toTimelineItems(j: Journey) {
     bandRegion: s.bandRegion, bandName: s.bandName, region: s.region, lodge: s.lodge,
     narrative: s.narrative, detail: s.detail, badges: s.badges, acts: s.acts,
   });
-  const items: any[] = [transferToItem(j.transfers[0])]; // inbound arrival first
+  const items: any[] = [transferToItem(j.transfers[0] || j.homeward)];
   j.segments.forEach((s, i) => {
     items.push(stopToItem(s));
     if (i < j.segments.length - 1 && j.transfers[i + 1]) items.push(transferToItem(j.transfers[i + 1]));
@@ -200,3 +285,39 @@ export function toTimelineItems(j: Journey) {
   items.push(transferToItem(j.homeward));
   return items;
 }
+
+// ── DEMO_JOURNEY (kept for fallback + demo URLs) ──────────────────────────────
+const D = (day: number, hm: string) => `2026-09-${String(day).padStart(2, '0')}T${hm}:00`;
+const legD = (kind: Leg['kind'], carrier: string, no: string, depApt: string, dep: string,
+             arrApt: string, arr: string, status: LegStatus, cross = false): Leg =>
+  ({ kind, carrier, no, depApt, arrApt, dep, arr, status, cross });
+
+export const DEMO_JOURNEY: Journey = {
+  ref: 'KR7P2MX4',
+  eyebrow: 'The Safari Edition · Bespoke Journey',
+  title: 'An Untamed Honeymoon',
+  subtitle: 'Sabi Sand · Okavango · Victoria Falls · Cape Town',
+  route: ['Sabi Sand', 'Okavango', 'Victoria Falls', 'Cape Town'],
+  nights: 11, dates: '15 – 26 Sept 2026', departIn: 98, startISO: D(15, '00:00'),
+  travellers: ['James Harrington', 'Eleanor Harrington'], pax: 2, surname: 'Harrington', email: 'j.harrington@example.com',
+  price: {
+    GBP: { sym: '£', acc: 38500, fly: 7000 },
+    ZAR: { sym: 'R', acc: 895000, fly: 163000 },
+    USD: { sym: 'US$', acc: 48500, fly: 8800 },
+    EUR: { sym: '€', acc: 45000, fly: 8200 },
+  },
+  included: [
+    'All accommodation — 11 nights across 4 camps', 'All meals & game activities on safari',
+    'All internal flights, charters & private transfers', 'Park, conservation & concession fees',
+    'Zimbabwe / KAZA entry arranged for you', 'Dedicated specialist + 24/7 concierge',
+  ],
+  prep: [
+    { title: 'Pack light for bush legs', body: '20kg soft bag limit on light aircraft.', daysBefore: 60 },
+    { title: 'Visa requirements', body: 'Check requirements for all countries 90 days before travel.', daysBefore: 90 },
+    { title: 'Malaria prophylactics', body: 'Consult your GP 6 weeks before travel.', daysBefore: 45 },
+  ],
+  specialist: { initials: 'SM', name: 'Sarah Mitchell', role: 'Senior Safari Specialist', rec: 'I hand-picked each camp for the September conditions — Mombo for wild dog, Singita for leopard.', years: 8, fav: 'Mombo', response: '< 2 hours' },
+  segments: [],
+  transfers: [],
+  homeward: { tag: 'Homeward journey', legs: [], notes: [] },
+};
