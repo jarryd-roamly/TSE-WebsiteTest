@@ -351,7 +351,11 @@ export async function POST(req: NextRequest) {
   // Commercial entries are always internal_only — enforce server-side
   const effectiveInternal = claim_type === 'commercial' ? true : internal_only;
 
+  // Generate kb_ref — unique reference for this KB entry e.g. KB-SAFARI-A3X9
+  const kb_ref = `KB-${edition_id.toUpperCase().replace(/[^A-Z0-9]/g, '')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
   const payload = {
+    kb_ref,
     edition_id,
     entry_type,
     claim_type,
