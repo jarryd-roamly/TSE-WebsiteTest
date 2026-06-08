@@ -4442,7 +4442,27 @@ const runBriefPlanner = (briefText: string) => {
         if (!hotel) return null;
         const { resolved } = resolveHotelUpgrades(hotel, stay.prefs);
         const extra = Object.values(resolved).reduce((s:number,v:any)=>s+(v?.extra??0),0);
-        return { pillar:'hotel', name:hotel.name, location:hotel.location, nights:stay.nights, net_rate_zar:hotel.netRate*stay.nights+extra, display_rate_zar:Math.round((hotel.netRate*stay.nights+extra)*M.hotels), margin_pct:15, inclusion_source:'contract' as const };
+        return { 
+          pillar:'hotel', 
+          name:hotel.name, 
+          location:hotel.location,
+          destination: hotel.destination || hotel.subRegion || slug,
+          country: hotel.country || city.country || '',
+          region_slug: slug,
+          region_label: city.city || '',
+          nights:stay.nights,
+          net_rate_zar:hotel.netRate*stay.nights+extra, 
+          display_rate_zar:Math.round((hotel.netRate*stay.nights+extra)*M.hotels),
+          price_per_night_usd: Math.round((hotel.displayRate || hotel.netRate * M.hotels) / 18.5),
+          margin_pct:15, 
+          inclusion_source:'contract' as const,
+          hero_image_url: hotel.image || null,
+          trust_score: hotel.trustScore || null,
+          malaria_free: hotel.malariaFree || false,
+          inclusions: hotel.rate_includes || [],
+          fun_fact: hotel.funFact || null,
+          type: 'accommodation',
+        };
       }).filter(Boolean) as BookingComponent[];
       // Deposit = flights+transfers 100% + lodges 30% (per V7-5 spec)
       const _bd = costBreakdown;
