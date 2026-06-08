@@ -1,511 +1,643 @@
 'use client';
+// components/RegionChapter.tsx  v3
+// Immersive chapter wrapper. Carousels are children — untouched.
+// Left: region facts / KB highlights / skeleton findings (traveller-safe only)
+// Right: seasonal note / property tips (traveller-safe only)
+// Background: per-region static image at 9% opacity, fades in on scroll
+// Chapter split: prominent gold rule + chapter label between regions
 
-// IslandEditionLanding.tsx
-// The Island Edition — Maldives · Seychelles · Zanzibar
-// Distinct from Safari Edition: deep ocean palette, water-world imagery, island pacing
+import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { T } from '@/app/lib/theme';
 
-import { useState, useEffect, useRef } from 'react';
+export interface SkeletonFinding {
+  id:string; category:string;
+  severity:'block'|'warning'|'recommendation'|'confirmed';
+  title:string; traveller_message:string;
+  kb_entry_id?:string; traveller_flagged:boolean;
+}
 
-// ── Design tokens — Island Edition ─────────────────────────────────────────
-const C = {
-  bg:         '#060d14',
-  bg2:        '#0a1520',
-  bg3:        '#0f1e2e',
-  surf:       '#132233',
-  border:     'rgba(255,255,255,0.07)',
-  borderTeal: 'rgba(32,178,170,0.28)',
-  teal:       '#20b2aa',
-  tealDim:    'rgba(32,178,170,0.12)',
-  tealGlow:   'rgba(32,178,170,0.22)',
-  text:       '#eef4f8',
-  textMid:    'rgba(238,244,248,0.58)',
-  textDim:    'rgba(238,244,248,0.32)',
-  white:      '#ffffff',
+export interface RegionChapterProps {
+  chapterIndex:         number;
+  totalChapters:        number;
+  regionSlug:           string;
+  regionLabel:          string;
+  countryLabel:         string;
+  nights:               number;
+  checkinDate?:         string;
+  bgImageUrl?:          string;
+  kbHighlights:         string[];  // traveller-safe facts about the region
+  kbTips:               string[];  // traveller-safe tips
+  skeletonFindings:     SkeletonFinding[];
+  selectedHotelName?:   string;
+  selectedHotelIncludes:string[];  // rate_includes from suppliers
+  malariaFree:          boolean;
+  seasonalNote?:        string;
+  specialistNote?:      string;    // MUST be traveller-safe before passing in
+  onRegionVisible?:     (slug: string) => void;  // fires when chapter enters viewport
+  children:             ReactNode;
+}
+
+// ── Static data ───────────────────────────────────────────────────────────────
+
+const REGION_BG: Record<string,string> = {
+  'kruger-sabi-sand':'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1600&q=50',
+  'okavango-delta':  'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=1600&q=50',
+  'cape-town':       'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=1600&q=50',
+  'madikwe':         'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=1600&q=50',
+  'chobe-vic-falls': 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1600&q=50',
+  'masai-mara':      'https://images.unsplash.com/photo-1535083783855-aaab70b8f9b3?w=1600&q=50',
 };
 
-const FONTS = `
-  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&display=swap');
+const CHAPTER_TAG: Record<string,string> = {
+  'kruger-sabi-sand':'The Bush','okavango-delta':'The Delta',
+  'cape-town':'The Cape','madikwe':'The Reserve',
+  'chobe-vic-falls':'The Falls','masai-mara':'The Mara',
+};
+
+const INCLUSION_LABELS: Record<string,{icon:string;label:string}> = {
+  all_meals:      {icon:'meals',label:'All meals'},
+  game_drives:    {icon:'safari',label:'Game drives'},
+  mokoro:         {icon:'boat',label:'Mokoro'},
+  local_drinks:   {icon:'drinks',label:'Local drinks'},
+  premium_drinks: {icon:'drinks',label:'Premium drinks'},
+  laundry:        {icon:'laundry',label:'Laundry'},
+  park_fees:      {icon:'leaf',label:'Park fees'},
+};
+
+// Clean, consistent monochrome line icons (replaces inconsistent emoji)
+function IncIcon({ kind, color }: { kind:string; color:string }) {
+  const common = { width:12, height:12, viewBox:'0 0 24 24', fill:'none', stroke:color, strokeWidth:2, strokeLinecap:'round' as const, strokeLinejoin:'round' as const };
+  switch (kind) {
+    case 'meals':   return <svg {...common}><path d="M4 3v7a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V3"/><path d="M6 12v9"/><path d="M18 3c-1.5 1-2.5 3-2.5 6 0 2 .5 3 2.5 3v9"/></svg>;
+    case 'safari':  return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M2 12h3M19 12h3M12 2v3M12 19v3"/></svg>;
+    case 'boat':    return <svg {...common}><path d="M3 14l1.5 5h15L21 14"/><path d="M5 14V8a7 7 0 0 1 14 0v6"/><path d="M12 3v4"/></svg>;
+    case 'drinks':  return <svg {...common}><path d="M8 3h8l-1 7a3 3 0 0 1-6 0L8 3Z"/><path d="M12 13v6M9 21h6"/></svg>;
+    case 'laundry': return <svg {...common}><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="13" r="4"/></svg>;
+    case 'leaf':    return <svg {...common}><path d="M11 20A7 7 0 0 1 4 13c0-5 5-9 16-9 0 7-4 13-9 13Z"/><path d="M4 20c2-4 5-6 9-7"/></svg>;
+    default:        return <svg {...common}><circle cx="12" cy="12" r="9"/></svg>;
+  }
+}
+
+const SEV: Record<string,{color:string;bg:string;icon:string}> = {
+  block:          {color:T.red,   bg:'rgba(248,113,113,0.08)',icon:'⚠'},
+  warning:        {color:T.amber, bg:'rgba(251,146,60,0.07)', icon:'◈'},
+  recommendation: {color:T.blue,  bg:'rgba(96,165,250,0.07)', icon:'›'},
+  confirmed:      {color:T.green, bg:'rgba(74,222,128,0.07)', icon:'✓'},
+};
+
+// ── Fade-on-scroll hook ───────────────────────────────────────────────────────
+
+function useFade(threshold=0.05) {
+  const ref = useRef(null as HTMLDivElement | null);
+  const [vis, setVis] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setVis(true); return; }
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.intersectionRatio >= threshold) setVis(true); },
+      { threshold:[0, threshold, 0.25], rootMargin:'0px 0px -60px 0px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [threshold]);
+  return { ref, vis };
+}
+
+// ── Typewriter hook — streams text character-by-character when activated ─────
+// Used in LeftSidebar (left-first) and RightSidebar (delayed 450ms).
+// Each string in `texts` streams sequentially.
+function useTypewriter(
+  texts: string[],
+  active: boolean,
+  msPerChar = 26,
+  startDelayMs = 0
+): string[] {
+  const [displayed, setDisplayed] = useState(texts.map(() => '') as string[]);
+  const cancelRef = useRef(false);
+
+  useEffect(() => {
+    if (!active) return;
+    cancelRef.current = false;
+
+    const run = async () => {
+      if (startDelayMs > 0) await new Promise(r => setTimeout(r, startDelayMs));
+      for (let i = 0; i < texts.length; i++) {
+        const text = texts[i];
+        for (let j = 1; j <= text.length; j++) {
+          if (cancelRef.current) return;
+          const char = j; const idx = i;
+          setDisplayed(prev => { const n = [...prev]; n[idx] = text.slice(0, char); return n; });
+          await new Promise(r => setTimeout(r, msPerChar));
+        }
+        if (i < texts.length - 1 && !cancelRef.current) {
+          await new Promise(r => setTimeout(r, 380));
+        }
+      }
+    };
+
+    run();
+    return () => { cancelRef.current = true; };
+  // Re-run when active changes OR when texts content changes (handles async KB load)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, texts.join('||')]);
+
+  // Reset displayed state when texts change so old streamed text doesn't linger
+  useEffect(() => {
+    setDisplayed(texts.map(() => ''));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [texts.join('||')]);
+
+  return displayed;
+}
+
+// ── Mobile hook ──────────────────────────────────────────────────────────────
+
+function useMobile() {
+  const [m,       setM]       = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    const check = () => setM(window.innerWidth < 700);
+    check();
+    window.addEventListener('resize', check, { passive: true });
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  // Return false until mounted — prevents SSR/hydration mismatch
+  return mounted && m;
+}
+
+// ── Mobile CSS ────────────────────────────────────────────────────────────────
+
+const MOBILE_BCC_CSS = `
+  @keyframes kbCursor { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* ── Mobile BCC global ────────────────────────────────────────── */
+  @media (max-width: 699px) {
+    /* Bigger tap targets */
+    button { min-height: 44px; }
+
+    /* Nav safe area */
+    .bcc-nav { padding-left: max(16px, env(safe-area-inset-left)) !important; padding-right: max(16px, env(safe-area-inset-right)) !important; }
+
+    /* Inspire-input — single column, full padding */
+    .inspire-split { display:block !important; }
+    .inspire-form  { padding: 24px 20px 100px !important; max-width:100% !important; }
+
+    /* Property cards — full viewport width */
+    [data-card] { width: min(88vw, 380px) !important; }
+
+    /* Prevent horizontal overflow */
+    body { overflow-x: hidden; }
+  }
 `;
 
-// ── Image config — one place to manage all destination photos ───────────────
-// Glance at each in your preview after pushing; swap any that's off right here.
-// Source for verified replacements: https://unsplash.com/s/photos/[destination]
-// (Unsplash is free for commercial use — same licence you're already using.)
-// For launch: host own/licensed images in /public/islands/ and update these paths.
-const IMAGES = {
-  // Should show: overwater villa / turquoise lagoon
-  // Swap at: https://unsplash.com/s/photos/maldives-overwater-villa
-  maldives:   'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=1000&q=80',
+// ── Mobile RegionChapter layout ───────────────────────────────────────────────
 
-  // Should show: granite boulders + white sand (La Digue / Anse Source d'Argent)
-  // ← THIS is the one you flagged. Verify it isn't Praslin/generic.
-  // Swap at: https://unsplash.com/s/photos/seychelles-la-digue
-  seychelles: 'https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=1000&q=80',
-
-  // Should show: white sand + turquoise water / dhow sail
-  // Swap at: https://unsplash.com/s/photos/zanzibar-beach
-  zanzibar:   'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=1000&q=80',
-} as const;
-
-// ── Island destinations ──────────────────────────────────────────────────────
-const DESTINATIONS = [
-  {
-    id: 'maldives',
-    name: 'Maldives',
-    sub: 'The definitive island escape',
-    tag: 'North Malé · Baa Atoll · Noonu Atoll',
-    img: IMAGES.maldives,
-    highlight: 'Overwater bungalows. House reef snorkelling at dawn. No shoes required.',
-    nights: '5–10 nights',
-    from: '$8,400',
-  },
-  {
-    id: 'seychelles',
-    name: 'Seychelles',
-    sub: 'Pristine granite archipelago',
-    tag: 'Mahé · Praslin · La Digue · Fregate',
-    img: IMAGES.seychelles,
-    highlight: "World's only coco de mer forest. Secluded beaches with zero footprints.",
-    nights: '7–14 nights',
-    from: '$11,200',
-  },
-  {
-    id: 'zanzibar',
-    name: 'Zanzibar',
-    sub: 'Spice island & turquoise coast',
-    tag: 'Stone Town · North Coast · Pemba',
-    img: IMAGES.zanzibar,
-    highlight: 'Swahili culture, coral reefs, and dhow sunsets. The perfect safari extension.',
-    nights: '3–7 nights',
-    from: '$3,200',
-  },
-];
-
-// ── Curated journeys ─────────────────────────────────────────────────────────
-const JOURNEYS = [
-  {
-    name: 'The Maldives Immersion',
-    nights: 8,
-    tagline: 'Two atolls. Reef to horizon. Nothing else.',
-    badge: 'Most booked',
-    badgeColor: C.teal,
-    img: IMAGES.maldives,
-    priceFrom: 142000,
-    otaPrice: 198000,
-  },
-  {
-    name: 'Seychelles & Outer Islands',
-    nights: 11,
-    tagline: 'Begin Mahé. Discover Praslin. Disappear to Fregate.',
-    badge: 'Our favourite',
-    badgeColor: '#a78bfa',
-    img: IMAGES.seychelles,
-    priceFrom: 198000,
-    otaPrice: 271000,
-  },
-  {
-    name: 'Safari & Zanzibar',
-    nights: 10,
-    tagline: 'Three nights Zanzibar. The perfect safari ending.',
-    badge: 'Pairs perfectly',
-    badgeColor: '#4ade80',
-    img: IMAGES.zanzibar,
-    priceFrom: 98000,
-    otaPrice: 134000,
-  },
-];
-
-// ── Trust signals ─────────────────────────────────────────────────────────────
-const TRUST = [
-  { icon: '🪸', label: 'Reef-certified partners',   sub: 'Every resort scored on marine conservation' },
-  { icon: '🛥',  label: 'Private transfers only',    sub: 'No shared speedboats or group shuttles' },
-  { icon: '👤', label: 'Island Specialist assigned', sub: 'Before, during, and after your trip' },
-  { icon: '📍', label: 'Atoll-level expertise',      sub: 'We know which overwater faces the sunset' },
-];
-
-// ── How it works ──────────────────────────────────────────────────────────────
-const HOW = [
-  { n: '01', title: 'Choose your atoll',        body: 'Tell us your island vision in two minutes — pace, privacy, experience level.' },
-  { n: '02', title: 'Itinerary builds instantly', body: 'Our engine sequences transfers, tides, and resort rates. Everything timed.' },
-  { n: '03', title: 'Specialist refines it',     body: 'A human island specialist confirms every detail and personalises your stay.' },
-  { n: '04', title: 'Travel with confidence',    body: 'Concierge available throughout. Every reef transfer pre-arranged.' },
-];
-
-// ── Interest form state ──────────────────────────────────────────────────────
-interface FormState {
-  name: string; email: string; destination: string; when: string; submitted: boolean;
-}
-
-export default function IslandEditionLanding() {
-  const [scrolled,  setScrolled]  = useState(false);
-  const [activeImg, setActiveImg] = useState(0);
-  const [form,      setForm]      = useState<FormState>({ name: '', email: '', destination: 'any', when: '', submitted: false });
-  const [mounted,   setMounted]   = useState(false);
-  const heroRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { setMounted(true); }, []);
+function MobileRegionChapter({
+  chapterIndex, totalChapters, regionSlug, regionLabel, countryLabel,
+  nights, checkinDate, kbHighlights, kbTips, skeletonFindings,
+  selectedHotelName, selectedHotelIncludes, malariaFree,
+  seasonalNote, specialistNote, onRegionVisible, children,
+}: RegionChapterProps) {
+  const ref = useRef(null as HTMLDivElement | null);
+  const [entered,       setEntered]       = useState(false);
+  const [drawerOpen,    setDrawerOpen]    = useState(false);
+  const [drawerPeeked,  setDrawerPeeked]  = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 60);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setEntered(true); return; }
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        setEntered(true);
+        onRegionVisible?.(regionSlug);
+        // Peek drawer after region enters
+        setTimeout(() => { setDrawerPeeked(true); }, 600);
+      }
+    }, { threshold: 0.08, rootMargin: '-15% 0px -15% 0px' });
+    obs.observe(el);
+    return () => obs.disconnect();
   }, []);
 
-  useEffect(() => {
-    const t = setInterval(() => setActiveImg(i => (i + 1) % DESTINATIONS.length), 5000);
-    return () => clearInterval(t);
-  }, []);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setForm(f => ({ ...f, submitted: true }));
-  };
-
-  const fmt = (n: number) => `R ${Math.round(n).toLocaleString()}`;
-
-  if (!mounted) return null;
+  const hasMeta = kbHighlights.length > 0 || kbTips.length > 0 || !!seasonalNote || !!specialistNote;
+  const month   = checkinDate ? new Date(checkinDate).toLocaleString('en', { month: 'long' }) : null;
+  const warns   = skeletonFindings.filter(f => f.severity === 'warning' || f.severity === 'recommendation');
 
   return (
-    <>
-      <style suppressHydrationWarning>{`
-        ${FONTS}
-        *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-        body { background:${C.bg}; color:${C.text}; font-family:'Jost','DM Sans',sans-serif; font-weight:300; }
-        .ie-nav { position:fixed; top:0; left:0; right:0; z-index:100; padding:0 24px; height:60px; display:flex; align-items:center; justify-content:space-between; transition:background 0.3s; }
-        .ie-nav.scrolled { background:rgba(6,13,20,0.94); backdrop-filter:blur(12px); border-bottom:0.5px solid ${C.border}; }
-        .ie-wordmark { font-family:'Cormorant Garamond',serif; font-size:18px; font-weight:600; color:${C.teal}; letter-spacing:0.12em; text-transform:uppercase; }
-        .ie-wordmark small { display:block; font-size:9px; font-weight:300; color:${C.textDim}; letter-spacing:0.22em; margin-top:-2px; }
-        .ie-nav-link { font-size:12px; color:${C.textMid}; text-decoration:none; letter-spacing:0.06em; transition:color 0.2s; }
-        .ie-nav-link:hover { color:${C.teal}; }
-        .ie-back-btn { font-size:11px; color:${C.textDim}; border:0.5px solid ${C.border}; border-radius:20px; padding:5px 12px; text-decoration:none; letter-spacing:0.06em; transition:all 0.2s; display:flex; align-items:center; gap:6px; }
-        .ie-back-btn:hover { color:${C.text}; border-color:rgba(255,255,255,0.2); }
-        .ie-hero { position:relative; min-height:100svh; display:flex; align-items:flex-end; overflow:hidden; }
-        .ie-hero-bg { position:absolute; inset:0; z-index:0; }
-        .ie-hero-bg img { width:100%; height:100%; object-fit:cover; transition:opacity 1.2s ease; }
-        .ie-hero-bg::after { content:''; position:absolute; inset:0; background:linear-gradient(180deg, rgba(6,13,20,0.28) 0%, rgba(6,13,20,0.55) 60%, rgba(6,13,20,0.95) 100%); }
-        .ie-hero-content { position:relative; z-index:1; padding:40px 48px 80px; max-width:700px; }
-        .ie-edition-label { font-size:10px; letter-spacing:0.28em; color:${C.teal}; text-transform:uppercase; font-weight:500; margin-bottom:18px; }
-        .ie-hero-title { font-family:'Cormorant Garamond',serif; font-size:clamp(42px,6vw,76px); font-weight:300; line-height:1.05; color:${C.white}; margin-bottom:18px; }
-        .ie-hero-title em { font-style:italic; color:${C.teal}; }
-        .ie-hero-sub { font-size:16px; color:rgba(238,244,248,0.72); line-height:1.6; max-width:440px; margin-bottom:36px; font-weight:300; }
-        .ie-hero-cta { display:inline-flex; align-items:center; gap:10px; background:${C.teal}; color:#060d14; padding:13px 28px; border-radius:3px; font-size:13px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; border:none; font-family:'Jost',sans-serif; transition:all 0.2s; }
-        .ie-hero-cta:hover { background:#25cec5; transform:translateY(-1px); }
-        .ie-hero-ghost { display:inline-flex; align-items:center; gap:10px; background:transparent; color:${C.text}; padding:13px 28px; border-radius:3px; font-size:13px; font-weight:400; letter-spacing:0.08em; cursor:pointer; border:0.5px solid rgba(255,255,255,0.25); font-family:'Jost',sans-serif; transition:all 0.2s; margin-left:12px; }
-        .ie-hero-ghost:hover { border-color:${C.teal}; color:${C.teal}; }
-        .ie-dest-dots { position:absolute; bottom:32px; right:48px; z-index:2; display:flex; gap:8px; }
-        .ie-dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.3); cursor:pointer; transition:all 0.2s; }
-        .ie-dot.active { background:${C.teal}; transform:scale(1.4); }
-        .ie-section { padding:96px 48px; max-width:1200px; margin:0 auto; }
-        .ie-section-label { font-size:10px; letter-spacing:0.28em; color:${C.teal}; text-transform:uppercase; margin-bottom:12px; }
-        .ie-section-title { font-family:'Cormorant Garamond',serif; font-size:clamp(30px,4vw,48px); font-weight:300; color:${C.text}; margin-bottom:20px; line-height:1.15; }
-        .ie-section-body { font-size:15px; color:${C.textMid}; line-height:1.7; max-width:560px; }
-        .ie-dest-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; margin-top:48px; }
-        .ie-dest-card { position:relative; overflow:hidden; aspect-ratio:3/4; cursor:pointer; }
-        .ie-dest-card img { width:100%; height:100%; object-fit:cover; transition:transform 0.6s ease; }
-        .ie-dest-card:hover img { transform:scale(1.06); }
-        .ie-dest-card-overlay { position:absolute; inset:0; background:linear-gradient(180deg,transparent 40%,rgba(6,13,20,0.9) 100%); padding:24px; display:flex; flex-direction:column; justify-content:flex-end; }
-        .ie-dest-name { font-family:'Cormorant Garamond',serif; font-size:28px; font-weight:400; color:${C.white}; }
-        .ie-dest-sub { font-size:11px; color:${C.teal}; letter-spacing:0.12em; margin-bottom:6px; text-transform:uppercase; }
-        .ie-dest-tag { font-size:11px; color:rgba(238,244,248,0.5); margin-top:4px; }
-        .ie-dest-nights { position:absolute; top:16px; right:16px; background:rgba(6,13,20,0.75); border:0.5px solid ${C.borderTeal}; border-radius:20px; padding:4px 12px; font-size:10px; color:${C.teal}; letter-spacing:0.08em; }
-        .ie-journey-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin-top:48px; }
-        .ie-journey-card { background:${C.bg2}; border:0.5px solid ${C.border}; border-radius:12px; overflow:hidden; transition:border-color 0.2s; }
-        .ie-journey-card:hover { border-color:${C.borderTeal}; }
-        .ie-journey-img { width:100%; aspect-ratio:16/9; object-fit:cover; }
-        .ie-journey-body { padding:20px; }
-        .ie-journey-badge { display:inline-block; font-size:9px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; padding:3px 9px; border-radius:20px; margin-bottom:10px; }
-        .ie-journey-name { font-family:'Cormorant Garamond',serif; font-size:20px; font-weight:400; color:${C.text}; margin-bottom:6px; }
-        .ie-journey-tagline { font-size:12px; color:${C.textMid}; line-height:1.5; margin-bottom:16px; }
-        .ie-journey-price { display:flex; align-items:baseline; gap:10px; }
-        .ie-journey-from { font-size:18px; font-weight:600; color:${C.text}; }
-        .ie-journey-ota { font-size:12px; color:${C.textDim}; text-decoration:line-through; }
-        .ie-journey-saving { font-size:10px; color:#4ade80; font-weight:600; letter-spacing:0.06em; }
-        .ie-trust-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; margin-top:48px; }
-        .ie-trust-item { background:${C.bg2}; padding:32px 24px; }
-        .ie-trust-icon { font-size:28px; margin-bottom:14px; }
-        .ie-trust-label { font-size:14px; font-weight:500; color:${C.text}; margin-bottom:6px; }
-        .ie-trust-sub { font-size:12px; color:${C.textDim}; line-height:1.5; }
-        .ie-how-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; margin-top:48px; }
-        .ie-how-item { background:${C.bg2}; padding:32px 24px; }
-        .ie-how-n { font-family:'Cormorant Garamond',serif; font-size:40px; font-weight:300; color:${C.borderTeal}; margin-bottom:14px; line-height:1; }
-        .ie-how-title { font-size:14px; font-weight:500; color:${C.text}; margin-bottom:8px; }
-        .ie-how-body { font-size:12px; color:${C.textDim}; line-height:1.6; }
-        .ie-form-section { background:${C.bg2}; border-top:0.5px solid ${C.border}; padding:96px 48px; }
-        .ie-form-inner { max-width:560px; margin:0 auto; }
-        .ie-form { display:grid; gap:12px; margin-top:36px; }
-        .ie-form input, .ie-form select { background:${C.bg3}; border:0.5px solid ${C.border}; border-radius:6px; padding:12px 16px; color:${C.text}; font-family:'Jost',sans-serif; font-size:13px; width:100%; outline:none; transition:border-color 0.2s; }
-        .ie-form input:focus, .ie-form select:focus { border-color:${C.teal}; }
-        .ie-form input::placeholder { color:${C.textDim}; }
-        .ie-form select option { background:${C.bg3}; }
-        .ie-form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-        .ie-form-submit { background:${C.teal}; color:#060d14; border:none; border-radius:6px; padding:13px 28px; font-family:'Jost',sans-serif; font-size:13px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; width:100%; margin-top:4px; transition:background 0.2s; }
-        .ie-form-submit:hover { background:#25cec5; }
-        .ie-form-success { text-align:center; padding:32px; }
-        .ie-form-success-icon { font-size:40px; margin-bottom:12px; }
-        .ie-form-success-title { font-family:'Cormorant Garamond',serif; font-size:26px; color:${C.text}; margin-bottom:8px; }
-        .ie-form-success-body { font-size:13px; color:${C.textMid}; line-height:1.6; }
-        .ie-footer { padding:40px 48px; border-top:0.5px solid ${C.border}; display:flex; justify-content:space-between; align-items:center; }
-        .ie-footer-brand { font-family:'Cormorant Garamond',serif; font-size:13px; color:${C.textDim}; letter-spacing:0.1em; }
-        .ie-footer-links { display:flex; gap:24px; }
-        .ie-footer-link { font-size:11px; color:${C.textDim}; text-decoration:none; letter-spacing:0.06em; transition:color 0.2s; }
-        .ie-footer-link:hover { color:${C.teal}; }
-        .ie-safari-banner { background:linear-gradient(135deg,#0f1a0a,#151f10); border:0.5px solid rgba(212,175,55,0.2); border-radius:12px; padding:28px 32px; display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:48px; }
-        .ie-safari-text strong { font-family:'Cormorant Garamond',serif; font-size:20px; font-weight:400; color:#f5f0e8; display:block; margin-bottom:4px; }
-        .ie-safari-text span { font-size:12px; color:rgba(212,175,55,0.7); }
-        .ie-safari-btn { background:rgba(212,175,55,0.1); border:0.5px solid rgba(212,175,55,0.3); color:#d4af37; padding:10px 22px; border-radius:6px; font-family:'Jost',sans-serif; font-size:12px; font-weight:500; letter-spacing:0.08em; text-decoration:none; white-space:nowrap; transition:all 0.2s; }
-        .ie-safari-btn:hover { background:rgba(212,175,55,0.18); }
-        @media (max-width:768px) {
-          .ie-hero-content { padding:32px 24px 72px; }
-          .ie-section { padding:64px 24px; }
-          .ie-dest-grid, .ie-journey-grid { grid-template-columns:1fr; }
-          .ie-trust-grid, .ie-how-grid { grid-template-columns:1fr 1fr; }
-          .ie-form-section { padding:64px 24px; }
-          .ie-form-row { grid-template-columns:1fr; }
-          .ie-footer { flex-direction:column; gap:16px; text-align:center; }
-          .ie-footer-links { flex-wrap:wrap; justify-content:center; }
-          .ie-safari-banner { flex-direction:column; align-items:flex-start; }
-        }
-      `}</style>
+    <div ref={ref} style={{ position: 'relative', paddingBottom: hasMeta ? 0 : 0 }}>
+      <style suppressHydrationWarning>{MOBILE_BCC_CSS}</style>
 
-      {/* ── NAV ── */}
-      <nav className={`ie-nav ${scrolled ? 'scrolled' : ''}`}>
-        <div>
-          <div className="ie-wordmark">
-            The Island Edition
-            <small>by The Travel Catalogue</small>
+      {/* Chapter divider */}
+      {chapterIndex > 0 && (
+        <div style={{ padding: '32px 0 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1, height: '1px', background: `linear-gradient(to right, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)` }} />
+            <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 3, flexShrink: 0 }}>
+              <div style={{ width: 5, height: 5, background: T.gold, transform: 'rotate(45deg)', opacity: 0.8 }} />
+              <div style={{ fontSize: 8, letterSpacing: '0.45em', textTransform: 'uppercase' as const, color: T.gold, opacity: 0.7, whiteSpace: 'nowrap' as const }}>
+                {String(chapterIndex + 1).padStart(2, '0')} / {String(totalChapters).padStart(2, '0')} &nbsp;·&nbsp; {CHAPTER_TAG[regionSlug] ?? regionLabel} &nbsp;·&nbsp; {countryLabel}
+              </div>
+              <div style={{ width: 5, height: 5, background: T.gold, transform: 'rotate(45deg)', opacity: 0.8 }} />
+            </div>
+            <div style={{ flex: 1, height: '1px', background: `linear-gradient(to left, transparent, \${T.gold}55, \${T.gold}88, \${T.gold}55, transparent)` }} />
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <a href="#destinations" className="ie-nav-link">Destinations</a>
-          <a href="#journeys"     className="ie-nav-link">Journeys</a>
-          <a href="#notify"       className="ie-nav-link">Notify me</a>
-          <a href="/"             className="ie-back-btn">← The Safari Edition</a>
-        </div>
-      </nav>
+      )}
 
-      {/* ── HERO ── */}
-      <section className="ie-hero" ref={heroRef} id="top">
-        <div className="ie-hero-bg">
-          {DESTINATIONS.map((d, i) => (
-            <img
-              key={d.id}
-              src={d.img}
-              alt={d.name}
-              style={{
-                position: 'absolute', inset: 0,
-                opacity: i === activeImg ? 1 : 0,
-                transition: 'opacity 1.4s ease',
-              }}
-            />
-          ))}
-        </div>
-
-        <div className="ie-hero-content">
-          <div className="ie-edition-label">✦ The Island Edition</div>
-          <h1 className="ie-hero-title">
-            Where the ocean<br /><em>is the destination</em>
-          </h1>
-          <p className="ie-hero-sub">
-            The same specialist knowledge and contracted rates that define The Safari Edition — now applied to the world's finest island escapes. Maldives. Seychelles. Zanzibar.
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <a href="#notify">
-              <button className="ie-hero-cta">Request early access →</button>
-            </a>
-            <a href="#destinations">
-              <button className="ie-hero-ghost">Explore islands</button>
-            </a>
+      {chapterIndex === 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '0 2px' }}>
+          <div style={{ fontSize: 8, letterSpacing: '0.38em', textTransform: 'uppercase' as const, color: T.gold, opacity: 0.5, flexShrink: 0, whiteSpace: 'nowrap' as const }}>
+            {String(chapterIndex + 1).padStart(2, '0')} / {String(totalChapters).padStart(2, '0')} · {CHAPTER_TAG[regionSlug] ?? regionLabel}
           </div>
+          <div style={{ flex: 1, height: '0.5px', background: T.borderGold, opacity: 0.3 }} />
         </div>
+      )}
 
-        <div className="ie-dest-dots">
-          {DESTINATIONS.map((d, i) => (
+      {/* Skeleton warnings — inline on mobile */}
+      {warns.slice(0, 1).map(f => {
+        const s = SEV[f.severity] ?? SEV.recommendation;
+        return (
+          <div key={f.id} style={{ margin: '0 0 12px', padding: '10px 14px', borderLeft: `2px solid \${s.color}`, background: s.bg, borderRadius: '0 8px 8px 0' }}>
+            <div style={{ fontSize: 10, color: s.color, fontWeight: 700, marginBottom: 2 }}>{s.icon} {f.title}</div>
+            <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.55 }}>{f.traveller_message}</div>
+          </div>
+        );
+      })}
+
+      {/* Main carousel content — full width */}
+      <div style={{ opacity: entered ? 1 : 0, transform: entered ? 'none' : 'translateY(12px)', transition: 'opacity 0.6s ease, transform 0.6s ease' }}>
+        {children}
+      </div>
+
+      {/* KB bottom drawer — peeks up after scroll */}
+      {hasMeta && (
+        <>
+          {/* Drawer backdrop */}
+          {drawerOpen && (
             <div
-              key={d.id}
-              className={`ie-dot ${i === activeImg ? 'active' : ''}`}
-              onClick={() => setActiveImg(i)}
+              onClick={() => setDrawerOpen(false)}
+              style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
             />
-          ))}
-        </div>
-      </section>
-
-      {/* ── DESTINATIONS ── */}
-      <section className="ie-section" id="destinations">
-        <div className="ie-section-label">✦ Where we operate</div>
-        <h2 className="ie-section-title">Three island worlds.<br />One specialist platform.</h2>
-        <p className="ie-section-body">
-          Every resort personally evaluated. Overwater villa categories mapped. Transfer timing pre-calculated. The Island Edition applies the same rigour as the safari world to the Indian Ocean.
-        </p>
-
-        <div className="ie-dest-grid">
-          {DESTINATIONS.map(d => (
-            <div key={d.id} className="ie-dest-card">
-              <img src={d.img} alt={d.name} loading="lazy" />
-              <div className="ie-dest-card-overlay">
-                <div className="ie-dest-sub">{d.tag}</div>
-                <div className="ie-dest-name">{d.name}</div>
-                <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5, marginTop: 8 }}>
-                  {d.highlight}
-                </div>
-              </div>
-              <div className="ie-dest-nights">{d.nights} · from {d.from}/pp</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="ie-safari-banner">
-          <div className="ie-safari-text">
-            <strong>Planning a bush & beach combination?</strong>
-            <span>The Safari Edition handles Southern Africa. We connect the two.</span>
-          </div>
-          <a href="/" className="ie-safari-btn">← The Safari Edition</a>
-        </div>
-      </section>
-
-      {/* ── JOURNEYS ── */}
-      <section style={{ padding: '0 48px 96px', maxWidth: 1200, margin: '0 auto' }} id="journeys">
-        <div className="ie-section-label">✦ Curated journeys</div>
-        <h2 className="ie-section-title">Our most-booked island programmes</h2>
-
-        <div className="ie-journey-grid">
-          {JOURNEYS.map(j => {
-            const saving = Math.round((1 - j.priceFrom / j.otaPrice) * 100);
-            return (
-              <div key={j.name} className="ie-journey-card">
-                <img src={j.img} alt={j.name} className="ie-journey-img" loading="lazy" />
-                <div className="ie-journey-body">
-                  <div
-                    className="ie-journey-badge"
-                    style={{
-                      background: `${j.badgeColor}18`,
-                      color: j.badgeColor,
-                      border: `0.5px solid ${j.badgeColor}40`,
-                    }}
-                  >
-                    {j.badge}
-                  </div>
-                  <div className="ie-journey-name">{j.name}</div>
-                  <div style={{ fontSize: 11, color: C.teal, marginBottom: 8, letterSpacing: '0.06em' }}>
-                    {j.nights} nights
-                  </div>
-                  <div className="ie-journey-tagline">{j.tagline}</div>
-                  <div className="ie-journey-price">
-                    <span className="ie-journey-from">
-                      {fmt(j.priceFrom)}{' '}
-                      <span style={{ fontSize: 11, fontWeight: 300, color: C.textDim }}>/person</span>
-                    </span>
-                    <span className="ie-journey-ota">{fmt(j.otaPrice)}</span>
-                    <span className="ie-journey-saving">↓ {saving}%</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ── TRUST ── */}
-      <section style={{ background: C.bg2, borderTop: `0.5px solid ${C.border}`, borderBottom: `0.5px solid ${C.border}` }}>
-        <div style={{ padding: '96px 48px', maxWidth: 1200, margin: '0 auto' }}>
-          <div className="ie-section-label">✦ Why book with us</div>
-          <h2 className="ie-section-title">The specialist difference</h2>
-          <div className="ie-trust-grid">
-            {TRUST.map(t => (
-              <div key={t.label} className="ie-trust-item">
-                <div className="ie-trust-icon">{t.icon}</div>
-                <div className="ie-trust-label">{t.label}</div>
-                <div className="ie-trust-sub">{t.sub}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── HOW IT WORKS ── */}
-      <section style={{ padding: '96px 48px', maxWidth: 1200, margin: '0 auto' }}>
-        <div className="ie-section-label">✦ The process</div>
-        <h2 className="ie-section-title">Five questions.<br />A fully-priced island itinerary.</h2>
-        <div className="ie-how-grid">
-          {HOW.map(h => (
-            <div key={h.n} className="ie-how-item">
-              <div className="ie-how-n">{h.n}</div>
-              <div className="ie-how-title">{h.title}</div>
-              <div className="ie-how-body">{h.body}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── INTEREST FORM ── */}
-      <section className="ie-form-section" id="notify">
-        <div className="ie-form-inner">
-          <div className="ie-section-label">✦ Early access</div>
-          <h2 className="ie-section-title" style={{ fontSize: 'clamp(28px,3vw,40px)' }}>
-            The Island Edition launches<br />Q1 2027
-          </h2>
-          <p className="ie-section-body">
-            We are currently contracting with resorts and building the Knowledge Base. Register below and your Island Specialist will reach out personally when planning opens for your dates.
-          </p>
-
-          {form.submitted ? (
-            <div className="ie-form-success">
-              <div className="ie-form-success-icon">🌊</div>
-              <div className="ie-form-success-title">You're on the list, {form.name.split(' ')[0]}.</div>
-              <div className="ie-form-success-body">
-                Your Island Specialist will be in touch before launch. In the meantime, our safari specialists are available now — the bush and beach combination is one of our most-booked pairings.
-              </div>
-              <a href="/" style={{ display: 'inline-block', marginTop: 20, color: C.teal, fontSize: 13, letterSpacing: '0.06em' }}>
-                Explore The Safari Edition →
-              </a>
-            </div>
-          ) : (
-            <form className="ie-form" onSubmit={handleSubmit}>
-              <div className="ie-form-row">
-                <input
-                  type="text" required placeholder="Your name"
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                />
-                <input
-                  type="email" required placeholder="Email address"
-                  value={form.email}
-                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                />
-              </div>
-              <select
-                value={form.destination}
-                onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}
-              >
-                <option value="any">Any destination — help me choose</option>
-                <option value="maldives">Maldives</option>
-                <option value="seychelles">Seychelles</option>
-                <option value="zanzibar">Zanzibar</option>
-                <option value="safari-and-island">Safari + island combination</option>
-              </select>
-              <input
-                type="text" placeholder="When are you thinking of travelling? (e.g. June 2027)"
-                value={form.when}
-                onChange={e => setForm(f => ({ ...f, when: e.target.value }))}
-              />
-              <button type="submit" className="ie-form-submit">Register interest →</button>
-              <p style={{ fontSize: 11, color: C.textDim, textAlign: 'center', lineHeight: 1.5 }}>
-                No spam. Your Island Specialist reaches out personally — not an automated sequence.
-              </p>
-            </form>
           )}
-        </div>
-      </section>
 
-      {/* ── FOOTER ── */}
-      <footer className="ie-footer">
-        <div className="ie-footer-brand">The Island Edition · by The Travel Catalogue</div>
-        <div className="ie-footer-links">
-          <a href="/"        className="ie-footer-link">The Safari Edition</a>
-          <a href="/privacy" className="ie-footer-link">Privacy</a>
-          <a href="/terms"   className="ie-footer-link">Terms</a>
-          <a href="/contact" className="ie-footer-link">Contact</a>
-        </div>
-      </footer>
-    </>
+          {/* Drawer */}
+          <div style={{
+            position: 'fixed',
+            bottom: 0, left: 0, right: 0,
+            zIndex: 201,
+            background: 'rgba(12,10,16,0.98)',
+            border: `0.5px solid \${T.borderGold}`,
+            borderBottom: 'none',
+            borderRadius: '20px 20px 0 0',
+            paddingBottom: 'max(24px, env(safe-area-inset-bottom, 24px))',
+            transform: drawerOpen ? 'translateY(0)' : drawerPeeked ? 'translateY(calc(100% - 72px))' : 'translateY(100%)',
+            transition: 'transform 0.38s cubic-bezier(0.22,1,0.36,1)',
+            maxHeight: '72vh',
+            display: 'flex', flexDirection: 'column' as const,
+          }}>
+            {/* Handle + header */}
+            <div
+              onClick={() => setDrawerOpen(v => !v)}
+              style={{ flexShrink: 0, padding: '14px 20px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.3em', textTransform: 'uppercase' as const, opacity: 0.75 }}>
+                  ✦ {CHAPTER_TAG[regionSlug] ?? regionLabel} · {nights}n{month ? ` · \${month}` : ''}
+                </div>
+                {!drawerOpen && (
+                  <div style={{ fontSize: 11, color: T.textMid, marginTop: 3, lineHeight: 1.4, overflow: 'hidden', maxHeight: 32, WebkitMaskImage: 'linear-gradient(to right, black 70%, transparent)' }}>
+                    {kbHighlights[0] ?? seasonalNote ?? kbTips[0] ?? ''}
+                  </div>
+                )}
+              </div>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: `0.5px solid \${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: T.textDim, transform: drawerOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s', flexShrink: 0 }}>
+                ↑
+              </div>
+            </div>
+
+            {/* Handle pill */}
+            <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, background: 'rgba(255,255,255,0.15)', borderRadius: 2 }} />
+
+            {/* Scrollable content */}
+            <div style={{ flex: 1, overflowY: 'auto' as const, padding: '0 20px 20px', WebkitOverflowScrolling: 'touch' as unknown as undefined }}>
+              {/* Seasonal note */}
+              {seasonalNote && month && (
+                <div style={{ marginBottom: 16, padding: '10px 14px', background: 'rgba(212,175,55,0.06)', border: `0.5px solid \${T.borderGold}`, borderRadius: 10 }}>
+                  <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 5 }}>✦ {month} in {regionLabel}</div>
+                  <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.7, fontStyle: 'italic' }}>{seasonalNote}</div>
+                </div>
+              )}
+
+              {/* KB highlights */}
+              {kbHighlights.slice(0, 3).map((h, i) => (
+                <div key={i} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < Math.min(kbHighlights.length, 3) - 1 ? `0.5px solid \${T.border}` : 'none' }}>
+                  <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, marginBottom: 5 }}>✦ Did you know</div>
+                  <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.72, fontStyle: 'italic' }}>{h}</div>
+                </div>
+              ))}
+
+              {/* Specialist note */}
+              {specialistNote && (
+                <div style={{ marginBottom: 14, borderLeft: `2px solid rgba(212,175,55,0.4)`, paddingLeft: 12 }}>
+                  <div style={{ fontSize: 9, color: T.gold, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, marginBottom: 4 }}>About this region</div>
+                  <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.7 }}>{specialistNote}</div>
+                </div>
+              )}
+
+              {/* KB tips */}
+              {kbTips.slice(0, 3).map((tip, i) => (
+                <div key={i} style={{ fontSize: 12, color: T.textMid, lineHeight: 1.65, padding: '6px 0', borderBottom: i < Math.min(kbTips.length, 3) - 1 ? `0.5px solid \${T.border}` : 'none' }}>
+                  <span style={{ color: T.gold, marginRight: 6 }}>›</span>{tip}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
+
+// ── Inclusions strip (goes INTO the property tile via portal-style, but here we
+//    export it so NestedPropertyCarousel can use it too) ─────────────────────
+export function InclusionPills({ includes, malariaFree, compact=false }: {
+  includes:string[]; malariaFree:boolean; compact?:boolean;
+}) {
+  const shown = includes.filter(k => k !== 'accommodation' && INCLUSION_LABELS[k]);
+  const isRoomOnly = includes.length === 0 || (includes.length === 1 && includes[0] === 'accommodation');
+  if (!shown.length && !malariaFree && !isRoomOnly) return null;
+  return (
+    <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginTop:compact?4:8 }}>
+      {isRoomOnly && (
+        <span style={{ fontSize:10, color:T.amber, background:'rgba(251,146,60,0.1)', border:'0.5px solid rgba(251,146,60,0.25)', borderRadius:20, padding:'2px 8px', fontWeight:600 }}>
+          ⚑ Room only
+        </span>
+      )}
+      {!isRoomOnly && shown.map(k => (
+        <span key={k} style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:10, color:T.green, background:'rgba(74,222,128,0.08)', border:'0.5px solid rgba(74,222,128,0.2)', borderRadius:20, padding:'3px 9px' }}>
+          <IncIcon kind={INCLUSION_LABELS[k].icon} color={T.green} />{compact ? '' : INCLUSION_LABELS[k].label}
+        </span>
+      ))}
+      {malariaFree && (
+        <span style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:600 }}>
+          ✦ Malaria-free
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Left sidebar ──────────────────────────────────────────────────────────────
+
+function LeftSidebar({ kbHighlights, skeletonFindings, chapterIndex, regionSlug }:{
+  kbHighlights:string[]; skeletonFindings:SkeletonFinding[];
+  chapterIndex:number; regionSlug:string;
+}) {
+  const { ref, vis } = useFade();
+  const warns = skeletonFindings.filter(f => f.severity==='warning' || f.severity==='recommendation');
+  // Stream each highlight text left-first (0ms delay)
+  const streamed = useTypewriter(kbHighlights.slice(0,2), vis, 24, 0);
+
+  if (!kbHighlights.length && !warns.length) return <div ref={ref} />;
+
+  return (
+    <div ref={ref} className="kb-col-left" style={{
+      opacity: vis?1:0, transform: vis?'none':'translateY(18px)',
+      transition:'opacity 0.6s ease, transform 0.6s ease',
+      position:'sticky', top:20,
+    }}>
+      {/* Chapter eyebrow */}
+      <div style={{ fontSize:9, fontWeight:700, letterSpacing:'0.4em', textTransform:'uppercase', color:T.gold, opacity:0.55, marginBottom:18 }}>
+        {String(chapterIndex+1).padStart(2,'0')} — {CHAPTER_TAG[regionSlug] ?? ''}
+      </div>
+
+      {/* Skeleton warnings */}
+      {warns.slice(0,2).map(f => {
+        const s = SEV[f.severity]??SEV.recommendation;
+        return (
+          <div key={f.id} style={{ borderLeft:`2px solid ${s.color}`, paddingLeft:10, marginBottom:14 }}>
+            <div style={{ fontSize:10, color:s.color, fontWeight:700, marginBottom:3 }}>{s.icon} {f.title}</div>
+            <div style={{ fontSize:11, color:T.textMid, lineHeight:1.6 }}>{f.traveller_message}</div>
+          </div>
+        );
+      })}
+
+      {/* KB highlights — typewriter reveal, left-first */}
+      {kbHighlights.slice(0,2).map((h,i) => (
+        <div key={i} style={{
+          marginBottom:14,
+          paddingBottom:14,
+          borderBottom: i < Math.min(kbHighlights.length,2)-1 ? `0.5px solid ${T.border}` : 'none',
+          opacity: vis ? 1 : 0,
+          transition: `opacity 0.5s ease ${i*0.2}s`,
+        }}>
+          <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:5 }}>
+            ✦ Did you know
+          </div>
+          <div style={{ fontSize:12, color:T.textMid, lineHeight:1.72, fontStyle:'italic' }}>
+            {streamed[i] ?? ''}
+            {/* blinking cursor while streaming */}
+            {vis && streamed[i] !== undefined && streamed[i].length < h.length && (
+              <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Right sidebar ─────────────────────────────────────────────────────────────
+
+function RightSidebar({ seasonalNote, kbTips, nights, checkinDate, regionLabel, specialistNote }:{
+  seasonalNote?:string; kbTips:string[]; nights:number;
+  checkinDate?:string; regionLabel:string; specialistNote?:string;
+}) {
+  const { ref, vis } = useFade();
+  const month = checkinDate ? new Date(checkinDate).toLocaleString('en',{month:'long'}) : null;
+  // Right side streams 450ms after left (so left visibly starts first)
+  const rightTexts = [seasonalNote, specialistNote, ...kbTips.slice(0,2)].filter(Boolean) as string[];
+  const streamed = useTypewriter(rightTexts, vis, 24, 450);
+  if (!seasonalNote && !kbTips.length && !specialistNote) return <div ref={ref} />;
+
+  return (
+    <div ref={ref} className="kb-col-right" style={{
+      opacity: vis?1:0, transform: vis?'none':'translateY(18px)',
+      transition:'opacity 0.6s ease 0.4s, transform 0.6s ease 0.4s',
+      position:'sticky', top:20,
+    }}>
+      {/* Seasonal context — typewriter reveal */}
+      {seasonalNote && month && (() => {
+        const s0 = streamed[0] ?? '';
+        return (
+          <div style={{ marginBottom:16, padding:'10px 12px', background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:9 }}>
+            <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:5 }}>✦ {month} in {regionLabel}</div>
+            <div style={{ fontSize:12, color:T.textMid, lineHeight:1.7, fontStyle:'italic' }}>
+              {s0}
+              {vis && s0.length < seasonalNote.length && (
+                <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Specialist note */}
+      {specialistNote && (() => {
+        const sIdx = seasonalNote ? 1 : 0;
+        const s = streamed[sIdx] ?? '';
+        return (
+          <div style={{ marginBottom:16, borderLeft:`2px solid rgba(212,175,55,0.4)`, paddingLeft:10 }}>
+            <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4 }}>About this region</div>
+            <div style={{ fontSize:11, color:T.textMid, lineHeight:1.7 }}>
+              {s}
+              {vis && s.length < specialistNote.length && (
+                <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* KB tips — typewriter */}
+      {kbTips.slice(0,2).map((tip,i) => {
+        const offset = (seasonalNote ? 1 : 0) + (specialistNote ? 1 : 0);
+        const s = streamed[offset + i] ?? '';
+        return (
+          <div key={i} style={{
+            fontSize:11, color:T.textMid, lineHeight:1.68,
+            padding:'5px 0',
+            borderBottom: i < Math.min(kbTips.length,2)-1 ? `0.5px solid ${T.border}` : 'none',
+            opacity: vis ? 1 : 0,
+            transition: `opacity 0.5s ease ${0.3 + i*0.15}s`,
+          }}>
+            <span style={{ color:T.gold, marginRight:5 }}>›</span>
+            {s}
+            {vis && s.length < tip.length && (
+              <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+            )}
+          </div>
+        );
+      })}
+
+      {/* Nights context */}
+      <div style={{ marginTop:16, fontSize:10, color:T.textDim, letterSpacing:'0.06em' }}>
+        {nights} night{nights!==1?'s':''} · {regionLabel}
+      </div>
+    </div>
+  );
+}
+
+// ── Main RegionChapter ────────────────────────────────────────────────────────
+
+export default function RegionChapter(props: RegionChapterProps) {
+  const isMobile = useMobile();
+  if (isMobile) return <MobileRegionChapter {...props} />;
+
+  const {
+    chapterIndex, totalChapters, regionSlug, regionLabel, countryLabel,
+    nights, checkinDate, bgImageUrl, kbHighlights, kbTips, skeletonFindings,
+    selectedHotelName, selectedHotelIncludes, malariaFree,
+    seasonalNote, specialistNote, onRegionVisible, children,
+  } = props;
+
+  const ref = useRef(null as HTMLDivElement | null);
+  const [entered, setEntered] = useState(false);
+  const bg = bgImageUrl ?? REGION_BG[regionSlug] ?? '';
+  const hasSidebars = kbHighlights.length > 0 || kbTips.length > 0 ||
+    skeletonFindings.length > 0 || !!seasonalNote || !!specialistNote;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver==='undefined') { setEntered(true); return; }
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        setEntered(true);
+        onRegionVisible?.(regionSlug);
+      }
+    }, {threshold:0.08, rootMargin:'-20% 0px -20% 0px'});
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref} style={{ position:'relative', marginBottom:0 }}>
+
+      {/* Background handled by fixed layer in page.tsx — no per-chapter bg */}
+
+      {/* ── Chapter divider — prominent between regions ── */}
+      {chapterIndex > 0 && (
+        <div style={{
+          position:'relative', zIndex:1,
+          paddingTop:40, marginBottom:28,
+        }}>
+          {/* Thick gold rule */}
+          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+            <div style={{ height:'1px', flex:1, background:`linear-gradient(to right, transparent, ${T.gold}55, ${T.gold}88, ${T.gold}55, transparent)` }} />
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, flexShrink:0 }}>
+              <div style={{ width:6, height:6, background:T.gold, transform:'rotate(45deg)', opacity:0.8 }} />
+              <div style={{ fontSize:9, letterSpacing:'0.5em', textTransform:'uppercase', color:T.gold, opacity:0.7, whiteSpace:'nowrap' }}>
+                {String(chapterIndex+1).padStart(2,'0')} / {String(totalChapters).padStart(2,'0')} &nbsp;·&nbsp; {CHAPTER_TAG[regionSlug] ?? regionLabel} &nbsp;·&nbsp; {countryLabel}
+              </div>
+              <div style={{ width:6, height:6, background:T.gold, transform:'rotate(45deg)', opacity:0.8 }} />
+            </div>
+            <div style={{ height:'1px', flex:1, background:`linear-gradient(to left, transparent, ${T.gold}55, ${T.gold}88, ${T.gold}55, transparent)` }} />
+          </div>
+        </div>
+      )}
+
+      {/* First chapter - subtle top label */}
+      {chapterIndex === 0 && (
+        <div style={{ position:'relative', zIndex:1, display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+          <div style={{ fontSize:9, letterSpacing:'0.4em', textTransform:'uppercase', color:T.gold, opacity:0.5, flexShrink:0 }}>
+            {String(chapterIndex+1).padStart(2,'0')} / {String(totalChapters).padStart(2,'0')} &nbsp;·&nbsp; {CHAPTER_TAG[regionSlug] ?? regionLabel}
+          </div>
+          <div style={{ flex:1, height:'0.5px', background:T.borderGold, opacity:0.3 }} />
+        </div>
+      )}
+
+      {/* Three-column grid */}
+      <div style={{
+        position:'relative', zIndex:1,
+        display:'grid',
+        gridTemplateColumns: hasSidebars ? '172px minmax(0,1fr) 172px' : '1fr',
+        gap:'0 24px',
+        alignItems:'start',
+        paddingBottom:8,
+      }}>
+        {hasSidebars && (
+          <LeftSidebar
+            kbHighlights={kbHighlights}
+            skeletonFindings={skeletonFindings}
+            chapterIndex={chapterIndex}
+            regionSlug={regionSlug}
+          />
+        )}
+
+        {/* Center — carousels passed as children, completely untouched */}
+        <div>{children}</div>
+
+        {hasSidebars && (
+          <RightSidebar
+            seasonalNote={seasonalNote}
+            specialistNote={specialistNote}
+            kbTips={kbTips}
+            nights={nights}
+            checkinDate={checkinDate}
+            regionLabel={regionLabel}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── PropertyMiniSite ──────────────────────────────────────────────────────────
+// Slide-up sheet. Sticky bar stays visible (paddingBottom:120).
+// Room types from room_types Supabase table.
+// KB content: traveller-safe highlights + tips only.
+
+
+// PropertyMiniSite extracted to its own file to avoid SWC TSX parsing issues
+export { PropertyMiniSite } from './PropertyMiniSite';
+export type { PropertyMiniSiteProps } from './PropertyMiniSite';
