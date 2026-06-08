@@ -140,6 +140,13 @@ function extractImage(s: any): string {
 //   + KB trust boost: +10 if property has active KB entries with evidence_strength >= 4
 //   + KB commercial boost: margin-ranked properties get up to +15
 //   + KB demotion: properties flagged in KB guardrails get -20
+const USD_RATE_COUNTRIES = new Set(['Botswana','Zimbabwe','Kenya','Uganda','Tanzania','Mozambique','Namibia','Zambia','Rwanda']);
+const USD_TO_ZAR = 18.62;
+
+function toZAR(rawRate: number, country: string): number {
+  return USD_RATE_COUNTRIES.has(country) ? Math.round(rawRate * USD_TO_ZAR) : rawRate;
+}
+
 function scoreSupplier(
   s:               any,
   checkIn:         string | undefined,
@@ -149,8 +156,10 @@ function scoreSupplier(
   marginRankMap:   Record<string, number>,  // supplierId → rank (1=best, higher=worse)
   overrideEntries: KBEntry[] = [],
 ): any {
-  const net  = Number(s.net_rate_per_night) || 25000;
-  const disp = Number(s.display_rate_per_night) || Math.round(net * M.hotels);
+  const rawNet  = Number(s.net_rate_per_night)     || 25000;
+  const rawDisp = Number(s.display_rate_per_night) || 0;
+  const net  = toZAR(rawNet,  s.country || '');
+  const disp = rawDisp > 0 ? toZAR(rawDisp, s.country || '') : Math.round(net * M.hotels);
   const gp   = disp - net;
 
   // Base score (unchanged from v2)
@@ -306,7 +315,8 @@ const LODGE_BUDGET_SHARE = 0.72;
 const LODGE_FILL_CEILING = 0.98;
 
 function marginRandPerNight(property: any, marginMultiplier: number): number {
-  const net = Number(property.net_rate_per_night) || 25000;
+  const _rawNet2 = Number(property.net_rate_per_night) || 25000;
+  const net = USD_RATE_COUNTRIES.has(property.country || '') ? Math.round(_rawNet2 * USD_TO_ZAR) : _rawNet2;
   const margin = Math.round(net * (marginMultiplier - 1));
   return margin;
 }
