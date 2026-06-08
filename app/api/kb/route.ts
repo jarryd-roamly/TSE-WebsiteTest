@@ -351,40 +351,49 @@ export async function POST(req: NextRequest) {
   // Commercial entries are always internal_only — enforce server-side
   const effectiveInternal = claim_type === 'commercial' ? true : internal_only;
 
-  // Generate kb_ref — unique reference for this KB entry e.g. KB-SAFARI-A3X9
+  // Generate kb_ref — unique reference e.g. KB-SAFARI-A3X9
   const kb_ref = `KB-${edition_id.toUpperCase().replace(/[^A-Z0-9]/g, '')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
+  // Build content field from title + highlights + tips (actual DB column is 'content')
+  const contentParts = [title];
+  if (highlights?.length) contentParts.push(...(Array.isArray(highlights) ? highlights : [highlights]));
+  if (tips?.length)       contentParts.push(...(Array.isArray(tips) ? tips : [tips]));
+  if (logistics_notes)    contentParts.push(logistics_notes);
+  const content_text = contentParts.filter(Boolean).join('\n');
+
+  // category maps to entry_type; layer maps to guidance_importance
   const payload = {
     kb_ref,
     edition_id,
+    category:           entry_type ?? 'property',   // actual DB column
+    layer:              Number(guidance_importance) || 1, // actual DB column (int)
+    content:            content_text || title,       // actual DB column (NOT NULL)
+    title,
     entry_type,
     claim_type,
     supplier_id:        supplier_id  ?? null,
     region_slug:        region_slug  ?? null,
     linked_name,
+    destination:        region_slug  ?? null,
     visit_id:           visit_id     ?? null,
-    title,
-    highlights:         highlights   ?? [],
-    tips:               tips         ?? [],
-    guardrails:         guardrails   ?? [],
-    specialist_recs:    specialist_recs ?? [],
+    highlights:         Array.isArray(highlights) ? highlights : (highlights ? [highlights] : []),
+    tips:               Array.isArray(tips) ? tips : (tips ? [tips] : []),
+    guardrails:         Array.isArray(guardrails) ? guardrails : (guardrails ? [guardrails] : []),
+    specialist_recs:    Array.isArray(specialist_recs) ? specialist_recs : (specialist_recs ? [specialist_recs] : []),
     logistics_notes:    logistics_notes ?? null,
-    seasonal_notes:     seasonal_notes  ?? null,
-    guidance_importance,
+    guidance_importance: Number(guidance_importance) || 1,
+    override_ai:        false,
     internal_only:      effectiveInternal,
+    is_active:          true,
     status:             'active',
     version:            1,
-    created_by_name:    session.name,
-    created_by_email:   session.email,
-    created_by_role:    session.role,
-    created_at:         new Date().toISOString(),
+    created_by_name:    session.name   || 'TSE',
+    created_by_email:   session.email  || 'admin@thesafariedition.com',
+    created_by_role:    session.role   || 'edition_admin',
     evidence_strength:  1,
-    verification_sources: [],
     flag_count:         0,
-    flags:              [],
     ext_confirm_count:  0,
     ext_query_count:    0,
-    ext_sources:        [],
     times_used_in_planner: 0,
   };
 
