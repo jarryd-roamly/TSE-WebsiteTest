@@ -119,7 +119,7 @@ function SupplierSelector({ regionSlug, nights, selectedId, onSelect }: { region
   useEffect(() => {
     if (!regionSlug) return;
     sb.from('suppliers')
-      .select('id,name,short_tagline,display_rate_per_night,trust_score,images')
+      .select('id,name,short_tagline,display_rate_per_night,trust_score,images,country')
       .eq('region_slug', regionSlug)
       .eq('is_active', true)
       .order('trust_score', { ascending:false })
@@ -137,7 +137,9 @@ function SupplierSelector({ regionSlug, nights, selectedId, onSelect }: { region
     <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:8 }}>
       {suppliers.map((s: any) => {
         const isSel = String(s.id) === String(selectedId);
-        const rate  = Number(s.display_rate_per_night) || 0;
+        const USD_COUNTRIES = new Set(['Botswana','Zimbabwe','Kenya','Uganda','Tanzania','Mozambique','Namibia','Zambia','Rwanda']);
+        const rawRate = Number(s.display_rate_per_night) || 0;
+        const rate = USD_COUNTRIES.has(s.country || '') ? Math.round(rawRate * 18.62) : rawRate;
         return (
           <div key={s.id} onClick={() => onSelect(String(s.id), s.name, rate)}
             style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:9, border:`1px solid ${isSel ? T.gold : T.border}`, background:isSel ? T.goldDim : 'rgba(255,255,255,0.02)', cursor:'pointer', transition:'all 0.15s' }}>
