@@ -978,6 +978,12 @@ function KnowledgeBase(){
     setValidatingId(null);load()
   }
 
+  async function handleDelete(id:string){
+    if(!confirm('Archive this KB entry? It will be hidden from the AI planner but not permanently deleted.'))return
+    await fetch(`/api/kb?id=${id}`,{method:'DELETE',headers:{...sessionHeader()}})
+    load()
+  }
+
   function splitLines(v:string){return v.split('\n').map((s:string)=>s.trim()).filter(Boolean)}
 
   async function handleSave(){
@@ -1171,6 +1177,9 @@ function KnowledgeBase(){
                             <button onClick={()=>handleVerify(entry.id)} style={{padding:'4px 8px',background:`${T.green}10`,border:`0.5px solid ${T.green}30`,borderRadius:6,color:T.green,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>✓ verify</button>
                           )}
                           <button onClick={()=>setExpandedId(open?null:entry.id)} style={{padding:'4px 8px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:6,color:T.textDim,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>{open?'▲':'▼'}</button>
+                          {session?.role==='edition_admin'&&(
+                            <button onClick={()=>handleDelete(entry.id)} style={{padding:'4px 8px',background:`${T.red}10`,border:`0.5px solid ${T.red}30`,borderRadius:6,color:T.red,fontSize:10,cursor:'pointer',fontFamily:'inherit'}}>✕ delete</button>
+                          )}
                         </div>
                       </div>
                       {/* Expanded body */}
