@@ -675,6 +675,10 @@ function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
 }
 
 function buildFallbackItinerary(nights: number, budget: number, mode: InputMode, selectedSlugs: string[]): Itinerary {
+  // Clamp budget to a minimum viable amount to prevent nonsensical itinerary costs
+  // Minimum is ~R18,000/night/adult for 2 adults + R30,000 transfers
+  const minViable = Math.max(budget, nights * 36000 + 30000);
+  budget = minViable;
   const destMap: Record<string, {label:string;country:string;why:string;highlights:string[]}> = {
     'kruger-sabi-sand':{ label:'Kruger / Sabi Sand', country:'South Africa', why:'Highest leopard density in Africa. The benchmark safari experience.', highlights:['Leopard tracking at dawn','Night drive','Sundowner in the bush'] },
     'okavango-delta':  { label:'Okavango Delta',     country:'Botswana',     why:"No roads. No fences. The world's finest wilderness safari.", highlights:['Mokoro through papyrus','Walking safari','Helicopter over Delta'] },
@@ -3728,31 +3732,72 @@ const toggleTheme = (id: string) =>
          const [panelFade, setPanelFade] = useState(true);
   const [budget, setBudget] = useState(230000);
 
-  // Auto-updates when nights button is clicked
-  // Based on luxury lodge rates + domestic flights + transfers, 2 adults, excl. international flights
-  const BUDGET_DEFAULTS: Record<number, number> = {
-    5:  160000,
-    7:  230000,
-    10: 340000,
-    12: 415000,
-    14: 490000,
-    21: 735000,
+  // ── Minimum budget tables — per 2 adults, ZAR, excl. international flights ──
+  // Derived from cheapest viable combinations across all 5 regions.
+  // FLOOR  = absolute cheapest (2n safari + filler CPT) — slider hard lower bound.
+  // RECOMMENDED = TSE product minimum — enough safari nights for a real experience.
+  // Source: systematic optimisation across all region/night combinations Jun 2026.
+  const BUDGET_FLOOR_ZAR: Record<number, number> = {
+     5:  90000,   // 2n Madikwe + 3n Cape Town
+     6: 100000,   // 2n Madikwe + 4n Cape Town
+     7: 110000,   // 2n Madikwe + 5n Cape Town
+     8: 120000,   // 2n Madikwe + 6n Cape Town
+     9: 130000,   // 2n Madikwe + 7n Cape Town
+    10: 140000,   // 2n Madikwe + 8n Cape Town
+    12: 155000,   // 2n Madikwe + 10n Cape Town
+    14: 175000,   // 2n Madikwe + 12n Cape Town
+    21: 250000,   // 2n Madikwe + 19n Cape Town (not a safari — floor only)
+  };
+  const BUDGET_RECOMMENDED_ZAR: Record<number, number> = {
+     5: 100000,   // 3n Madikwe + 2n Cape Town
+     6: 120000,   // 4n Madikwe + 2n Cape Town
+     7: 130000,   // 4n Madikwe + 3n Cape Town
+     8: 145000,   // 5n Madikwe + 3n Cape Town
+     9: 190000,   // 4n Madikwe + 2n Vic Falls + 3n Cape Town
+    10: 205000,   // 4n Madikwe + 3n Kruger + 3n Cape Town
+    12: 255000,   // 4n Madikwe + 4n Kruger + 4n Vic Falls
+    14: 305000,   // 4n Madikwe + 4n Kruger + 3n Vic Falls + 3n Cape Town
+    21: 455000,   // Grand circuit: Kruger + Okavango + Vic Falls + Cape Town
   };
 
-  // Per-night spend basis: average luxury lodge all-in (accommodation + domestic flights + transfers)
-  // Adult: ~R18,000/night. Child uplift: ~40% (separate bed/room share + child activity fees).
-  // Infants (<2): no meaningful cost addition — ignore.
-  const AVG_NIGHTLY_PER_ADULT = 18000;
-  const CHILD_UPLIFT_FACTOR   = 0.40; // fraction of adult nightly rate per child
+  // Interpolate between defined night-count points
+  const interpolateMin = (table: Record<number,number>, n: number): number => {
+    const keys = Object.keys(table).map(Number).sort((a,b)=>a-b);
+    if (n <= keys[0]) return table[keys[0]];
+    if (n >= keys[keys.length-1]) return table[keys[keys.length-1]];
+    const lo = keys.filter(k=>k<=n).pop()!;
+    const hi = keys.filter(k=>k>=n)[0]!;
+    if (lo === hi) return table[lo];
+    const t = (n - lo) / (hi - lo);
+    return Math.round((table[lo] + t * (table[hi] - table[lo])) / 5000) * 5000;
+  };
+
+  // Scale minimums for actual party size (2-adult base; children at 40% adult rate)
+  const partyScale = (base2AdultMin: number, adults_: number, children_: number): number => {
+    if (adults_ <= 0) return base2AdultMin;
+    // Transfer costs are fixed regardless of party; lodge costs scale.
+    // Approximate transfer cost share = ~25% of base; lodge = ~75%.
+    const transferShare = Math.round(base2AdultMin * 0.25);
+    const lodgeShare    = base2AdultMin - transferShare;
+    const scaledLodge   = Math.round(lodgeShare * (adults_ + children_ * 0.4) / 2);
+    return Math.round((transferShare + scaledLodge) / 5000) * 5000;
+  };
+
+  const budgetFloorZAR = partyScale(interpolateMin(BUDGET_FLOOR_ZAR, nights), adults, children);
+  const budgetRecZAR   = partyScale(interpolateMin(BUDGET_RECOMMENDED_ZAR, nights), adults, children);
+
+  // Per-night spend basis (for default auto-suggest)
+  const AVG_NIGHTLY_PER_ADULT = 22000; // luxury mid-tier all-in
+  const CHILD_UPLIFT_FACTOR   = 0.40;
 
   useEffect(() => {
-    // Base budget: nights × adults × per-night rate, snapped to nearest R10k
-    const base = nights * adults * AVG_NIGHTLY_PER_ADULT;
+    const base     = nights * adults * AVG_NIGHTLY_PER_ADULT;
     const childAdd = nights * children * AVG_NIGHTLY_PER_ADULT * CHILD_UPLIFT_FACTOR;
-    const raw = base + childAdd;
-    // Snap to nearest R10,000, minimum R80,000
-    const snapped = Math.max(80000, Math.round(raw / 10000) * 10000);
+    const raw      = base + childAdd;
+    // Snap to nearest R10k; clamp to at least the recommended minimum
+    const snapped  = Math.max(budgetRecZAR, Math.round(raw / 10000) * 10000);
     setBudget(snapped);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nights, adults, children]);
   const [origin,      setOrigin]      = useState('JNB');
   const [intlOrigin,  setIntlOrigin]  = useState('LHR');
@@ -4135,8 +4180,14 @@ const rankedCurated = useMemo(() => {
   }, [curTheme, curRegion, curNights, dbCuratedJourneys]);
 
 const runEngine = async (request: any, mode: InputMode) => {
+    // ── Pre-flight budget check: reject itineraries with impossible budgets ──
+    if (budget < budgetFloorZAR) {
+      // Snap budget to recommended minimum and show a warning — don't block entirely
+      setBudget(budgetRecZAR);
+      // Allow the build to proceed with the corrected budget
+    }
     setInputMode(mode); setScreen('inspire-research'); setResearchStep(0);
-         setSkeletonId(null); setSkeletonFindings([]);
+    setSkeletonId(null); setSkeletonFindings([]);
     window.scrollTo({ top:0, behavior:'instant' });
     track('itinerary_viewed', edition.id, { mode, nights, adults, budget });
 
@@ -4858,20 +4909,81 @@ const runBriefPlanner = (briefText: string) => {
             <SectionLabel text="Total budget" noMargin />
             <div style={{ textAlign:'right' as const }}>
               <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:38, fontWeight:300, color:T.gold, lineHeight:1 }}>{fmt(budget)}</div>
-              {adults>0 && <div style={{ fontSize:11, color:'rgba(245,240,232,0.28)', marginTop:4, fontWeight:200, letterSpacing:'0.06em' }}>approx {fmt(Math.round(budget/(adults + children)))} per person</div>}
+              {adults>0 && <div style={{ fontSize:11, color:'rgba(245,240,232,0.28)', marginTop:4, fontWeight:200, letterSpacing:'0.06em' }}>approx {fmt(Math.round(budget/(adults + children*0.4 || 1)))} per person</div>}
               {children>0 && <div style={{ fontSize:10, color:'rgba(212,175,55,0.45)', marginTop:2, fontWeight:200, letterSpacing:'0.06em' }}>includes {children} child{children>1?'ren':''} — adjusted for family accommodation</div>}
+              {budget < budgetRecZAR && (
+                <div style={{ fontSize:10, color:'rgba(251,146,60,0.7)', marginTop:2, fontWeight:200, letterSpacing:'0.04em' }}>
+                  rec. min {fmt(budgetRecZAR)} for {nights}n
+                </div>
+              )}
             </div>
           </div>
+          {/* ── Budget slider with dynamic minimum ── */}
           <div style={{ paddingTop:18 }}>
-            <input type="range" className="budget-range" min={20000} max={2000000} step={10000} value={budget} onChange={e=>setBudget(+e.target.value)} style={{ width:'100%' }} />
+            <input
+              type="range"
+              className="budget-range"
+              min={budgetFloorZAR}
+              max={2000000}
+              step={5000}
+              value={Math.max(budget, budgetFloorZAR)}
+              onChange={e => setBudget(+e.target.value)}
+              style={{ width:'100%' }}
+            />
             <div style={{ display:'flex', justifyContent:'space-between', marginTop:6 }}>
-              <span style={{ fontSize:11, color:'rgba(245,240,232,0.25)', fontWeight:200 }}>{fmt(20000)}</span>
+              <div>
+                <span style={{ fontSize:11, color:'rgba(245,240,232,0.25)', fontWeight:200 }}>{fmt(budgetFloorZAR)}</span>
+                <span style={{ fontSize:9, color:'rgba(245,240,232,0.18)', fontWeight:200, marginLeft:4, letterSpacing:'0.04em' }}>min</span>
+              </div>
               <span style={{ fontSize:11, color:'rgba(245,240,232,0.25)', fontWeight:200 }}>{fmt(2000000)}</span>
             </div>
           </div>
-          <div style={{ marginTop:14, padding:'10px 14px', background:'rgba(255,255,255,0.03)', border:'0.5px solid rgba(255,255,255,0.08)', borderRadius:8, fontSize:11, color:'rgba(245,240,232,0.32)', lineHeight:1.65, fontWeight:200 }}>
-            * Budget covers lodges, domestic flights, transfers and activities. International flight costs are calculated separately in the next step.
-          </div>
+
+          {/* ── Budget warnings: two thresholds ── */}
+          {(() => {
+            const isBelowFloor = budget < budgetFloorZAR;
+            const isBelowRec   = budget >= budgetFloorZAR && budget < budgetRecZAR;
+            const isOk         = budget >= budgetRecZAR;
+
+            if (isBelowFloor) {
+              // Shouldn't reach here (slider min = floor), but protect against manual state
+              return (
+                <div style={{ marginTop:10, padding:'10px 14px', background:'rgba(248,113,113,0.07)', border:'0.5px solid rgba(248,113,113,0.35)', borderRadius:8 }}>
+                  <div style={{ fontSize:11, fontWeight:600, color:'#f87171', marginBottom:3 }}>⚠ Below minimum for {nights} nights</div>
+                  <div style={{ fontSize:11, color:'rgba(248,113,113,0.8)', lineHeight:1.55 }}>
+                    The minimum cost for a {nights}-night trip (2 nights safari + Cape Town) is {fmt(budgetFloorZAR)}. No viable itinerary exists below this. Increase your budget or reduce nights.
+                  </div>
+                  <button onClick={() => setBudget(budgetRecZAR)} style={{ marginTop:8, padding:'5px 12px', background:'rgba(248,113,113,0.12)', border:'0.5px solid rgba(248,113,113,0.3)', borderRadius:6, color:'#f87171', fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>
+                    Set to recommended minimum → {fmt(budgetRecZAR)}
+                  </button>
+                </div>
+              );
+            }
+            if (isBelowRec) {
+              const gap = budgetRecZAR - budget;
+              return (
+                <div style={{ marginTop:10, padding:'10px 14px', background:'rgba(251,146,60,0.06)', border:'0.5px solid rgba(251,146,60,0.3)', borderRadius:8 }}>
+                  <div style={{ fontSize:11, fontWeight:600, color:'#fb923c', marginBottom:3 }}>◈ Limited budget for {nights} nights</div>
+                  <div style={{ fontSize:11, color:'rgba(251,191,36,0.8)', lineHeight:1.55 }}>
+                    At this budget your itinerary will be restricted to a 2-night bush stay with Cape Town for the remaining nights. For a proper {nights}-night safari experience, {fmt(budgetRecZAR)} is the recommended minimum — just {fmt(gap)} more.
+                  </div>
+                  <button onClick={() => setBudget(budgetRecZAR)} style={{ marginTop:8, padding:'5px 12px', background:'rgba(251,146,60,0.10)', border:'0.5px solid rgba(251,146,60,0.28)', borderRadius:6, color:'#fb923c', fontSize:11, cursor:'pointer', fontFamily:'inherit' }}>
+                    Increase to recommended → {fmt(budgetRecZAR)}
+                  </button>
+                </div>
+              );
+            }
+            if (isOk) {
+              return (
+                <div style={{ marginTop:10, padding:'10px 14px', background:'rgba(255,255,255,0.03)', border:'0.5px solid rgba(255,255,255,0.08)', borderRadius:8 }}>
+                  <div style={{ fontSize:11, color:'rgba(245,240,232,0.32)', lineHeight:1.65, fontWeight:200 }}>
+                    ✦ Budget covers lodges, all domestic flights, transfers and activities for {nights} nights. International flights are calculated separately.
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
 
         {/* ── DEPARTURE AIRPORT — only when flights not yet confirmed ── */}
