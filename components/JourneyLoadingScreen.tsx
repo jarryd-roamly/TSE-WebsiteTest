@@ -1,76 +1,56 @@
 'use client';
 /**
- * JourneyLoadingScreen.tsx
+ * JourneyLoadingScreen.tsx — v3 (reverted + extended)
  * ─────────────────────────────────────────────────────────────────────────────
- * Cinematic pre-checkout transition screen.
- * Appears between "Validate & Pay" → checkout.
+ * Reverted to show selected properties with thumbnails.
+ * Duration: 10 000 ms (was 7 000; slightly extended per JD 8 Jun 2026).
  *
- * Changes from previous version:
- *  • Alt video support: fetches both `{region}-journey` AND `{region}-journey-alt`
- *    from cinematic_videos. Randomly picks one per load. Falls back gracefully.
- *  • Duration extended: 7 000 ms → 13 000 ms
- *  • Slower pacing: lodge reveals stagger every ~2.2 s, progress bar 13 s sweep
- *  • Fade transitions: 1 200 ms instead of 600 ms
- *  • Video crossfade: if both primary and alt are present, the unchosen one
- *    is pre-loaded silently so future loads are instant.
- *
- * Props (unchanged — no breaking changes):
- *   itinerary       – current Itinerary object
- *   cityStays       – array of city stay objects
- *   hotelsByMargin  – lodges ranked by margin
- *   checkinDate     – string 'YYYY-MM-DD'
- *   nights          – total nights
- *   grandTotal      – number
- *   fmt             – currency formatter (n: number) => string
- *   edition         – edition config object (name, theme etc.)
- *   selectedRegions – string[] e.g. ['kruger-sabi-sand', 'okavango-delta']
- *   onComplete      – () => void  called after TOTAL_DURATION
- *
- * R2 upload location:
- *   Admin → /admin/cinematic → "Journey Loader" section
- *   Primary:  region slug + '-journey'       e.g. kruger-sabi-sand-journey
- *   Alt:      region slug + '-journey-alt'   e.g. kruger-sabi-sand-journey-alt
+ * Layout:
+ *   Left  — property cards with thumbnail images, name, nights (stagger in)
+ *   Right — journey summary (total nights, departure date, price)
+ *           + specialist streaming note
+ *   Bottom — gold progress bar (10 s sweep)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// ── Timing constants (ms) ─────────────────────────────────────────────────────
-const TOTAL_DURATION      = 13_000;   // total screen duration  ← was 7 000
-const FADE_IN_DURATION    = 1_200;    // initial bg fade-in     ← was 600
-const FADE_OUT_START      = 11_200;   // when to begin exit     ← was 5 800
-const LODGE_STAGGER_MS    = 2_200;    // between each lodge card ← was 1 400
-const LODGE_FIRST_DELAY   = 1_800;    // before first lodge appears
-const NOTES_START_DELAY   = 2_600;    // when specialist copy begins streaming
-const NOTES_CHAR_SPEED    = 38;       // ms per character        ← was 22 (slower stream)
+// ── Timing ────────────────────────────────────────────────────────────────────
+const TOTAL_DURATION    = 10_000;   // ms total
+const FADE_IN           = 900;      // ms
+const FADE_OUT_START    = 8_600;    // ms before end
+const LODGE_FIRST_DELAY = 800;      // ms before first card appears
+const LODGE_STAGGER     = 1_600;    // ms between cards
+const TEXT_START_DELAY  = 1_200;    // ms before specialist text starts
+const CHAR_SPEED        = 30;       // ms per character
 
-// ── Design tokens (match main app) ───────────────────────────────────────────
-const T = {
-  bg:         '#080818',
-  gold:       '#d4af37',
-  goldDim:    'rgba(212,175,55,0.12)',
-  goldMid:    'rgba(212,175,55,0.35)',
-  text:       '#f5f0e8',
-  textMid:    'rgba(245,240,232,0.55)',
-  textDim:    'rgba(245,240,232,0.28)',
-  overlay:    'rgba(8,8,24,0.72)',
-  overlayHeavy: 'rgba(8,8,24,0.88)',
-};
-
-// ── Specialist copy pool ──────────────────────────────────────────────────────
-// One line per lodge-reveal step. If fewer lodges, only first N are shown.
-const SPECIALIST_LINES = [
+// ── Specialist lines pool ─────────────────────────────────────────────────────
+const LINES = [
   'Reviewing seasonal conditions and wildlife calendars for your dates…',
-  'Cross-referencing room availability with our contracted rate cards…',
-  'Optimising transfers between each property for minimal travel time…',
-  'Applying specialist notes from our Knowledge Base to your itinerary…',
-  'Calculating your total package margin and confirming pricing…',
-  'Your Journey Specialist will be assigned within the hour.',
+  'Cross-referencing room availability against contracted rate cards…',
+  'Optimising transfers to minimise travel time between properties…',
+  'Applying specialist Knowledge Base notes to your itinerary…',
+  'Finalising pricing and preparing your booking record…',
+  'Your Journey Specialist will be in touch within the hour.',
 ];
 
-// ── Supabase client (reads cinematic_videos table) ────────────────────────────
-function getSupabase() {
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const T = {
+  bg:           '#07080f',
+  surface:      'rgba(255,255,255,0.045)',
+  surfaceHover: 'rgba(255,255,255,0.07)',
+  gold:         '#d4af37',
+  goldDim:      'rgba(212,175,55,0.14)',
+  goldGlow:     'rgba(212,175,55,0.55)',
+  text:         '#f5f0e8',
+  textMid:      'rgba(245,240,232,0.58)',
+  textDim:      'rgba(245,240,232,0.30)',
+  border:       'rgba(255,255,255,0.08)',
+};
+
+// ── Supabase ──────────────────────────────────────────────────────────────────
+function getSb() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
   if (!url || !key) return null;
@@ -79,65 +59,124 @@ function getSupabase() {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface CityStay {
-  city:       string;
-  regionSlug: string;
-  nights:     number;
-  hotel?:     { name: string; image?: string };
+  city:        string;
+  regionSlug?: string;
+  nights:      number;
+  hotel?: {
+    name:   string;
+    image?: string;
+    slug?:  string;
+  };
 }
 
 interface JourneyLoadingProps {
-  itinerary?:      { id?: string; title?: string };
-  cityStays?:      CityStay[];
-  hotelsByMargin?: Array<{ name: string; image?: string; region?: string }>;
-  checkinDate?:    string;
-  nights?:         number;
-  grandTotal?:     number;
-  fmt?:            (n: number) => string;
-  edition?:        { name?: string; accentColor?: string };
+  cityStays?:       CityStay[];
+  hotelsByMargin?:  Array<{ name: string; image?: string; region?: string }>;
+  checkinDate?:     string;
+  nights?:          number;
+  grandTotal?:      number;
+  fmt?:             (n: number) => string;
+  edition?:         { name?: string; accentColor?: string };
   selectedRegions?: string[];
-  onComplete:      () => void;
+  onComplete:       () => void;
+}
+
+// ── Thumbnail component ───────────────────────────────────────────────────────
+function Thumb({ src, name }: { src?: string | null; name: string }) {
+  const [err, setErr] = useState(false);
+  const initials = name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('');
+
+  if (!src || err) {
+    return (
+      <div style={{
+        width:           64,
+        height:          64,
+        flexShrink:      0,
+        borderRadius:    8,
+        background:      T.goldDim,
+        border:          `0.5px solid rgba(212,175,55,0.25)`,
+        display:         'flex',
+        alignItems:      'center',
+        justifyContent:  'center',
+        fontFamily:      '"Cormorant Garamond", Georgia, serif',
+        fontSize:        18,
+        color:           'rgba(212,175,55,0.7)',
+        letterSpacing:   '0.04em',
+        fontWeight:      300,
+      }}>
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={name}
+      onError={() => setErr(true)}
+      style={{
+        width:       64,
+        height:      64,
+        flexShrink:  0,
+        borderRadius: 8,
+        objectFit:   'cover',
+        display:     'block',
+      }}
+    />
+  );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function JourneyLoadingScreen({
-  cityStays = [],
-  hotelsByMargin = [],
+  cityStays       = [],
+  hotelsByMargin  = [],
   checkinDate,
-  nights = 0,
-  grandTotal = 0,
-  fmt = (n) => `R ${n.toLocaleString()}`,
+  nights          = 0,
+  grandTotal      = 0,
+  fmt             = (n) => `R ${n.toLocaleString()}`,
   edition,
   selectedRegions = [],
   onComplete,
 }: JourneyLoadingProps) {
   const gold = edition?.accentColor ?? T.gold;
 
-  // ── Video state ──────────────────────────────────────────────────────────
-  const [videoUrl,    setVideoUrl]    = useState<string | null>(null);
-  const [videoReady,  setVideoReady]  = useState(false);
-  const [altPreload,  setAltPreload]  = useState<string | null>(null); // silent preload of the other video
+  // ── Video background (optional) ──────────────────────────────────────────
+  const [videoUrl,   setVideoUrl]   = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // ── Animation state ──────────────────────────────────────────────────────
-  const [bgOpacity,    setBgOpacity]    = useState(0);
-  const [exitOpacity,  setExitOpacity]  = useState(1);
-  const [progress,     setProgress]     = useState(0);
-  const [visibleLodges, setVisibleLodges] = useState(0);
-  const [specialistText, setSpecialistText] = useState('');
-  const [specialistLine,  setSpecialistLine]  = useState(0);
-  const [textVisible,  setTextVisible]  = useState(false);
+  useEffect(() => {
+    const run = async () => {
+      const sb = getSb();
+      if (!sb) return;
+      // Try region-specific first, fall back to global journey-loading
+      const primaryRegion = selectedRegions[0] ?? cityStays[0]?.regionSlug ?? '';
+      const keys = [`${primaryRegion}-journey`, 'journey-loading'].filter(Boolean);
+      const { data } = await sb
+        .from('cinematic_videos')
+        .select('region, url')
+        .in('region', keys);
+      const match = data?.find((r) => r.region === `${primaryRegion}-journey`)
+                 ?? data?.find((r) => r.region === 'journey-loading');
+      if (match?.url) setVideoUrl(match.url);
+    };
+    run();
+  }, [selectedRegions, cityStays]);
 
-  // ── Build lodge display list ─────────────────────────────────────────────
+  // ── Build lodge list ─────────────────────────────────────────────────────
   const lodges = useMemo(() => {
     if (cityStays.length > 0) {
-      return cityStays.slice(0, 5).map((cs) => ({
-        name:   cs.hotel?.name  ?? cs.city,
+      return cityStays.slice(0, 6).map((cs) => ({
+        name:   cs.hotel?.name ?? cs.city,
         nights: cs.nights,
         image:  cs.hotel?.image ?? null,
         region: cs.city,
       }));
     }
-    return hotelsByMargin.slice(0, 5).map((h) => ({
+    return hotelsByMargin.slice(0, 6).map((h) => ({
       name:   h.name,
       nights: 3,
       image:  h.image ?? null,
@@ -145,141 +184,94 @@ export default function JourneyLoadingScreen({
     }));
   }, [cityStays, hotelsByMargin]);
 
-  // ── Derive primary region for video lookup ───────────────────────────────
-  const primaryRegion = useMemo(() => {
-    if (selectedRegions.length > 0) return selectedRegions[0];
-    if (cityStays.length > 0) return cityStays[0]?.regionSlug ?? '';
-    return '';
-  }, [selectedRegions, cityStays]);
+  // ── Animation state ──────────────────────────────────────────────────────
+  const [bgOpacity,      setBgOpacity]      = useState(0);
+  const [exitOpacity,    setExitOpacity]    = useState(1);
+  const [progress,       setProgress]       = useState(0);
+  const [visibleLodges,  setVisibleLodges]  = useState(0);
+  const [specialistText, setSpecialistText] = useState('');
+  const [specialistLine, setSpecialistLine] = useState(0);
+  const [textVisible,    setTextVisible]    = useState(false);
 
-  // ── Fetch video (primary + alt, pick randomly) ───────────────────────────
+  // ── Start sequence ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (!primaryRegion) { setVideoReady(true); return; }
-    const run = async () => {
-      const sb = getSupabase();
-      if (!sb) { setVideoReady(true); return; }
-
-      const primaryKey = `${primaryRegion}-journey`;
-      const altKey     = `${primaryRegion}-journey-alt`;
-
-      const { data } = await sb
-        .from('cinematic_videos')
-        .select('region, url')
-        .in('region', [primaryKey, altKey]);
-
-      const primaryRow = data?.find((r) => r.region === primaryKey);
-      const altRow     = data?.find((r) => r.region === altKey);
-
-      const primaryUrl = primaryRow?.url ?? null;
-      const altUrl     = altRow?.url     ?? null;
-
-      // Random pick — if only one exists, use that one
-      const both = [primaryUrl, altUrl].filter(Boolean) as string[];
-      if (both.length === 0) { setVideoReady(true); return; }
-
-      const pick = both.length === 2
-        ? both[Math.floor(Math.random() * 2)]
-        : both[0];
-
-      setVideoUrl(pick);
-
-      // Silently preload the other one so next visit is instant
-      const other = both.find((u) => u !== pick) ?? null;
-      setAltPreload(other);
-
-      setVideoReady(true);
-    };
-    run();
-  }, [primaryRegion]);
-
-  // ── Start animations once video is ready (or after 400 ms timeout) ───────
-  useEffect(() => {
-    if (!videoReady) return;
-
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    // Fade in background
-    timers.push(setTimeout(() => setBgOpacity(1), 80));
+    timers.push(setTimeout(() => setBgOpacity(1), 60));
 
-    // Progress bar sweep (smooth — updates every 100 ms)
-    const progressInterval = setInterval(() => {
+    // Progress bar (update every 80 ms for smooth sweep)
+    const tick = setInterval(() => {
       setProgress((p) => {
-        if (p >= 100) { clearInterval(progressInterval); return 100; }
-        return p + (100 / (TOTAL_DURATION / 100));
+        if (p >= 100) { clearInterval(tick); return 100; }
+        return p + (100 / (TOTAL_DURATION / 80));
       });
-    }, 100);
+    }, 80);
 
-    // Lodge reveals (staggered)
+    // Lodge card reveals (staggered)
     lodges.forEach((_, i) => {
       timers.push(
         setTimeout(
           () => setVisibleLodges((v) => Math.max(v, i + 1)),
-          LODGE_FIRST_DELAY + i * LODGE_STAGGER_MS,
+          LODGE_FIRST_DELAY + i * LODGE_STAGGER,
         ),
       );
     });
 
-    // Specialist text streaming
-    timers.push(
-      setTimeout(() => setTextVisible(true), NOTES_START_DELAY),
-    );
-
-    // Fade out and complete
+    timers.push(setTimeout(() => setTextVisible(true), TEXT_START_DELAY));
     timers.push(setTimeout(() => setExitOpacity(0), FADE_OUT_START));
     timers.push(setTimeout(() => onComplete(), TOTAL_DURATION));
 
     return () => {
       timers.forEach(clearTimeout);
-      clearInterval(progressInterval);
+      clearInterval(tick);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoReady]);
+  }, []);
 
-  // ── Specialist text streaming ─────────────────────────────────────────────
+  // ── Specialist text streaming ────────────────────────────────────────────
   useEffect(() => {
     if (!textVisible) return;
-    const target = SPECIALIST_LINES[specialistLine] ?? '';
+    const target = LINES[specialistLine] ?? '';
     let idx = 0;
-    const interval = setInterval(() => {
+    const iv = setInterval(() => {
       if (idx >= target.length) {
-        clearInterval(interval);
-        // Pause, then advance to next line
+        clearInterval(iv);
         setTimeout(() => {
           setSpecialistText('');
-          setSpecialistLine((l) => Math.min(l + 1, SPECIALIST_LINES.length - 1));
-        }, 1_600);
+          setSpecialistLine((l) => Math.min(l + 1, LINES.length - 1));
+        }, 1_400);
         return;
       }
       setSpecialistText(target.slice(0, ++idx));
-    }, NOTES_CHAR_SPEED);
-    return () => clearInterval(interval);
+    }, CHAR_SPEED);
+    return () => clearInterval(iv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textVisible, specialistLine]);
 
-  // ── Departure date formatting ─────────────────────────────────────────────
+  // ── Departure label ──────────────────────────────────────────────────────
   const departureLabel = useMemo(() => {
     if (!checkinDate) return null;
     try {
-      const d = new Date(checkinDate);
-      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      return new Date(checkinDate).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      });
     } catch { return null; }
   }, [checkinDate]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div
-      style={{
-        position:   'fixed',
-        inset:      0,
-        zIndex:     9999,
-        background: T.bg,
-        opacity:    exitOpacity,
-        transition: `opacity ${FADE_IN_DURATION}ms ease`,
-        display:    'flex',
-        flexDirection: 'column',
-        overflow:   'hidden',
-      }}
-    >
+    <div style={{
+      position:      'fixed',
+      inset:         0,
+      zIndex:        9999,
+      background:    T.bg,
+      opacity:       exitOpacity,
+      transition:    `opacity ${FADE_IN}ms ease`,
+      display:       'flex',
+      flexDirection: 'column',
+      overflow:      'hidden',
+      fontFamily:    '"DM Sans", "Inter", sans-serif',
+    }}>
       {/* ── Video background ── */}
       {videoUrl && (
         <video
@@ -290,62 +282,49 @@ export default function JourneyLoadingScreen({
           muted
           loop
           playsInline
-          onCanPlay={() => {
-            if (videoRef.current) videoRef.current.playbackRate = 0.75; // subtle slow-mo
-          }}
+          onCanPlay={() => { if (videoRef.current) videoRef.current.playbackRate = 0.75; }}
           style={{
-            position:   'absolute',
-            inset:      0,
-            width:      '100%',
-            height:     '100%',
-            objectFit:  'cover',
-            opacity:    bgOpacity * 0.45,
-            transition: `opacity ${FADE_IN_DURATION}ms ease`,
-            filter:     'saturate(0.7) brightness(0.55)',
+            position:  'absolute',
+            inset:     0,
+            width:     '100%',
+            height:    '100%',
+            objectFit: 'cover',
+            opacity:   bgOpacity * 0.38,
+            transition:`opacity ${FADE_IN}ms ease`,
+            filter:    'saturate(0.6) brightness(0.5)',
           }}
         />
       )}
 
-      {/* Silent preload of alt video */}
-      {altPreload && (
-        <video
-          key={`preload-${altPreload}`}
-          src={altPreload}
-          muted
-          preload="auto"
-          style={{ display: 'none' }}
-        />
-      )}
-
-      {/* ── Gradient overlays ── */}
+      {/* Dark gradient overlays */}
       <div style={{
-        position:   'absolute',
-        inset:      0,
-        background: `linear-gradient(135deg, ${T.overlayHeavy} 0%, rgba(8,8,24,0.5) 60%, ${T.overlay} 100%)`,
+        position:      'absolute',
+        inset:         0,
+        background:    'linear-gradient(135deg, rgba(7,8,15,0.85) 0%, rgba(7,8,15,0.55) 100%)',
         pointerEvents: 'none',
       }} />
       <div style={{
-        position:   'absolute',
-        bottom:     0,
-        left:       0,
-        right:      0,
-        height:     '40%',
-        background: `linear-gradient(to top, ${T.bg} 0%, transparent 100%)`,
+        position:      'absolute',
+        bottom:        0,
+        left:          0,
+        right:         0,
+        height:        '35%',
+        background:    `linear-gradient(to top, ${T.bg} 0%, transparent 100%)`,
         pointerEvents: 'none',
       }} />
 
-      {/* ── Wordmark / edition name ── */}
+      {/* ── Wordmark ── */}
       <div style={{
         position:   'absolute',
-        top:        28,
+        top:        26,
         left:       36,
         opacity:    bgOpacity,
-        transition: `opacity ${FADE_IN_DURATION}ms ease`,
+        transition: `opacity ${FADE_IN}ms ease`,
       }}>
         <div style={{
-          fontFamily:    '"Cormorant Garamond", "Cormorant", Georgia, serif',
-          fontSize:      13,
-          letterSpacing: '0.25em',
+          fontFamily:    '"Cormorant Garamond", Georgia, serif',
+          fontSize:      12,
+          letterSpacing: '0.26em',
           textTransform: 'uppercase',
           color:         gold,
           fontWeight:    400,
@@ -354,113 +333,110 @@ export default function JourneyLoadingScreen({
         </div>
       </div>
 
-      {/* ── Main content: two-column ── */}
+      {/* ── Main content ── */}
       <div style={{
-        position:       'relative',
-        flex:           1,
-        display:        'flex',
-        alignItems:     'center',
-        padding:        '0 40px',
-        gap:            48,
-        opacity:        bgOpacity,
-        transition:     `opacity ${FADE_IN_DURATION}ms ease`,
+        position:   'relative',
+        flex:       1,
+        display:    'flex',
+        alignItems: 'center',
+        padding:    '72px 48px 0',
+        gap:        52,
+        opacity:    bgOpacity,
+        transition: `opacity ${FADE_IN}ms ease`,
       }}>
-        {/* Left column: lodge timeline */}
-        <div style={{ flex: '0 0 auto', width: 320, minWidth: 0 }}>
+        {/* ── LEFT: Property cards ── */}
+        <div style={{ flex: '0 0 auto', width: 300 }}>
           <div style={{
-            fontFamily:    '"Cormorant Garamond", Georgia, serif',
-            fontSize:      11,
+            fontSize:      10,
             letterSpacing: '0.2em',
             textTransform: 'uppercase',
             color:         T.textDim,
-            marginBottom:  24,
+            marginBottom:  18,
           }}>
-            Your Journey
+            Your properties
           </div>
 
-          {lodges.map((lodge, i) => {
-            const visible = i < visibleLodges;
-            return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {lodges.map((lodge, i) => (
               <div
                 key={i}
                 style={{
                   display:    'flex',
-                  alignItems: 'flex-start',
+                  alignItems: 'center',
                   gap:        14,
-                  marginBottom: 20,
-                  opacity:    visible ? 1 : 0,
-                  transform:  visible ? 'translateX(0)' : 'translateX(-16px)',
-                  transition: 'opacity 900ms ease, transform 900ms ease',
+                  padding:    '10px 14px',
+                  background: i < visibleLodges ? T.surface : 'transparent',
+                  border:     `0.5px solid ${i < visibleLodges ? 'rgba(212,175,55,0.18)' : 'transparent'}`,
+                  borderRadius: 10,
+                  opacity:    i < visibleLodges ? 1 : 0,
+                  transform:  i < visibleLodges ? 'translateX(0)' : 'translateX(-18px)',
+                  transition: 'opacity 700ms ease, transform 700ms ease, background 400ms ease',
                 }}
               >
-                {/* Timeline dot + line */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4 }}>
-                  <div style={{
-                    width:        8,
-                    height:       8,
-                    borderRadius: '50%',
-                    background:   gold,
-                    flexShrink:   0,
-                    boxShadow:    `0 0 8px ${gold}88`,
-                  }} />
-                  {i < lodges.length - 1 && (
-                    <div style={{
-                      width:      1,
-                      flex:       1,
-                      minHeight:  28,
-                      background: `linear-gradient(to bottom, ${gold}44, transparent)`,
-                      marginTop:  4,
-                    }} />
-                  )}
-                </div>
+                {/* Thumbnail */}
+                <Thumb src={lodge.image} name={lodge.name} />
 
-                {/* Lodge info */}
-                <div style={{ minWidth: 0, paddingBottom: 4 }}>
+                {/* Info */}
+                <div style={{ minWidth: 0 }}>
                   <div style={{
-                    fontFamily:    '"Cormorant Garamond", Georgia, serif',
-                    fontSize:      16,
-                    color:         T.text,
-                    fontWeight:    500,
-                    lineHeight:    1.2,
-                    whiteSpace:    'nowrap',
-                    overflow:      'hidden',
-                    textOverflow:  'ellipsis',
-                    maxWidth:      260,
+                    fontFamily:   '"Cormorant Garamond", Georgia, serif',
+                    fontSize:     15,
+                    color:        T.text,
+                    fontWeight:   500,
+                    lineHeight:   1.25,
+                    overflow:     'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace:   'nowrap',
+                    maxWidth:     180,
                   }}>
                     {lodge.name}
                   </div>
                   <div style={{
-                    fontSize:   11,
-                    color:      T.textDim,
-                    marginTop:  3,
-                    letterSpacing: '0.04em',
+                    fontSize:     11,
+                    color:        T.textDim,
+                    marginTop:    3,
+                    letterSpacing:'0.03em',
                   }}>
                     {lodge.nights} night{lodge.nights !== 1 ? 's' : ''}
                     {lodge.region ? ` · ${lodge.region}` : ''}
                   </div>
                 </div>
+
+                {/* Gold dot when visible */}
+                {i < visibleLodges && (
+                  <div style={{
+                    width:        6,
+                    height:       6,
+                    borderRadius: '50%',
+                    background:   gold,
+                    flexShrink:   0,
+                    marginLeft:   'auto',
+                    boxShadow:    `0 0 6px ${gold}88`,
+                  }} />
+                )}
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
 
         {/* Divider */}
         <div style={{
           width:      1,
           alignSelf:  'stretch',
-          background: `linear-gradient(to bottom, transparent, ${gold}33, transparent)`,
+          maxHeight:  340,
+          background: `linear-gradient(to bottom, transparent, ${gold}30, transparent)`,
           flexShrink: 0,
         }} />
 
-        {/* Right column: summary + specialist notes */}
+        {/* ── RIGHT: Summary + specialist text ── */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Journey summary row */}
+          {/* Journey summary */}
           <div style={{
             display:       'flex',
-            gap:           32,
+            gap:           36,
             marginBottom:  36,
             paddingBottom: 28,
-            borderBottom:  `0.5px solid rgba(212,175,55,0.18)`,
+            borderBottom:  `0.5px solid rgba(212,175,55,0.15)`,
           }}>
             {[
               { label: 'Total Nights', value: `${nights}` },
@@ -470,16 +446,16 @@ export default function JourneyLoadingScreen({
               <div key={label}>
                 <div style={{
                   fontSize:      10,
-                  letterSpacing: '0.12em',
+                  letterSpacing: '0.14em',
                   textTransform: 'uppercase',
                   color:         T.textDim,
-                  marginBottom:  5,
+                  marginBottom:  6,
                 }}>
                   {label}
                 </div>
                 <div style={{
                   fontFamily: '"Cormorant Garamond", Georgia, serif',
-                  fontSize:   22,
+                  fontSize:   24,
                   color:      T.text,
                   fontWeight: 400,
                   lineHeight: 1,
@@ -490,14 +466,14 @@ export default function JourneyLoadingScreen({
             ))}
           </div>
 
-          {/* Specialist streaming note */}
+          {/* Specialist streaming text */}
           <div style={{
             opacity:    textVisible ? 1 : 0,
-            transition: 'opacity 800ms ease',
+            transition: 'opacity 700ms ease',
           }}>
             <div style={{
               fontSize:      10,
-              letterSpacing: '0.18em',
+              letterSpacing: '0.20em',
               textTransform: 'uppercase',
               color:         gold,
               marginBottom:  12,
@@ -506,85 +482,78 @@ export default function JourneyLoadingScreen({
               ✦ &nbsp;Journey Specialist
             </div>
             <div style={{
-              fontFamily:  '"Cormorant Garamond", Georgia, serif',
-              fontSize:    20,
-              color:       T.textMid,
-              lineHeight:  1.65,
-              minHeight:   64,
-              fontStyle:   'italic',
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontSize:   19,
+              color:      T.textMid,
+              lineHeight: 1.65,
+              minHeight:  56,
+              fontStyle:  'italic',
             }}>
               {specialistText}
               {/* Blinking cursor */}
               <span style={{
-                display:         'inline-block',
-                width:           1.5,
-                height:          '0.85em',
-                background:      gold,
-                marginLeft:      3,
-                verticalAlign:   'middle',
-                animation:       'jlsBlink 0.9s step-end infinite',
+                display:       'inline-block',
+                width:         1.5,
+                height:        '0.82em',
+                background:    gold,
+                marginLeft:    3,
+                verticalAlign: 'middle',
+                animation:     'jls3Blink 0.9s step-end infinite',
               }} />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Bottom: progress bar ── */}
+      {/* ── Progress bar ── */}
       <div style={{
         position:   'relative',
-        padding:    '0 40px 36px',
+        padding:    '0 48px 32px',
         opacity:    bgOpacity,
-        transition: `opacity ${FADE_IN_DURATION}ms ease`,
+        transition: `opacity ${FADE_IN}ms ease`,
       }}>
-        {/* Label */}
         <div style={{
           display:        'flex',
           justifyContent: 'space-between',
-          marginBottom:   10,
+          marginBottom:   8,
         }}>
           <div style={{
             fontSize:      10,
-            letterSpacing: '0.15em',
+            letterSpacing: '0.14em',
             textTransform: 'uppercase',
             color:         T.textDim,
           }}>
-            Confirming your itinerary
+            Confirming your journey
           </div>
           <div style={{
-            fontSize:  11,
-            color:     T.textDim,
             fontFamily: '"Cormorant Garamond", Georgia, serif',
-            fontStyle: 'italic',
+            fontSize:   11,
+            color:      T.textDim,
+            fontStyle:  'italic',
           }}>
-            {Math.round(progress)}%
+            {Math.min(Math.round(progress), 100)}%
           </div>
         </div>
 
-        {/* Track */}
         <div style={{
           height:       2,
-          background:   'rgba(245,240,232,0.08)',
+          background:   'rgba(245,240,232,0.07)',
           borderRadius: 2,
           overflow:     'hidden',
         }}>
           <div style={{
-            height:       '100%',
-            width:        `${progress}%`,
-            background:   `linear-gradient(90deg, ${gold}88, ${gold})`,
+            height:     '100%',
+            width:      `${progress}%`,
+            background: `linear-gradient(90deg, ${gold}77, ${gold})`,
             borderRadius: 2,
-            transition:   'width 100ms linear',
-            boxShadow:    `0 0 8px ${gold}66`,
+            transition: 'width 80ms linear',
+            boxShadow:  `0 0 8px ${gold}55`,
           }} />
         </div>
       </div>
 
-      {/* ── Blink keyframe ── */}
-      <style>{`
-        @keyframes jlsBlink {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0; }
-        }
-      `}</style>
+      {/* Blink keyframe */}
+      <style>{`@keyframes jls3Blink { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
     </div>
   );
 }
