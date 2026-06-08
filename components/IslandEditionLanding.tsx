@@ -1,1208 +1,461 @@
 'use client';
 
-// LandingHero.tsx  v3  — full mobile-first redesign
-// Mobile: full-screen video hero, bottom-sheet CTA, immersive cinematic
-// Desktop: original split layout preserved, circle video, curated grid
+// IslandEditionLanding.tsx
+// The Island Edition — Maldives · Seychelles · Zanzibar
+// Distinct from Safari Edition: deep ocean palette, water-world imagery, island pacing
 
 import { useState, useEffect, useRef } from 'react';
-import { T } from '@/app/lib/theme';
 
-const HERO_BG_IMAGE = 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=1800&q=85';
-
-const OTHER_EDITIONS = [
-  { id: 'island',    name: 'The Island Edition',    icon: '🏝', desc: 'Maldives · Seychelles · Zanzibar', color: '#60a5fa', href: '/island', live: true },
-  { id: 'adventure', name: 'The Adventure Edition', icon: '🧗', desc: 'Nepal · Patagonia · Arctic',        color: '#4ade80', href: null,       live: false },
-  { id: 'ski',       name: 'The Ski Edition',       icon: '⛷', desc: 'Alps · Aspen · Hokkaido',           color: '#a78bfa', href: null,       live: false },
-];
-
-const TRUST = [
-  { icon: '🛡', label: 'Contracted rates', sub: 'Up to 27% below direct booking*' },
-  { icon: '👁', label: 'Verified properties', sub: 'Every lodge personally inspected' },
-  { icon: '👤', label: 'Dedicated concierge', sub: 'Your personal travel planner' },
-  { icon: '↗', label: 'Flexible terms', sub: 'Best cancellation in the market' },
-];
-
-const STATS = [
-  { value: 52,  suffix: '+',   label: 'Properties' },
-  { value: 27,  suffix: '%',   label: 'Avg. saving' },
-  { value: 9,   suffix: 'min', label: 'Booking time' },
-  { value: 4.9, suffix: '★',   label: 'Satisfaction' },
-];
-
-const CURATED = [
-  { name: 'The Sabi Sand Classic',    tagline: "South Africa's finest leopard territory", nights: 5, priceFrom: 142000, otaPrice: 192000, fallbackImage: 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80', badge: 'Most popular', badgeColor: '#d4af37', regionSlug: 'kruger-sabi-sand' },
-  { name: 'The Grand Safari Circuit', tagline: 'Two countries. Three ecosystems.',         nights: 9, priceFrom: 298000, otaPrice: 412000, fallbackImage: 'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=800&q=80', badge: 'Signature',    badgeColor: '#a78bfa', regionSlug: 'okavango-delta'   },
-  { name: 'Kruger & Victoria Falls',  tagline: 'Big Five then one of the Seven Wonders',  nights: 7, priceFrom: 198000, otaPrice: 272000, fallbackImage: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&q=80', badge: 'Classic',      badgeColor: '#4ade80', regionSlug: 'chobe-vic-falls'  },
-  { name: 'Safari & Indian Ocean',    tagline: 'Bush then beach — the perfect balance',   nights: 8, priceFrom: 224000, otaPrice: 316000, fallbackImage: 'https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?w=800&q=80', badge: 'Our favourite', badgeColor: '#60a5fa', regionSlug: 'phinda'           },
-];
-
-
-// Unsplash video fallbacks — autoplay muted loops per region
-const REGION_VIDEOS: Record<string,{img:string; label:string; country:string; tag:string}> = {
-  'kruger-sabi-sand': { img:'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=900&q=70', label:'Sabi Sand', country:'South Africa', tag:'Leopard · Big Five' },
-  'okavango-delta':   { img:'https://images.unsplash.com/photo-1523805009345-7448845a9e53?w=900&q=70', label:'Okavango Delta', country:'Botswana', tag:'Floodplains · Elephant' },
-  'chobe-vic-falls':  { img:'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=900&q=70', label:'Victoria Falls', country:'Zimbabwe', tag:'Seven Wonders · Chobe' },
-  'madikwe':          { img:'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=900&q=70', label:'Madikwe Reserve', country:'South Africa', tag:'Malaria-free · Wild Dog' },
-  'cape-town':        { img:'https://images.unsplash.com/photo-1580060839134-75a5edca2e99?w=900&q=70', label:'Cape Town', country:'South Africa', tag:'Table Mountain · Winelands' },
+// ── Design tokens — Island Edition ─────────────────────────────────────────
+// Same dark base as Safari, but ocean teal replaces safari gold
+const C = {
+  bg:     '#060d14',
+  bg2:    '#0a1520',
+  bg3:    '#0f1e2e',
+  surf:   '#132233',
+  border: 'rgba(255,255,255,0.07)',
+  borderTeal: 'rgba(32,178,170,0.28)',
+  teal:   '#20b2aa',
+  tealDim:'rgba(32,178,170,0.12)',
+  tealGlow:'rgba(32,178,170,0.22)',
+  text:   '#eef4f8',
+  textMid:'rgba(238,244,248,0.58)',
+  textDim:'rgba(238,244,248,0.32)',
+  white:  '#ffffff',
 };
 
-const HOW_IT_WORKS = [
-  { n:'01', title:'Tell us your vision', body:'Answer a few questions — regions, pace, style. Takes two minutes.' },
-  { n:'02', title:'Your itinerary builds live', body:'Our AI sequences your safari using contracted lodge rates and real transfer logic.' },
-  { n:'03', title:'Refine with your specialist', body:'A human expert reviews every detail, adjusts, and confirms your pricing.' },
-  { n:'04', title:'Travel with confidence', body:'Every lodge inspected. Every transfer timed. Your concierge on call throughout.' },
+const FONTS = `
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&display=swap');
+`;
+
+// ── Island destinations ──────────────────────────────────────────────────────
+const DESTINATIONS = [
+  {
+    id: 'maldives',
+    name: 'Maldives',
+    sub: 'The definitive island escape',
+    tag: 'North Malé · Baa Atoll · Noonu Atoll',
+    img: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=900&q=80',
+    highlight: 'Overwater bungalows. House reef snorkelling at dawn. No shoes required.',
+    nights: '5–10 nights',
+    from: '$8,400',
+  },
+  {
+    id: 'seychelles',
+    name: 'Seychelles',
+    sub: 'Pristine granite archipelago',
+    tag: 'Mahé · Praslin · La Digue · Fregate',
+    img: 'https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=900&q=80',
+    highlight: 'World\'s only island coco de mer forest. Secluded beaches with zero footprints.',
+    nights: '7–14 nights',
+    from: '$11,200',
+  },
+  {
+    id: 'zanzibar',
+    name: 'Zanzibar',
+    sub: 'Spice island & turquoise coast',
+    tag: 'Stone Town · North Coast · Pemba',
+    img: 'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=900&q=80',
+    highlight: 'Swahili culture, coral reefs, and dhow sunsets. The perfect safari extension.',
+    nights: '3–7 nights',
+    from: '$3,200',
+  },
 ];
 
-const CURRENCIES = [
-  { code: 'USD', symbol: '$',  rate: 18.62 },
-  { code: 'GBP', symbol: '£',  rate: 23.48 },
-  { code: 'EUR', symbol: '€',  rate: 20.14 },
-  { code: 'ZAR', symbol: 'R ', rate: 1     },
+// ── Curated journeys ─────────────────────────────────────────────────────────
+const JOURNEYS = [
+  {
+    name: 'The Maldives Immersion',
+    nights: 8,
+    tagline: 'Two atolls. Reef to horizon. Nothing else.',
+    badge: 'Most booked',
+    badgeColor: C.teal,
+    img: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=700&q=80',
+    priceFrom: 142000,
+    otaPrice: 198000,
+  },
+  {
+    name: 'Seychelles & Outer Islands',
+    nights: 11,
+    tagline: 'Begin Mahé. Discover Praslin. Disappear to Fregate.',
+    badge: 'Our favourite',
+    badgeColor: '#a78bfa',
+    img: 'https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=700&q=80',
+    priceFrom: 198000,
+    otaPrice: 271000,
+  },
+  {
+    name: 'Safari & Zanzibar',
+    nights: 10,
+    tagline: 'Three nights Zanzibar. The perfect safari ending.',
+    badge: 'Pairs perfectly',
+    badgeColor: '#4ade80',
+    img: 'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=700&q=80',
+    priceFrom: 98000,
+    otaPrice: 134000,
+  },
 ];
-type Currency = { code: string; symbol: string; rate: number };
 
-interface LandingHeroProps {
-  onPlanJourney:     () => void;
-  onCuratedJourneys: () => void;
-  onSendBrief:       () => void;
-  currency?:         Currency;
-  onCurrencyChange?: (c: Currency) => void;
-  currencies?:       Currency[];
-}
+// ── Trust signals ─────────────────────────────────────────────────────────────
+const TRUST = [
+  { icon: '🪸', label: 'Reef-certified partners', sub: 'Every resort scored on marine conservation' },
+  { icon: '🛥', label: 'Private transfers only', sub: 'No shared speedboats or group shuttles' },
+  { icon: '👤', label: 'Island Specialist assigned', sub: 'Before, during, and after your trip' },
+  { icon: '📍', label: 'Atoll-level expertise', sub: 'We know which overwater faces the sunset' },
+];
 
-export default function LandingHero({
-  onPlanJourney, onCuratedJourneys, onSendBrief,
-  currency: currencyProp, onCurrencyChange, currencies: currenciesProp,
-}: LandingHeroProps) {
-  const [heroBg,          setHeroBg]          = useState<string | null>(null);
-  const [circleVideo,     setCircleVideo]     = useState<string | null>(null);
-  const [logoUrl,         setLogoUrl]         = useState<string | null>(null);
-  const [logoFailed,      setLogoFailed]      = useState(false);
-  const [revealed,        setRevealed]        = useState(true);
-  const [editionOpen,     setEditionOpen]     = useState(false);
-  const [scrolled,        setScrolled]        = useState(false);
-  const [regionImages,    setRegionImages]    = useState<Record<string, string>>({});
-  const [curatedJourneys, setCuratedJourneys] = useState<any[]>([]);
-  const [curatedLoading,  setCuratedLoading]  = useState(true);
-  const [isMobile,        setIsMobile]        = useState(false);
-  const [mounted,         setMounted]         = useState(false);
-  const [ctaVisible,      setCtaVisible]      = useState(false);
-  const [menuOpen,        setMenuOpen]        = useState(false);
+// ── How it works ──────────────────────────────────────────────────────────────
+const HOW = [
+  { n: '01', title: 'Choose your atoll', body: 'Tell us your island vision in two minutes — pace, privacy, experience level.' },
+  { n: '02', title: 'Itinerary builds instantly', body: 'Our engine sequences transfers, tides, and resort rates. Everything timed.' },
+  { n: '03', title: 'Specialist refines it', body: 'A human island specialist confirms every detail and personalises your stay.' },
+  { n: '04', title: 'Travel with confidence', body: 'Concierge available throughout. Every reef transfer pre-arranged.' },
+];
 
-  const [localCurrency, setLocalCurrency] = useState<Currency>(CURRENCIES[0]);
-  const activeCurrency   = currencyProp ?? localCurrency;
-  const activeCurrencies = currenciesProp ?? CURRENCIES;
-  const handleCurrencyChange = (c: Currency) => { setLocalCurrency(c); onCurrencyChange?.(c); };
-  const fmt = (n: number) => `${activeCurrency.symbol}${Math.round(n / activeCurrency.rate).toLocaleString()}`;
+// ── Interest form state ──────────────────────────────────────────────────────
+interface FormState { name: string; email: string; destination: string; when: string; submitted: boolean; }
 
-  const circleRef = useRef<HTMLVideoElement>(null);
-  const heroRef   = useRef<HTMLDivElement>(null);
+export default function IslandEditionLanding() {
+  const [scrolled,   setScrolled]   = useState(false);
+  const [activeImg,  setActiveImg]  = useState(0);
+  const [form,       setForm]       = useState<FormState>({ name:'', email:'', destination:'any', when:'', submitted:false });
+  const [mounted,    setMounted]    = useState(false);
+  const heroRef = useRef<HTMLDivElement>(null);
 
-  // Detect mobile — only after mount to avoid SSR hydration mismatch
+  useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
-    setMounted(true);
-    const check = () => setIsMobile(window.innerWidth < 700);
-    check();
-    window.addEventListener('resize', check, { passive: true });
-    return () => window.removeEventListener('resize', check);
+    const onScroll = () => setScrolled(window.scrollY > 60);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // CTA panel: animate in after short delay on mobile
+  // Rotate hero background
   useEffect(() => {
-    if (!isMobile) return;
-    const t = setTimeout(() => setCtaVisible(true), 800);
-    return () => clearTimeout(t);
-  }, [isMobile]);
-
-  // Load hero video + circle from Supabase
-  useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return;
-    fetch(`${url}/rest/v1/cinematic_videos?select=region,url`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-    })
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        rows.forEach(r => {
-          if (r.region === 'hero')        setHeroBg(r.url);
-          if (r.region === 'hero_circle') setCircleVideo(r.url);
-        });
-      })
-      .catch(() => {});
+    const t = setInterval(() => setActiveImg(i => (i + 1) % DESTINATIONS.length), 5000);
+    return () => clearInterval(t);
   }, []);
 
-  // Load region images
-  useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return;
-    const slugs = ['kruger-sabi-sand', 'okavango-delta', 'chobe-vic-falls', 'cape-town', 'madikwe'];
-    fetch(
-      `${url}/rest/v1/suppliers?select=region_slug,images,hero_image,cover_image&is_active=eq.true&region_slug=in.(${slugs.join(',')})&order=trust_score.desc`,
-      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-    )
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        const map: Record<string, string> = {};
-        rows.forEach((s: any) => {
-          if (map[s.region_slug]) return;
-          let img = '';
-          try {
-            if (typeof s.images === 'string' && s.images.startsWith('http')) { img = s.images; }
-            else {
-              const imgs: any[] = Array.isArray(s.images) ? s.images : (s.images ? JSON.parse(s.images) : []);
-              const primary = imgs.find((i: any) => i.is_primary && i.status === 'approved') ?? imgs.find((i: any) => i.status === 'approved') ?? imgs[0];
-              if (primary?.url) img = primary.url;
-            }
-          } catch {}
-          if (!img || img.includes('unsplash')) { if (s.hero_image) img = s.hero_image; else if (s.cover_image) img = s.cover_image; }
-          if (img && !img.includes('unsplash')) map[s.region_slug] = img;
-        });
-        if (Object.keys(map).length > 0) setRegionImages(map);
-      })
-      .catch(() => {});
-  }, []);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setForm(f => ({ ...f, submitted: true }));
+  };
 
-  // Load curated journeys
-  useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) { setCuratedLoading(false); return; }
-    fetch(
-      `${url}/rest/v1/curated_journeys?select=*&status=eq.published&edition_id=eq.safari&order=created_at.asc&limit=6`,
-      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-    )
-      .then(r => r.json())
-      .then((rows: any[]) => { if (rows?.length > 0) setCuratedJourneys(rows); })
-      .catch(() => {})
-      .finally(() => setCuratedLoading(false));
-  }, []);
+  const fmt = (n: number) => `R ${Math.round(n).toLocaleString()}`;
 
-  useEffect(() => {
-    const fn = () => setScrolled(window.scrollY > 40);
-    window.addEventListener('scroll', fn, { passive: true });
-    return () => window.removeEventListener('scroll', fn);
-  }, []);
+  if (!mounted) return null;
 
-  // ── MOBILE RENDER — only after mount to prevent SSR/hydration mismatch ────────
-  if (mounted && isMobile) {
-    return (
-      <>
-        <style suppressHydrationWarning>{`
-          @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@200;300;400;500&display=swap');
-
-          .m-root { font-family:'Jost',sans-serif; background:#080806; color:#f5f0e8; -webkit-tap-highlight-color:transparent; }
-
-          /* ── MOBILE NAV ─────────────────────────────────────────── */
-          .m-nav {
-            position:fixed; top:0; left:0; right:0; z-index:300;
-            height:56px; padding:0 20px;
-            display:flex; align-items:center; justify-content:space-between;
-            transition:background 0.3s;
-          }
-          .m-nav.scrolled { background:rgba(8,8,6,0.97); backdrop-filter:blur(20px); border-bottom:0.5px solid rgba(200,169,110,0.1); }
-          .m-nav-wordmark { display:flex; align-items:center; gap:8px; }
-          .m-nav-diamond  { width:20px; height:20px; position:relative; flex-shrink:0; }
-          .m-nav-diamond::before,.m-nav-diamond::after { content:''; position:absolute; }
-          .m-nav-diamond::before { inset:0; border:1.5px solid rgba(200,169,110,0.8); transform:rotate(45deg); }
-          .m-nav-diamond::after  { inset:6px; background:rgba(200,169,110,0.85); transform:rotate(45deg); }
-          .m-nav-title { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:14px; color:rgba(200,169,110,0.95); letter-spacing:0.08em; }
-          .m-nav-right { display:flex; align-items:center; gap:10px; }
-          .m-currency { background:transparent; border:0.5px solid rgba(255,255,255,0.15); color:rgba(245,240,232,0.6); border-radius:4px; padding:5px 8px; font-size:11px; outline:none; font-family:'Jost',sans-serif; }
-          .m-hamburger { width:36px; height:36px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; background:rgba(255,255,255,0.05); border:0.5px solid rgba(255,255,255,0.1); border-radius:8px; cursor:pointer; }
-          .m-hamburger span { display:block; width:16px; height:1px; background:rgba(245,240,232,0.7); transition:all 0.2s; }
-
-          /* ── MOBILE MENU OVERLAY ────────────────────────────────── */
-          .m-menu { position:fixed; inset:0; z-index:400; background:rgba(4,4,2,0.97); backdrop-filter:blur(30px); display:flex; flex-direction:column; padding:80px 32px 48px; transition:opacity 0.25s; }
-          .m-menu-item { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:36px; color:rgba(245,240,232,0.75); padding:12px 0; border-bottom:0.5px solid rgba(255,255,255,0.06); cursor:pointer; letter-spacing:0.04em; transition:color 0.2s; }
-          .m-menu-item:active { color:rgba(200,169,110,0.9); }
-          .m-menu-close { position:absolute; top:20px; right:20px; width:40px; height:40px; background:rgba(255,255,255,0.07); border:0.5px solid rgba(255,255,255,0.12); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; color:rgba(245,240,232,0.6); }
-
-          /* ── HERO — full screen video ───────────────────────────── */
-          .m-hero { position:relative; height:100svh; overflow:hidden; display:flex; flex-direction:column; }
-          .m-hero-bg { position:absolute; inset:0; }
-          .m-hero-bg video,
-          .m-hero-bg img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 40%; }
-          .m-hero-ov1 { position:absolute; inset:0; background:linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.92) 100%); z-index:2; }
-          .m-hero-grain { position:absolute; inset:0; z-index:3; pointer-events:none; opacity:0.022; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-size:160px; animation:m-grain .5s steps(1) infinite; }
-          @keyframes m-grain { 0%{background-position:0 0}25%{background-position:-18px 9px}50%{background-position:9px -14px}75%{background-position:-9px 18px}100%{background-position:5px -5px} }
-
-          /* ── LOGO centred in hero ───────────────────────────────── */
-          .m-hero-logo {
-            position:relative; z-index:10;
-            padding-top:88px;
-            display:flex; flex-direction:column; align-items:center; gap:8px;
-            animation:m-fadeUp 1s ease forwards;
-          }
-          @keyframes m-fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
-          .m-logo-diamond { width:32px; height:32px; position:relative; }
-          .m-logo-diamond::before { content:''; position:absolute; inset:0; border:1.5px solid rgba(200,169,110,0.75); transform:rotate(45deg); }
-          .m-logo-diamond::after  { content:''; position:absolute; inset:8px; background:rgba(200,169,110,0.85); transform:rotate(45deg); }
-          .m-logo-name { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:22px; letter-spacing:0.24em; color:rgba(255,255,255,0.88); text-transform:uppercase; }
-          .m-logo-sub  { font-weight:200; font-size:8px; letter-spacing:0.52em; text-transform:uppercase; color:rgba(200,169,110,0.6); }
-
-          /* ── HERO TAGLINE — mid screen ──────────────────────────── */
-          .m-hero-tagline {
-            position:relative; z-index:10;
-            flex:1; display:flex; align-items:center; justify-content:center;
-            padding:0 28px;
-            pointer-events:none;
-          }
-          .m-hero-headline { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:42px; line-height:1.0; letter-spacing:-0.01em; color:#f5f0e8; text-align:center; opacity:0; animation:m-fadeUp 1s ease 0.3s forwards; }
-          .m-hero-headline em { font-style:italic; color:rgba(200,169,110,0.9); }
-
-          /* ── BOTTOM CTA PANEL — slides up ───────────────────────── */
-          .m-cta-panel {
-            position:relative; z-index:10;
-            padding:0 20px 0;
-            padding-bottom:max(28px, env(safe-area-inset-bottom, 28px));
-            opacity:0; transform:translateY(24px);
-            transition:opacity 0.7s ease, transform 0.7s ease;
-          }
-          .m-cta-panel.visible { opacity:1; transform:translateY(0); }
-
-          .m-cta-primary {
-            width:100%; padding:18px 24px;
-            background:linear-gradient(135deg,#c8a020,#f0c840);
-            border:none; border-radius:4px;
-            color:#080800; cursor:pointer;
-            font-family:'Jost',sans-serif; font-weight:600; font-size:14px; letter-spacing:0.08em;
-            display:flex; align-items:center; justify-content:space-between;
-            margin-bottom:10px;
-          }
-          .m-cta-primary-sub { font-weight:200; font-size:10px; letter-spacing:0.14em; opacity:0.65; }
-
-          .m-cta-row { display:flex; gap:8px; }
-          .m-cta-ghost {
-            flex:1; padding:14px 0;
-            background:rgba(255,255,255,0.05); border:0.5px solid rgba(255,255,255,0.15);
-            border-radius:4px; color:rgba(245,240,232,0.65);
-            cursor:pointer; font-family:'Jost',sans-serif; font-weight:300; font-size:12px;
-            letter-spacing:0.1em; text-align:center;
-          }
-
-          /* ── SCROLL INDICATOR ───────────────────────────────────── */
-          .m-scroll-hint {
-            position:absolute; bottom:max(140px, calc(140px + env(safe-area-inset-bottom)));
-            left:50%; transform:translateX(-50%);
-            z-index:10; display:flex; flex-direction:column; align-items:center; gap:6px;
-            opacity:0; animation:m-fadeUp 1s ease 1.6s forwards;
-          }
-          .m-scroll-dot { width:4px; height:4px; border-radius:50%; background:rgba(200,169,110,0.7); animation:m-bob 2s ease-in-out infinite; }
-          .m-scroll-line { width:1px; height:28px; background:linear-gradient(to bottom,rgba(200,169,110,0.6),transparent); }
-          @keyframes m-bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(5px)} }
-
-          /* ── CORNER MARKS ───────────────────────────────────────── */
-          .m-corner { position:absolute; width:14px; height:14px; z-index:6; opacity:0.28; }
-          .m-corner::before,.m-corner::after{content:'';position:absolute;background:rgba(200,169,110,0.7);}
-          .m-corner.tl{top:18px;left:18px}.m-corner.tl::before{top:0;left:0;width:14px;height:1px}.m-corner.tl::after{top:0;left:0;width:1px;height:14px}
-          .m-corner.tr{top:18px;right:18px}.m-corner.tr::before{top:0;right:0;width:14px;height:1px}.m-corner.tr::after{top:0;right:0;width:1px;height:14px}
-          .m-corner.bl{bottom:18px;left:18px}.m-corner.bl::before{bottom:0;left:0;width:14px;height:1px}.m-corner.bl::after{bottom:0;left:0;width:1px;height:14px}
-          .m-corner.br{bottom:18px;right:18px}.m-corner.br::before{bottom:0;right:0;width:14px;height:1px}.m-corner.br::after{bottom:0;right:0;width:1px;height:14px}
-
-          /* ── TRUST STRIP — horizontal scroll ───────────────────── */
-          .m-trust { background:rgba(8,8,6,0.98); border-bottom:0.5px solid rgba(200,169,110,0.07); padding:20px 0; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
-          .m-trust::-webkit-scrollbar { display:none; }
-          .m-trust-inner { display:flex; gap:0; padding:0 20px; min-width:max-content; }
-          .m-trust-item { display:flex; align-items:center; gap:10px; padding:0 24px 0 0; border-right:0.5px solid rgba(255,255,255,0.07); margin-right:24px; }
-          .m-trust-item:last-child { border-right:none; padding-right:0; margin-right:20px; }
-          .m-trust-icon { font-size:16px; }
-          .m-trust-lbl  { font-weight:400; font-size:12px; color:rgba(245,240,232,0.75); white-space:nowrap; }
-          .m-trust-sub  { font-weight:200; font-size:10px; color:rgba(245,240,232,0.3); letter-spacing:0.04em; white-space:nowrap; }
-
-          /* ── STATS — 2×2 grid ───────────────────────────────────── */
-          .m-stats { padding:36px 20px; background:#0a0a0a; display:grid; grid-template-columns:1fr 1fr; gap:1px; background:rgba(255,255,255,0.05); border:0.5px solid rgba(255,255,255,0.05); }
-          .m-stat  { background:#0a0a0a; padding:22px 20px; }
-          .m-stat-n { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:38px; color:rgba(200,169,110,0.88); line-height:1; margin-bottom:4px; }
-          .m-stat-l { font-weight:200; font-size:10px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(245,240,232,0.28); }
-
-          /* ── CURATED — full-width cards ─────────────────────────── */
-          .m-curated { padding:40px 0 0; background:#0a0a0a; }
-          .m-curated-head { padding:0 20px 24px; }
-          .m-curated-eyebrow { font-weight:200; font-size:9px; letter-spacing:0.44em; text-transform:uppercase; color:rgba(200,169,110,0.6); margin-bottom:6px; }
-          .m-curated-title { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:28px; color:#f5f0e8; line-height:1.1; }
-          .m-curated-sub { font-weight:200; font-size:12px; color:rgba(245,240,232,0.32); margin-top:6px; letter-spacing:0.04em; line-height:1.6; }
-
-          /* Horizontal scroll cards */
-          .m-card-scroll { display:flex; gap:12px; padding:0 20px; overflow-x:auto; -webkit-overflow-scrolling:touch; scroll-snap-type:x mandatory; scrollbar-width:none; padding-bottom:20px; }
-          .m-card-scroll::-webkit-scrollbar { display:none; }
-          .m-curated-card { flex-shrink:0; width:75vw; max-width:280px; scroll-snap-align:start; background:rgba(255,255,255,0.025); border:0.5px solid rgba(255,255,255,0.07); border-radius:14px; overflow:hidden; }
-          .m-card-img { position:relative; height:160px; overflow:hidden; }
-          .m-card-img img { width:100%; height:100%; object-fit:cover; }
-          .m-card-img-ov { position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,0.7) 0%,transparent 55%); }
-          .m-card-body { padding:14px 16px; }
-          .m-card-name { font-family:'Cormorant Garamond',serif; font-weight:400; font-size:16px; color:#f5f0e8; margin-bottom:2px; }
-          .m-card-tag  { font-weight:200; font-size:11px; color:rgba(245,240,232,0.36); margin-bottom:10px; }
-          .m-card-price { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:20px; color:rgba(200,169,110,0.9); }
-          .m-card-nights { font-size:10px; color:rgba(245,240,232,0.3); letter-spacing:0.08em; margin-top:1px; }
-          .m-card-save { font-size:10px; color:#4ade80; margin-top:2px; }
-
-          /* ── VIEW ALL ────────────────────────────────────────────── */
-          .m-view-all { padding:20px 20px 40px; }
-          .m-view-btn { width:100%; padding:15px 0; border:0.5px solid rgba(255,255,255,0.12); border-radius:4px; background:transparent; color:rgba(245,240,232,0.45); font-size:12px; letter-spacing:0.16em; text-transform:uppercase; cursor:pointer; font-family:'Jost',sans-serif; font-weight:300; }
-
-          /* ── AFFIL strip ─────────────────────────────────────────── */
-          .m-affil { background:#0a0a0a; border-top:0.5px solid rgba(255,255,255,0.04); padding:24px 20px; }
-          .m-affil-lbl { font-weight:200; font-size:8px; letter-spacing:0.4em; text-transform:uppercase; color:rgba(245,240,232,0.18); text-align:center; margin-bottom:16px; }
-          .m-affil-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-          .m-affil-item { display:flex; flex-direction:column; align-items:center; gap:3px; opacity:0.65; }
-          .m-affil-abbr { font-family:'Cormorant Garamond',serif; font-weight:400; font-size:14px; color:rgba(200,169,110,0.75); letter-spacing:0.06em; }
-          .m-affil-note { font-size:9px; font-weight:300; letter-spacing:0.12em; color:rgba(74,222,128,0.55); }
-
-          /* ── REGION STRIP — full-width horizontal scroll ──────── */
-          .m-regions { background:#050503; padding:36px 0 0; }
-          .m-regions-head { padding:0 20px 20px; }
-          .m-regions-eyebrow { font-weight:200; font-size:8px; letter-spacing:0.44em; text-transform:uppercase; color:rgba(200,169,110,0.6); margin-bottom:6px; }
-          .m-regions-title { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:26px; color:#f5f0e8; line-height:1.05; }
-          .m-regions-scroll { display:flex; gap:10px; padding:0 20px 24px; overflow-x:auto; -webkit-overflow-scrolling:touch; scroll-snap-type:x mandatory; scrollbar-width:none; }
-          .m-regions-scroll::-webkit-scrollbar { display:none; }
-          .m-region-card { flex-shrink:0; width:52vw; max-width:200px; height:200px; scroll-snap-align:start; border-radius:10px; overflow:hidden; position:relative; cursor:pointer; }
-          .m-region-card img { width:100%; height:100%; object-fit:cover; filter:saturate(0.75) brightness(0.8); }
-          .m-region-card-ov { position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,0.8) 0%,transparent 55%); }
-          .m-region-card-label { position:absolute; bottom:0; left:0; right:0; padding:12px 14px; }
-          .m-region-card-country { font-weight:200; font-size:8px; letter-spacing:0.25em; text-transform:uppercase; color:rgba(200,169,110,0.7); margin-bottom:3px; }
-          .m-region-card-name { font-family:'Cormorant Garamond',serif; font-weight:400; font-size:15px; color:#f5f0e8; }
-          .m-region-card-tag { font-size:9px; color:rgba(245,240,232,0.38); margin-top:2px; }
-
-          /* ── HOW IT WORKS ────────────────────────────────────────── */
-          .m-hiw { background:#080806; padding:40px 20px; border-top:0.5px solid rgba(255,255,255,0.04); }
-          .m-hiw-head { margin-bottom:28px; }
-          .m-hiw-eyebrow { font-weight:200; font-size:8px; letter-spacing:0.44em; text-transform:uppercase; color:rgba(200,169,110,0.6); margin-bottom:6px; }
-          .m-hiw-title { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:26px; color:#f5f0e8; }
-          .m-hiw-step { display:flex; gap:16px; padding:16px 0; border-bottom:0.5px solid rgba(255,255,255,0.05); }
-          .m-hiw-n { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:32px; color:rgba(200,169,110,0.2); line-height:1; flex-shrink:0; width:36px; }
-          .m-hiw-step-title { font-family:'Cormorant Garamond',serif; font-weight:400; font-size:16px; color:rgba(245,240,232,0.85); margin-bottom:4px; }
-          .m-hiw-step-body  { font-weight:200; font-size:11px; color:rgba(245,240,232,0.35); line-height:1.7; }
-
-          /* ── PULLQUOTE ───────────────────────────────────────────── */
-          .m-pullquote { padding:36px 20px; background:#050503; border-top:0.5px solid rgba(255,255,255,0.04); }
-          .m-pq-mark { font-family:'Cormorant Garamond',serif; font-size:48px; color:rgba(200,169,110,0.15); line-height:0.6; display:block; margin-bottom:6px; }
-          .m-pq-text { font-family:'Cormorant Garamond',serif; font-weight:300; font-style:italic; font-size:20px; color:rgba(245,240,232,0.7); line-height:1.5; margin-bottom:14px; }
-          .m-pq-attr { font-weight:200; font-size:9px; letter-spacing:0.25em; text-transform:uppercase; color:rgba(200,169,110,0.45); }
-
-          /* ── FOOTER ─────────────────────────────────────────────── */
-          .m-footer { background:#040400; border-top:0.5px solid rgba(255,255,255,0.05); padding:32px 20px max(28px, env(safe-area-inset-bottom, 28px)); }
-          .m-footer-brand { margin-bottom:28px; }
-          .m-footer-brand-name { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:16px; color:rgba(200,169,110,0.75); letter-spacing:0.1em; display:block; margin-bottom:2px; }
-          .m-footer-brand-sub  { font-weight:200; font-size:8px; letter-spacing:0.36em; text-transform:uppercase; color:rgba(200,169,110,0.35); display:block; margin-bottom:10px; }
-          .m-footer-brand p    { font-weight:200; font-size:11px; color:rgba(245,240,232,0.25); line-height:1.7; }
-          .m-footer-links { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; }
-          .m-footer-col h4 { font-weight:200; font-size:8px; letter-spacing:0.4em; text-transform:uppercase; color:rgba(200,169,110,0.5); margin-bottom:10px; }
-          .m-footer-col ul { list-style:none; margin:0; padding:0; }
-          .m-footer-col li { margin-bottom:7px; }
-          .m-footer-col a { font-weight:200; font-size:12px; color:rgba(245,240,232,0.3); text-decoration:none; }
-          .m-footer-legal { font-size:10px; color:rgba(245,240,232,0.18); font-weight:200; text-align:center; line-height:1.8; }
-          .m-footer-legal a { color:rgba(245,240,232,0.25); text-decoration:none; }
-        `}</style>
-
-        <div className="m-root">
-
-          {/* NAV */}
-          <nav className={`m-nav ${scrolled ? 'scrolled' : ''}`}>
-            <div className="m-nav-wordmark">
-              <div className="m-nav-diamond" />
-              <span className="m-nav-title">The Safari Edition</span>
-            </div>
-            <div className="m-nav-right">
-              <select className="m-currency" value={activeCurrency.code}
-                onChange={e => { const c = activeCurrencies.find(x => x.code === e.target.value); if (c) handleCurrencyChange(c); }}>
-                {activeCurrencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
-              </select>
-              <button className="m-hamburger" onClick={() => setMenuOpen(true)} aria-label="Menu">
-                <span /><span /><span />
-              </button>
-            </div>
-          </nav>
-
-          {/* FULL SCREEN MENU */}
-          {menuOpen && (
-            <div className="m-menu">
-              <button className="m-menu-close" onClick={() => setMenuOpen(false)}>×</button>
-              {[
-                { label: 'Plan My Journey',  action: () => { setMenuOpen(false); onPlanJourney(); } },
-                { label: 'Curated Journeys', action: () => { setMenuOpen(false); onCuratedJourneys(); } },
-                { label: 'Send a Brief',     action: () => { setMenuOpen(false); onSendBrief(); } },
-                { label: 'How It Works',     action: () => setMenuOpen(false) },
-                { label: 'About',            action: () => setMenuOpen(false) },
-              ].map(item => (
-                <div key={item.label} className="m-menu-item" onClick={item.action}>{item.label}</div>
-              ))}
-              <div style={{ marginTop: 'auto', fontSize: 11, color: 'rgba(245,240,232,0.2)', fontWeight: 200, letterSpacing: '0.1em' }}>
-                ASATA · SATSA · POPIA Compliant
-              </div>
-            </div>
-          )}
-
-          {/* HERO */}
-          <section className="m-hero" ref={heroRef}>
-            {/* BG video or image */}
-            <div className="m-hero-bg">
-              {heroBg
-                ? <video src={heroBg} autoPlay muted loop playsInline />
-                : <img src={HERO_BG_IMAGE} alt="" />
-              }
-              <div className="m-hero-ov1" />
-              <div className="m-hero-grain" />
-            </div>
-
-            {/* Corners */}
-            <div className="m-corner tl" /><div className="m-corner tr" />
-            <div className="m-corner bl" /><div className="m-corner br" />
-
-            {/* Logo centred */}
-            <div className="m-hero-logo">
-              <div className="m-logo-diamond" />
-              {!logoFailed && (
-                <img src="/logo.png" alt="The Safari Edition"
-                  style={{ maxHeight: 72, maxWidth: 240, objectFit: 'contain', filter: 'drop-shadow(0 2px 16px rgba(0,0,0,0.6))' }}
-                  onError={() => setLogoFailed(true)} />
-              )}
-              {logoFailed && <>
-                <div className="m-logo-name">The Safari Edition</div>
-                <div className="m-logo-sub">Sub-Saharan Africa · Curated</div>
-              </>}
-            </div>
-
-            {/* Tagline centred */}
-            <div className="m-hero-tagline">
-              <div className="m-hero-headline">
-                Africa's finest<br />wilderness, <em>curated.</em>
-              </div>
-            </div>
-
-            {/* Scroll hint */}
-            <div className="m-scroll-hint">
-              <div className="m-scroll-dot" />
-              <div className="m-scroll-line" />
-            </div>
-
-            {/* Bottom CTA panel */}
-            <div className={`m-cta-panel ${ctaVisible ? 'visible' : ''}`}>
-              <button className="m-cta-primary" onClick={onPlanJourney}>
-                <div>
-                  <div>✦ &nbsp;Plan My Journey</div>
-                  <div className="m-cta-primary-sub">Itinerary built in minutes</div>
-                </div>
-                <span style={{ fontSize: 16, opacity: 0.7 }}>→</span>
-              </button>
-              <div className="m-cta-row">
-                <button className="m-cta-ghost" onClick={onCuratedJourneys}>Curated Journeys</button>
-                <button className="m-cta-ghost" onClick={onSendBrief}>Send a Brief</button>
-              </div>
-            </div>
-          </section>
-
-          {/* TRUST — horizontal scroll */}
-          <div className="m-trust">
-            <div className="m-trust-inner">
-              {TRUST.map(t => (
-                <div key={t.label} className="m-trust-item">
-                  <span className="m-trust-icon">{t.icon}</span>
-                  <div>
-                    <div className="m-trust-lbl">{t.label}</div>
-                    <div className="m-trust-sub">{t.sub}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* STATS — 2×2 grid */}
-          <div className="m-stats">
-            {STATS.map(s => (
-              <div key={s.label} className="m-stat">
-                <div className="m-stat-n"><AnimatedNum value={s.value} />{s.suffix}</div>
-                <div className="m-stat-l">{s.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* CURATED JOURNEYS */}
-          <div className="m-curated">
-            <div className="m-curated-head">
-              <div className="m-curated-eyebrow">Signature Journeys</div>
-              <div className="m-curated-title">Bespoke itineraries,<br />ready to book</div>
-              <div className="m-curated-sub">All-inclusive. Contracted rates.<br />Every detail handled.</div>
-            </div>
-            <div className="m-card-scroll">
-              {(curatedJourneys.length > 0 ? curatedJourneys : CURATED).map((j: any) => {
-                const firstRegionSlug = j.cities?.[0]?.regionSlug ?? j.regionSlug ?? '';
-                const cardImage = regionImages[firstRegionSlug] || j.hero_image || j.fallbackImage || HERO_BG_IMAGE;
-                const priceFrom = j.price_from_zar ?? j.priceFrom ?? 0;
-                const otaPrice  = j.ota_price_zar  ?? j.otaPrice  ?? 0;
-                const saving    = otaPrice - priceFrom;
-                return (
-                  <div key={j.id ?? j.name} className="m-curated-card" onClick={onCuratedJourneys}>
-                    <div className="m-card-img">
-                      <img src={cardImage} alt={j.name} />
-                      <div className="m-card-img-ov" />
-                      {j.badge && (
-                        <div style={{ position: 'absolute', top: 10, left: 12, background: j.badge_color ?? j.badgeColor ?? '#d4af37', color: '#0a0a0a', fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>{j.badge}</div>
-                      )}
-                    </div>
-                    <div className="m-card-body">
-                      <div className="m-card-name">{j.name}</div>
-                      <div className="m-card-tag">{j.tagline}</div>
-                      {priceFrom > 0 && <>
-                        <div className="m-card-price">{fmt(priceFrom)}</div>
-                        <div className="m-card-nights">{j.nights}n · 2 pax · all-incl.</div>
-                        {saving > 0 && <div className="m-card-save">Save {fmt(saving)}</div>}
-                      </>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="m-view-all">
-              <button className="m-view-btn" onClick={onCuratedJourneys}>View all journeys →</button>
-            </div>
-          </div>
-
-          {/* REGION STRIP */}
-          <div className="m-regions">
-            <div className="m-regions-head">
-              <div className="m-regions-eyebrow">Where we operate</div>
-              <div className="m-regions-title">Five ecosystems.<br />One journey.</div>
-            </div>
-            <div className="m-regions-scroll">
-              {Object.entries(REGION_VIDEOS).map(([slug, r]) => (
-                <div key={slug} className="m-region-card" onClick={onPlanJourney}>
-                  <img src={r.img} alt={r.label} />
-                  <div className="m-region-card-ov" />
-                  <div className="m-region-card-label">
-                    <div className="m-region-card-country">{r.country}</div>
-                    <div className="m-region-card-name">{r.label}</div>
-                    <div className="m-region-card-tag">{r.tag}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* HOW IT WORKS */}
-          <div className="m-hiw">
-            <div className="m-hiw-head">
-              <div className="m-hiw-eyebrow">The process</div>
-              <div className="m-hiw-title">Bespoke, not complicated</div>
-            </div>
-            {HOW_IT_WORKS.map(s => (
-              <div key={s.n} className="m-hiw-step">
-                <div className="m-hiw-n">{s.n}</div>
-                <div>
-                  <div className="m-hiw-step-title">{s.title}</div>
-                  <div className="m-hiw-step-body">{s.body}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* PULLQUOTE */}
-          <div className="m-pullquote">
-            <span className="m-pq-mark">"</span>
-            <div className="m-pq-text">We did not just book a holiday. We were handed the keys to a continent, curated by people who actually live inside it.</div>
-            <div className="m-pq-attr">James & Sarah K. · London · Sabi Sand + Okavango, 2024</div>
-          </div>
-
-          {/* AFFILIATIONS */}
-          <div className="m-affil">
-            <div className="m-affil-lbl">Accreditation &amp; Partnerships</div>
-            <div className="m-affil-grid">
-              {[
-                { abbr: 'ASATA', note: 'Member' },
-                { abbr: 'SATSA', note: 'Member' },
-                { abbr: 'SA Tourism', note: 'Partner' },
-                { abbr: 'ATTA', note: 'Applying 2026' },
-              ].map(org => (
-                <div key={org.abbr} className="m-affil-item">
-                  <div className="m-affil-abbr">{org.abbr}</div>
-                  <div className="m-affil-note">{org.note === 'Applying 2026' ? '◌ ' : '✓ '}{org.note}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* FOOTER */}
-          <footer className="m-footer">
-            <div className="m-footer-brand">
-              <span className="m-footer-brand-name">The Safari Edition</span>
-              <span className="m-footer-brand-sub">by The Travel Catalogue</span>
-              <p>Africa's finest wilderness, contracted and curated. ASATA and SATSA registered.</p>
-            </div>
-            <div className="m-footer-links">
-              <div className="m-footer-col">
-                <h4>Journey</h4>
-                <ul>
-                  <li><a href="#" onClick={e => { e.preventDefault(); onPlanJourney(); }}>Plan My Journey</a></li>
-                  <li><a href="#" onClick={e => { e.preventDefault(); onCuratedJourneys(); }}>Curated Journeys</a></li>
-                  <li><a href="#" onClick={e => { e.preventDefault(); onSendBrief(); }}>Send a Brief</a></li>
-                  <li><a href="/how-it-works">How It Works</a></li>
-                </ul>
-              </div>
-              <div className="m-footer-col">
-                <h4>Company</h4>
-                <ul>
-                  <li><a href="/about">About Us</a></li>
-                  <li><a href="/contact">Contact</a></li>
-                  <li><a href="/admin">Partner Login</a></li>
-                  <li><a href="/terms">Terms</a></li>
-                </ul>
-              </div>
-            </div>
-            <div className="m-footer-legal">
-              © {new Date().getFullYear()} The Safari Edition · A Travel Catalogue Edition<br />
-              <a href="/terms">T&amp;Cs</a> · <a href="/privacy">Privacy</a> · <a href="/cancellation">Cancellation</a>
-            </div>
-          </footer>
-
-        </div>
-      </>
-    );
-  }
-
-  // ── DESKTOP RENDER (original, preserved exactly) ─────────────────────────────
   return (
     <>
       <style suppressHydrationWarning>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@200;300;400;500&display=swap');
-
-        .lh2-root { font-family:'Jost',sans-serif; background:#0a0a0a; color:#f5f0e8; }
-
-        /* NAV */
-        .lh2-nav {
-          position:fixed; top:0; left:0; right:0; z-index:200;
-          height:62px; padding:0 clamp(16px,4vw,56px);
-          display:flex; align-items:center; justify-content:space-between;
-          background:linear-gradient(to bottom,rgba(0,0,0,0.7) 0%,transparent 100%);
-          transition:background 0.4s, border-color 0.4s;
-        }
-        .lh2-nav.scrolled {
-          background:rgba(8,8,0,0.96); backdrop-filter:blur(20px);
-          border-bottom:0.5px solid rgba(200,169,110,0.12);
-        }
-        .lh2-wordmark { display:flex; align-items:center; gap:10px; text-decoration:none; cursor:pointer; }
-        .lh2-diamond  { position:relative; width:26px; height:26px; flex-shrink:0; }
-        .lh2-d-outer  { position:absolute; inset:0; border:1.5px solid rgba(200,169,110,0.75); transform:rotate(45deg); }
-        .lh2-d-inner  { position:absolute; inset:7px; background:rgba(200,169,110,0.88); transform:rotate(45deg); }
-        .lh2-wm-title { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:15px; color:rgba(200,169,110,0.95); letter-spacing:0.08em; display:block; }
-        .lh2-wm-sub   { font-weight:200; font-size:7.5px; letter-spacing:0.44em; text-transform:uppercase; color:rgba(200,169,110,0.55); display:block; margin-top:1px; }
-        .lh2-nav-links { display:flex; align-items:center; gap:24px; list-style:none; margin:0; padding:0; }
-        .lh2-nav-links a { font-weight:300; font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(255,255,255,0.5); text-decoration:none; transition:color 0.2s; }
-        .lh2-nav-links a:hover { color:rgba(200,169,110,0.9); }
-        .lh2-nav-right { display:flex; align-items:center; gap:10px; }
-        .lh2-currency-sel { background:rgba(255,255,255,0.05); border:0.5px solid rgba(255,255,255,0.1); color:rgba(245,240,232,0.65); border-radius:4px; padding:6px 10px; font-size:11px; outline:none; cursor:pointer; font-family:'Jost',sans-serif; letter-spacing:0.1em; appearance:none; -webkit-appearance:none; }
-        .lh2-currency-sel:hover { border-color:rgba(200,169,110,0.35); color:rgba(200,169,110,0.85); }
-        .lh2-currency-sel option { background:#0f0f0a; color:#f5f0e8; }
-        .lh2-nav-admin { font-size:11px; letter-spacing:0.14em; color:rgba(245,240,232,0.35); text-decoration:none; padding:6px 12px; border:0.5px solid rgba(255,255,255,0.1); border-radius:4px; transition:border-color 0.2s, color 0.2s; }
-        .lh2-nav-admin:hover { border-color:rgba(200,169,110,0.4); color:rgba(200,169,110,0.8); }
-        .lh2-nav-cta { font-weight:500; font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(200,169,110,0.95); background:rgba(200,169,110,0.1); border:1px solid rgba(200,169,110,0.35); padding:8px 18px; border-radius:2px; cursor:pointer; font-family:'Jost',sans-serif; transition:background 0.2s; }
-        .lh2-nav-cta:hover { background:rgba(200,169,110,0.2); }
-
-        .lh2-edition-btn { background:none; border:none; cursor:pointer; font-family:'Jost',sans-serif; display:flex; align-items:center; gap:6px; padding:6px 10px; }
-        .lh2-edition-name { font-size:13px; font-weight:400; color:rgba(200,169,110,0.9); letter-spacing:0.04em; }
-        .lh2-edition-arrow { font-size:9px; color:rgba(200,169,110,0.5); }
-        .lh2-edition-menu { position:absolute; top:calc(100% + 6px); left:0; min-width:240px; background:#0f0f0a; border:0.5px solid rgba(200,169,110,0.2); border-radius:10px; padding:8px; z-index:300; box-shadow:0 8px 40px rgba(0,0,0,0.7); }
-        .lh2-edition-current { padding:10px 12px; background:rgba(200,169,110,0.07); border-radius:8px; margin-bottom:6px; }
-        .lh2-edition-item { padding:10px 12px; border-radius:8px; display:flex; align-items:center; gap:10px; opacity:0.55; }
-        .lh2-edition-badge { font-size:9px; color:#a78bfa; background:rgba(167,139,250,0.12); border:0.5px solid rgba(167,139,250,0.3); border-radius:20px; padding:2px 7px; margin-left:auto; }
-
-        .lh2-hero { position:relative; height:100svh; min-height:640px; overflow:hidden; display:flex; flex-direction:column; }
-        .lh2-bg { position:absolute; inset:0; overflow:hidden; }
-        .lh2-bg img, .lh2-bg video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 35%; }
-        .lh2-grain { position:absolute; inset:0; z-index:2; pointer-events:none; opacity:0.025; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-size:160px; animation:lh2Grain .5s steps(1) infinite; }
-        @keyframes lh2Grain { 0%{background-position:0 0}25%{background-position:-18px 9px}50%{background-position:9px -14px}75%{background-position:-9px 18px}100%{background-position:5px -5px} }
-        .lh2-ov1 { position:absolute; inset:0; z-index:3; background:linear-gradient(to bottom,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,0.05) 60%,rgba(0,0,0,0.92) 100%); }
-        .lh2-ov2 { position:absolute; inset:0; z-index:3; background:linear-gradient(to right,rgba(0,0,0,0.5) 0%,transparent 50%); }
-        /* Warm amber tone wash */
-        .lh2-ov3 { position:absolute; inset:0; z-index:3; background:radial-gradient(ellipse at 30% 70%, rgba(180,120,30,0.08) 0%, transparent 60%); }
-        .lh2-vignette { position:absolute; inset:0; z-index:4; background:radial-gradient(ellipse at center,transparent 35%,rgba(0,0,0,0.42) 100%); }
-        .lh2-corner { position:absolute; width:18px; height:18px; z-index:6; opacity:0.3; }
-        .lh2-corner::before,.lh2-corner::after{content:'';position:absolute;background:rgba(200,169,110,0.7);}
-        .lh2-corner.tl{top:22px;left:22px}.lh2-corner.tl::before{top:0;left:0;width:18px;height:1px}.lh2-corner.tl::after{top:0;left:0;width:1px;height:18px}
-        .lh2-corner.tr{top:22px;right:22px}.lh2-corner.tr::before{top:0;right:0;width:18px;height:1px}.lh2-corner.tr::after{top:0;right:0;width:1px;height:18px}
-        .lh2-corner.bl{bottom:22px;left:22px}.lh2-corner.bl::before{bottom:0;left:0;width:18px;height:1px}.lh2-corner.bl::after{bottom:0;left:0;width:1px;height:18px}
-        .lh2-corner.br{bottom:22px;right:22px}.lh2-corner.br::before{bottom:0;right:0;width:18px;height:1px}.lh2-corner.br::after{bottom:0;right:0;width:1px;height:18px}
-        .lh2-logo-area { position:relative; z-index:10; flex:0 0 auto; display:flex; align-items:center; justify-content:center; padding-top:100px; padding-bottom:0; }
-        .lh2-logo-img { max-height:120px; max-width:420px; object-fit:contain; filter:drop-shadow(0 2px 20px rgba(0,0,0,0.6)); }
-        .lh2-logo-text { text-align:center; }
-        .lh2-logo-line { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:8px; }
-        .lh2-logo-divider { width:40px; height:0.5px; background:rgba(200,169,110,0.4); }
-        .lh2-logo-name { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(28px,4.5vw,52px); letter-spacing:0.22em; color:rgba(255,255,255,0.92); text-transform:uppercase; line-height:1; }
-        .lh2-logo-sub  { font-weight:200; font-size:9px; letter-spacing:0.55em; text-transform:uppercase; color:rgba(200,169,110,0.65); }
-        .lh2-circle { position:absolute; z-index:4; right:clamp(-6%,0vw,3%); top:50%; transform:translateY(-50%); width:clamp(300px,44vw,620px); height:clamp(300px,44vw,620px); border-radius:50%; overflow:hidden; opacity:0.52; -webkit-mask-image:radial-gradient(circle at 50% 50%,black 25%,rgba(0,0,0,0.85) 40%,rgba(0,0,0,0.45) 58%,rgba(0,0,0,0.12) 70%,transparent 72%); mask-image:radial-gradient(circle at 50% 50%,black 25%,rgba(0,0,0,0.85) 40%,rgba(0,0,0,0.45) 58%,rgba(0,0,0,0.12) 70%,transparent 72%); }
-        .lh2-circle video { width:100%; height:100%; object-fit:cover; filter:saturate(0.6) brightness(0.85); }
-        .lh2-circle-ov { position:absolute; inset:0; background:radial-gradient(ellipse at center,rgba(10,8,0,0.05) 0%,rgba(10,8,0,0.35) 65%,rgba(10,8,0,0.75) 100%); z-index:1; pointer-events:none; }
-        .lh2-circle-ring { display:none; }
-        .lh2-content { position:relative; z-index:10; flex:1; display:flex; align-items:flex-end; padding:0 clamp(20px,5vw,64px) clamp(40px,6vh,72px); }
-        .lh2-content-inner { max-width:480px; }
-        .lh2-r { opacity:0; transform:translateY(20px); }
-        .lh2-r.show { animation:lh2Reveal 0.9s cubic-bezier(0.22,1,0.36,1) forwards; }
-        @keyframes lh2Reveal { to { opacity:1; transform:translateY(0); } }
-        .lh2-r1.show{animation-delay:0.05s}.lh2-r2.show{animation-delay:0.18s}.lh2-r3.show{animation-delay:0.32s}.lh2-r4.show{animation-delay:0.48s}.lh2-r5.show{animation-delay:0.64s}
-        .lh2-eyebrow { font-weight:200; font-size:10px; letter-spacing:0.5em; text-transform:uppercase; color:rgba(200,169,110,0.75); display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-        .lh2-eyebrow-line { width:28px; height:1px; background:rgba(200,169,110,0.45); }
-        .lh2-headline1 { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(36px,5.5vw,68px); line-height:0.95; letter-spacing:-0.01em; color:#f5f0e8; margin-bottom:4px; }
-        .lh2-headline2 { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(36px,5.5vw,68px); line-height:0.95; letter-spacing:-0.01em; color:rgba(255,255,255,0.6); margin-bottom:24px; }
-        .lh2-headline2 em { font-style:italic; color:rgba(200,169,110,0.92); }
-        .lh2-sub { font-weight:300; font-size:clamp(13px,1.5vw,15px); color:rgba(245,240,232,0.46); line-height:1.75; max-width:400px; margin-bottom:32px; letter-spacing:0.03em; }
-        .lh2-ctas { display:flex; gap:10px; flex-wrap:wrap; }
-        .lh2-cta-primary { display:flex; flex-direction:column; gap:2px; padding:15px 26px; background:linear-gradient(135deg,#c8a020,#f0c840); border:none; border-radius:2px; color:#080800; cursor:pointer; font-family:'Jost',sans-serif; text-align:left; transition:opacity 0.2s; }
-        .lh2-cta-primary:hover { opacity:0.9; }
-        .lh2-cta-title { font-weight:500; font-size:13px; letter-spacing:0.06em; }
-        .lh2-cta-sub   { font-weight:200; font-size:9px; letter-spacing:0.14em; text-transform:uppercase; opacity:0.6; }
-        .lh2-cta-ghost { display:flex; flex-direction:column; gap:2px; padding:14px 20px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.14); border-radius:2px; color:rgba(245,240,232,0.7); cursor:pointer; font-family:'Jost',sans-serif; text-align:left; transition:border-color 0.2s; }
-        .lh2-cta-ghost:hover { border-color:rgba(200,169,110,0.4); color:rgba(200,169,110,0.9); }
-        .lh2-scroll { position:absolute; bottom:24px; right:clamp(16px,4vw,52px); z-index:10; display:flex; flex-direction:column; align-items:center; gap:6px; opacity:0; animation:lh2Reveal 1s ease forwards 1.3s, lh2Bob 2.5s ease-in-out 2s infinite; }
-        @keyframes lh2Bob { 0%,100%{transform:translateY(0)}50%{transform:translateY(5px)} }
-        .lh2-scroll-line { width:1px; height:36px; background:linear-gradient(to bottom,rgba(200,169,110,0.7),transparent); }
-        .lh2-scroll-lbl  { font-weight:200; font-size:7px; letter-spacing:0.45em; text-transform:uppercase; color:rgba(200,169,110,0.6); writing-mode:vertical-rl; }
-        .lh2-trust { background:rgba(8,8,0,0.98); border-bottom:0.5px solid rgba(200,169,110,0.08); padding:22px clamp(20px,5vw,64px); }
-        .lh2-trust-inner { max-width:1200px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr); gap:20px; }
-        .lh2-trust-item { display:flex; align-items:flex-start; gap:12px; }
-        .lh2-trust-icon { font-size:16px; flex-shrink:0; margin-top:2px; }
-        .lh2-trust-lbl  { font-weight:400; font-size:12px; color:rgba(245,240,232,0.75); margin-bottom:2px; }
-        .lh2-trust-sub  { font-weight:200; font-size:11px; color:rgba(245,240,232,0.32); letter-spacing:0.04em; }
-        .lh2-stats { padding:44px clamp(20px,5vw,64px); background:#0a0a0a; border-bottom:0.5px solid rgba(255,255,255,0.04); }
-        .lh2-stats-inner { max-width:1200px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr); gap:28px; }
-        .lh2-stat-n { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(34px,4vw,50px); color:rgba(200,169,110,0.88); line-height:1; margin-bottom:6px; text-align:center; }
-        .lh2-stat-l { font-weight:200; font-size:10px; letter-spacing:0.2em; text-transform:uppercase; color:rgba(245,240,232,0.28); text-align:center; }
-        .lh2-curated { padding:64px clamp(20px,5vw,64px); background:#0a0a0a; }
-        .lh2-curated-inner { max-width:1200px; margin:0 auto; }
-        .lh2-section-eyebrow { font-weight:200; font-size:10px; letter-spacing:0.44em; text-transform:uppercase; color:rgba(200,169,110,0.65); margin-bottom:10px; }
-        .lh2-section-title { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(24px,3.5vw,38px); color:#f5f0e8; margin-bottom:4px; }
-        .lh2-section-sub { font-weight:300; font-size:13px; color:rgba(245,240,232,0.38); margin-bottom:32px; letter-spacing:0.04em; }
-        .lh2-curated-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; }
-        .lh2-curated-card { background:rgba(255,255,255,0.025); border:0.5px solid rgba(255,255,255,0.07); border-radius:12px; overflow:hidden; cursor:pointer; transition:border-color 0.2s, transform 0.2s; }
-        .lh2-curated-card:hover { border-color:rgba(200,169,110,0.22); transform:translateY(-2px); }
-        .lh2-curated-img { position:relative; height:185px; overflow:hidden; }
-        .lh2-curated-img img { width:100%; height:100%; object-fit:cover; transition:transform 0.6s; }
-        .lh2-curated-card:hover .lh2-curated-img img { transform:scale(1.04); }
-        .lh2-curated-img-ov { position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 52%); }
-        .lh2-card-body { padding:14px 16px; }
-        .lh2-card-name { font-family:'Cormorant Garamond',serif; font-weight:400; font-size:16px; color:#f5f0e8; margin-bottom:3px; }
-        .lh2-card-tag  { font-weight:200; font-size:11px; color:rgba(245,240,232,0.38); margin-bottom:12px; letter-spacing:0.04em; }
-        .lh2-card-price-row { display:flex; justify-content:space-between; align-items:baseline; }
-        .lh2-card-price { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:20px; color:rgba(200,169,110,0.9); }
-        .lh2-card-nights { font-size:10px; color:rgba(245,240,232,0.32); letter-spacing:0.1em; }
-        .lh2-card-saving { font-size:10px; color:#4ade80; }
-        .lh2-view-all { margin-top:28px; display:flex; justify-content:center; }
-        .lh2-view-btn { padding:12px 32px; border:0.5px solid rgba(255,255,255,0.14); border-radius:2px; background:transparent; color:rgba(245,240,232,0.5); font-size:12px; letter-spacing:0.16em; text-transform:uppercase; cursor:pointer; font-family:'Jost',sans-serif; transition:border-color 0.2s, color 0.2s; font-weight:300; }
-        .lh2-view-btn:hover { border-color:rgba(200,169,110,0.4); color:rgba(200,169,110,0.8); }
-        .lh2-footer { background:#040400; border-top:0.5px solid rgba(255,255,255,0.05); padding:44px clamp(20px,5vw,64px) 28px; }
-        .lh2-footer-inner { max-width:1200px; margin:0 auto; }
-        .lh2-footer-top { display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:44px; margin-bottom:40px; }
-        .lh2-footer-brand-name { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:18px; color:rgba(200,169,110,0.8); letter-spacing:0.1em; display:block; margin-bottom:4px; }
-        .lh2-footer-brand-sub  { font-weight:200; font-size:8px; letter-spacing:0.36em; text-transform:uppercase; color:rgba(200,169,110,0.4); display:block; margin-bottom:12px; }
-        .lh2-footer-brand p { font-weight:200; font-size:12px; color:rgba(245,240,232,0.28); line-height:1.7; max-width:260px; }
-        .lh2-footer-col h4 { font-weight:200; font-size:9px; letter-spacing:0.4em; text-transform:uppercase; color:rgba(200,169,110,0.55); margin-bottom:14px; }
-        .lh2-footer-col ul { list-style:none; margin:0; padding:0; }
-        .lh2-footer-col li { margin-bottom:9px; }
-        .lh2-footer-col a { font-weight:200; font-size:12px; letter-spacing:0.06em; color:rgba(245,240,232,0.35); text-decoration:none; transition:color 0.2s; }
-        .lh2-footer-col a:hover { color:rgba(200,169,110,0.75); }
-        .lh2-footer-bottom { border-top:0.5px solid rgba(255,255,255,0.05); padding-top:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
-        .lh2-footer-legal { font-weight:200; font-size:10px; letter-spacing:0.1em; color:rgba(245,240,232,0.2); }
-        .lh2-footer-legal a { color:rgba(245,240,232,0.28); text-decoration:none; }
-        .lh2-asata { display:flex; align-items:center; gap:6px; font-weight:200; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:rgba(245,240,232,0.22); }
-        .lh2-adot { width:3px; height:3px; border-radius:50%; background:rgba(200,169,110,0.5); }
-        /* ── REGION SHOWCASE ─────────────────────────────────────── */
-        .lh2-regions { background:#050503; padding:0; overflow:hidden; }
-        .lh2-regions-inner { max-width:1400px; margin:0 auto; }
-        .lh2-regions-head { padding:56px clamp(20px,5vw,64px) 36px; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; }
-        .lh2-regions-eyebrow { font-weight:200; font-size:9px; letter-spacing:0.48em; text-transform:uppercase; color:rgba(200,169,110,0.6); margin-bottom:8px; }
-        .lh2-regions-title { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(26px,3.5vw,40px); color:#f5f0e8; line-height:1.05; }
-        .lh2-regions-strip { display:flex; gap:0; height:clamp(260px,32vw,400px); }
-        .lh2-region-panel { flex:1; position:relative; overflow:hidden; cursor:pointer; transition:flex 0.55s cubic-bezier(0.22,1,0.36,1); }
-        .lh2-region-panel:hover { flex:2.8; }
-        .lh2-region-panel img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center; transition:transform 0.7s ease; filter:saturate(0.75) brightness(0.82); }
-        .lh2-region-panel:hover img { transform:scale(1.04); filter:saturate(0.9) brightness(0.88); }
-        .lh2-region-ov { position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0) 55%); }
-        .lh2-region-ov2 { position:absolute; inset:0; background:linear-gradient(to right, rgba(0,0,0,0.35) 0%, transparent 40%); opacity:0; transition:opacity 0.4s; }
-        .lh2-region-panel:hover .lh2-region-ov2 { opacity:1; }
-        .lh2-region-label { position:absolute; bottom:0; left:0; right:0; padding:16px 18px; }
-        .lh2-region-country { font-weight:200; font-size:9px; letter-spacing:0.3em; text-transform:uppercase; color:rgba(200,169,110,0.7); margin-bottom:4px; opacity:0; transform:translateY(6px); transition:opacity 0.35s, transform 0.35s; }
-        .lh2-region-panel:hover .lh2-region-country { opacity:1; transform:none; }
-        .lh2-region-name { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(13px,1.6vw,22px); color:#f5f0e8; line-height:1.1; writing-mode:vertical-lr; transform:rotate(180deg); transition:writing-mode 0.1s, transform 0.1s, font-size 0.3s; }
-        .lh2-region-panel:hover .lh2-region-name { writing-mode:horizontal-tb; transform:none; font-size:clamp(18px,2.2vw,28px); }
-        .lh2-region-tag { font-weight:200; font-size:10px; color:rgba(245,240,232,0.4); letter-spacing:0.06em; margin-top:4px; max-height:0; overflow:hidden; transition:max-height 0.4s ease, opacity 0.4s; opacity:0; }
-        .lh2-region-panel:hover .lh2-region-tag { max-height:24px; opacity:1; }
-        .lh2-region-cta { position:absolute; top:16px; right:16px; font-size:9px; letter-spacing:0.2em; text-transform:uppercase; color:rgba(200,169,110,0.8); background:rgba(200,169,110,0.1); border:0.5px solid rgba(200,169,110,0.3); border-radius:2px; padding:5px 10px; opacity:0; transform:translateY(-4px); transition:opacity 0.3s 0.1s, transform 0.3s 0.1s; cursor:pointer; }
-        .lh2-region-panel:hover .lh2-region-cta { opacity:1; transform:none; }
-
-        /* ── HOW IT WORKS ─────────────────────────────────────────── */
-        .lh2-hiw { background:#080806; padding:72px clamp(20px,5vw,64px); border-top:0.5px solid rgba(255,255,255,0.04); }
-        .lh2-hiw-inner { max-width:1200px; margin:0 auto; }
-        .lh2-hiw-head { text-align:center; margin-bottom:52px; }
-        .lh2-hiw-steps { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; }
-        .lh2-hiw-step { padding:32px 28px; background:rgba(255,255,255,0.015); border:0.5px solid rgba(255,255,255,0.05); position:relative; overflow:hidden; transition:background 0.3s; }
-        .lh2-hiw-step:hover { background:rgba(200,169,110,0.04); border-color:rgba(200,169,110,0.12); }
-        .lh2-hiw-n { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:56px; color:rgba(200,169,110,0.08); line-height:1; position:absolute; top:16px; right:20px; letter-spacing:-0.02em; }
-        .lh2-hiw-title { font-family:'Cormorant Garamond',serif; font-weight:400; font-size:18px; color:rgba(245,240,232,0.88); margin-bottom:10px; line-height:1.2; }
-        .lh2-hiw-body { font-weight:200; font-size:12px; color:rgba(245,240,232,0.38); line-height:1.75; letter-spacing:0.03em; }
-        .lh2-hiw-line { width:24px; height:1px; background:rgba(200,169,110,0.4); margin-bottom:16px; }
-
-        /* ── PULLQUOTE ────────────────────────────────────────────── */
-        .lh2-pullquote { background:#050503; border-top:0.5px solid rgba(255,255,255,0.04); border-bottom:0.5px solid rgba(255,255,255,0.04); padding:64px clamp(20px,5vw,64px); }
-        .lh2-pullquote-inner { max-width:820px; margin:0 auto; text-align:center; }
-        .lh2-pq-mark { font-family:'Cormorant Garamond',serif; font-size:72px; color:rgba(200,169,110,0.15); line-height:0.6; display:block; margin-bottom:8px; }
-        .lh2-pq-text { font-family:'Cormorant Garamond',serif; font-weight:300; font-style:italic; font-size:clamp(20px,2.8vw,32px); color:rgba(245,240,232,0.75); line-height:1.45; letter-spacing:0.01em; margin-bottom:20px; }
-        .lh2-pq-attr { font-weight:200; font-size:10px; letter-spacing:0.3em; text-transform:uppercase; color:rgba(200,169,110,0.5); }
-
-        @media(max-width:900px){
-          .lh2-nav-links{display:none;}
-          .lh2-trust-inner{grid-template-columns:1fr 1fr;}
-          .lh2-stats-inner{grid-template-columns:1fr 1fr;}
-          .lh2-footer-top{grid-template-columns:1fr 1fr; gap:28px;}
-          .lh2-circle{width:clamp(200px,60vw,340px);height:clamp(200px,60vw,340px);right:-8%;top:auto;bottom:10%;transform:none;}
-          .lh2-regions-strip{height:220px;}
-          .lh2-region-name{font-size:11px;}
-          .lh2-hiw-steps{grid-template-columns:1fr 1fr;}
-        }
-        @media(max-width:560px){
-          .lh2-regions-strip{display:grid;grid-template-columns:1fr 1fr;height:auto;}
-          .lh2-region-panel{height:160px;flex:none;}
-          .lh2-region-panel:hover{flex:none;}
-          .lh2-region-name{writing-mode:horizontal-tb;transform:none;font-size:14px;}
-          .lh2-region-country,.lh2-region-tag,.lh2-region-cta{opacity:1;transform:none;max-height:24px;}
-          .lh2-hiw-steps{grid-template-columns:1fr;}
+        ${FONTS}
+        *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+        body { background:${C.bg}; color:${C.text}; font-family:'Jost','DM Sans',sans-serif; font-weight:300; }
+        .ie-nav { position:fixed; top:0; left:0; right:0; z-index:100; padding:0 24px; height:60px; display:flex; align-items:center; justify-content:space-between; transition:background 0.3s; }
+        .ie-nav.scrolled { background:rgba(6,13,20,0.94); backdrop-filter:blur(12px); border-bottom:0.5px solid ${C.border}; }
+        .ie-wordmark { font-family:'Cormorant Garamond',serif; font-size:18px; font-weight:600; color:${C.teal}; letter-spacing:0.12em; text-transform:uppercase; }
+        .ie-wordmark small { display:block; font-size:9px; font-weight:300; color:${C.textDim}; letter-spacing:0.22em; margin-top:-2px; }
+        .ie-nav-link { font-size:12px; color:${C.textMid}; text-decoration:none; letter-spacing:0.06em; transition:color 0.2s; }
+        .ie-nav-link:hover { color:${C.teal}; }
+        .ie-back-btn { font-size:11px; color:${C.textDim}; border:0.5px solid ${C.border}; border-radius:20px; padding:5px 12px; text-decoration:none; letter-spacing:0.06em; transition:all 0.2s; display:flex; align-items:center; gap:6px; }
+        .ie-back-btn:hover { color:${C.text}; border-color:rgba(255,255,255,0.2); }
+        .ie-hero { position:relative; min-height:100svh; display:flex; align-items:flex-end; overflow:hidden; }
+        .ie-hero-bg { position:absolute; inset:0; z-index:0; }
+        .ie-hero-bg img { width:100%; height:100%; object-fit:cover; transition:opacity 1.2s ease; }
+        .ie-hero-bg::after { content:''; position:absolute; inset:0; background:linear-gradient(180deg, rgba(6,13,20,0.28) 0%, rgba(6,13,20,0.55) 60%, rgba(6,13,20,0.95) 100%); }
+        .ie-hero-content { position:relative; z-index:1; padding:40px 48px 80px; max-width:700px; }
+        .ie-edition-label { font-size:10px; letter-spacing:0.28em; color:${C.teal}; text-transform:uppercase; font-weight:500; margin-bottom:18px; }
+        .ie-hero-title { font-family:'Cormorant Garamond',serif; font-size:clamp(42px,6vw,76px); font-weight:300; line-height:1.05; color:${C.white}; margin-bottom:18px; }
+        .ie-hero-title em { font-style:italic; color:${C.teal}; }
+        .ie-hero-sub { font-size:16px; color:rgba(238,244,248,0.72); line-height:1.6; max-width:440px; margin-bottom:36px; font-weight:300; }
+        .ie-hero-cta { display:inline-flex; align-items:center; gap:10px; background:${C.teal}; color:#060d14; padding:13px 28px; border-radius:3px; font-size:13px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; border:none; font-family:'Jost',sans-serif; transition:all 0.2s; }
+        .ie-hero-cta:hover { background:#25cec5; transform:translateY(-1px); }
+        .ie-hero-ghost { display:inline-flex; align-items:center; gap:10px; background:transparent; color:${C.text}; padding:13px 28px; border-radius:3px; font-size:13px; font-weight:400; letter-spacing:0.08em; cursor:pointer; border:0.5px solid rgba(255,255,255,0.25); font-family:'Jost',sans-serif; transition:all 0.2s; margin-left:12px; }
+        .ie-hero-ghost:hover { border-color:${C.teal}; color:${C.teal}; }
+        .ie-dest-dots { position:absolute; bottom:32px; right:48px; z-index:2; display:flex; gap:8px; }
+        .ie-dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.3); cursor:pointer; transition:all 0.2s; }
+        .ie-dot.active { background:${C.teal}; transform:scale(1.4); }
+        .ie-section { padding:96px 48px; max-width:1200px; margin:0 auto; }
+        .ie-section-label { font-size:10px; letter-spacing:0.28em; color:${C.teal}; text-transform:uppercase; margin-bottom:12px; }
+        .ie-section-title { font-family:'Cormorant Garamond',serif; font-size:clamp(30px,4vw,48px); font-weight:300; color:${C.text}; margin-bottom:20px; line-height:1.15; }
+        .ie-section-body { font-size:15px; color:${C.textMid}; line-height:1.7; max-width:560px; }
+        .ie-dest-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; margin-top:48px; }
+        .ie-dest-card { position:relative; overflow:hidden; aspect-ratio:3/4; cursor:pointer; }
+        .ie-dest-card img { width:100%; height:100%; object-fit:cover; transition:transform 0.6s ease; }
+        .ie-dest-card:hover img { transform:scale(1.06); }
+        .ie-dest-card-overlay { position:absolute; inset:0; background:linear-gradient(180deg,transparent 40%,rgba(6,13,20,0.9) 100%); padding:24px; display:flex; flex-direction:column; justify-content:flex-end; }
+        .ie-dest-name { font-family:'Cormorant Garamond',serif; font-size:28px; font-weight:400; color:${C.white}; }
+        .ie-dest-sub { font-size:11px; color:${C.teal}; letter-spacing:0.12em; margin-bottom:6px; text-transform:uppercase; }
+        .ie-dest-tag { font-size:11px; color:rgba(238,244,248,0.5); margin-top:4px; }
+        .ie-dest-nights { position:absolute; top:16px; right:16px; background:rgba(6,13,20,0.75); border:0.5px solid ${C.borderTeal}; border-radius:20px; padding:4px 12px; font-size:10px; color:${C.teal}; letter-spacing:0.08em; }
+        .ie-journey-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin-top:48px; }
+        .ie-journey-card { background:${C.bg2}; border:0.5px solid ${C.border}; border-radius:12px; overflow:hidden; transition:border-color 0.2s; }
+        .ie-journey-card:hover { border-color:${C.borderTeal}; }
+        .ie-journey-img { width:100%; aspect-ratio:16/9; object-fit:cover; }
+        .ie-journey-body { padding:20px; }
+        .ie-journey-badge { display:inline-block; font-size:9px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; padding:3px 9px; border-radius:20px; margin-bottom:10px; }
+        .ie-journey-name { font-family:'Cormorant Garamond',serif; font-size:20px; font-weight:400; color:${C.text}; margin-bottom:6px; }
+        .ie-journey-tagline { font-size:12px; color:${C.textMid}; line-height:1.5; margin-bottom:16px; }
+        .ie-journey-price { display:flex; align-items:baseline; gap:10px; }
+        .ie-journey-from { font-size:18px; font-weight:600; color:${C.text}; }
+        .ie-journey-ota { font-size:12px; color:${C.textDim}; text-decoration:line-through; }
+        .ie-journey-saving { font-size:10px; color:#4ade80; font-weight:600; letter-spacing:0.06em; }
+        .ie-trust-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; margin-top:48px; }
+        .ie-trust-item { background:${C.bg2}; padding:32px 24px; }
+        .ie-trust-icon { font-size:28px; margin-bottom:14px; }
+        .ie-trust-label { font-size:14px; font-weight:500; color:${C.text}; margin-bottom:6px; }
+        .ie-trust-sub { font-size:12px; color:${C.textDim}; line-height:1.5; }
+        .ie-how-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; margin-top:48px; }
+        .ie-how-item { background:${C.bg2}; padding:32px 24px; }
+        .ie-how-n { font-family:'Cormorant Garamond',serif; font-size:40px; font-weight:300; color:${C.borderTeal}; margin-bottom:14px; line-height:1; }
+        .ie-how-title { font-size:14px; font-weight:500; color:${C.text}; margin-bottom:8px; }
+        .ie-how-body { font-size:12px; color:${C.textDim}; line-height:1.6; }
+        .ie-form-section { background:${C.bg2}; border-top:0.5px solid ${C.border}; padding:96px 48px; }
+        .ie-form-inner { max-width:560px; margin:0 auto; }
+        .ie-form { display:grid; gap:12px; margin-top:36px; }
+        .ie-form input, .ie-form select { background:${C.bg3}; border:0.5px solid ${C.border}; border-radius:6px; padding:12px 16px; color:${C.text}; font-family:'Jost',sans-serif; font-size:13px; width:100%; outline:none; transition:border-color 0.2s; }
+        .ie-form input:focus, .ie-form select:focus { border-color:${C.teal}; }
+        .ie-form input::placeholder { color:${C.textDim}; }
+        .ie-form select option { background:${C.bg3}; }
+        .ie-form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+        .ie-form-submit { background:${C.teal}; color:#060d14; border:none; border-radius:6px; padding:13px 28px; font-family:'Jost',sans-serif; font-size:13px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; width:100%; margin-top:4px; transition:background 0.2s; }
+        .ie-form-submit:hover { background:#25cec5; }
+        .ie-form-success { text-align:center; padding:32px; }
+        .ie-form-success-icon { font-size:40px; margin-bottom:12px; }
+        .ie-form-success-title { font-family:'Cormorant Garamond',serif; font-size:26px; color:${C.text}; margin-bottom:8px; }
+        .ie-form-success-body { font-size:13px; color:${C.textMid}; line-height:1.6; }
+        .ie-footer { padding:40px 48px; border-top:0.5px solid ${C.border}; display:flex; justify-content:space-between; align-items:center; }
+        .ie-footer-brand { font-family:'Cormorant Garamond',serif; font-size:13px; color:${C.textDim}; letter-spacing:0.1em; }
+        .ie-footer-links { display:flex; gap:24px; }
+        .ie-footer-link { font-size:11px; color:${C.textDim}; text-decoration:none; letter-spacing:0.06em; transition:color 0.2s; }
+        .ie-footer-link:hover { color:${C.teal}; }
+        .ie-safari-banner { background:linear-gradient(135deg,#0f1a0a,#151f10); border:0.5px solid rgba(212,175,55,0.2); border-radius:12px; padding:28px 32px; display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:48px; }
+        .ie-safari-text strong { font-family:'Cormorant Garamond',serif; font-size:20px; font-weight:400; color:#f5f0e8; display:block; margin-bottom:4px; }
+        .ie-safari-text span { font-size:12px; color:rgba(212,175,55,0.7); }
+        .ie-safari-btn { background:rgba(212,175,55,0.1); border:0.5px solid rgba(212,175,55,0.3); color:#d4af37; padding:10px 22px; border-radius:6px; font-family:'Jost',sans-serif; font-size:12px; font-weight:500; letter-spacing:0.08em; text-decoration:none; white-space:nowrap; transition:all 0.2s; }
+        .ie-safari-btn:hover { background:rgba(212,175,55,0.18); }
+        @media (max-width:768px) {
+          .ie-hero-content { padding:32px 24px 72px; }
+          .ie-section { padding:64px 24px; }
+          .ie-dest-grid, .ie-journey-grid { grid-template-columns:1fr; }
+          .ie-trust-grid, .ie-how-grid { grid-template-columns:1fr 1fr; }
+          .ie-form-section { padding:64px 24px; }
+          .ie-form-row { grid-template-columns:1fr; }
+          .ie-footer { flex-direction:column; gap:16px; text-align:center; }
+          .ie-footer-links { flex-wrap:wrap; justify-content:center; }
+          .ie-safari-banner { flex-direction:column; align-items:flex-start; }
         }
       `}</style>
 
-      <div className="lh2-root">
-        <nav className={`lh2-nav ${scrolled ? 'scrolled' : ''}`}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div className="lh2-wordmark" onClick={onPlanJourney}>
-              <div className="lh2-diamond"><div className="lh2-d-outer" /><div className="lh2-d-inner" /></div>
-              <div>
-                <span className="lh2-wm-title">The Safari Edition</span>
-                <span className="lh2-wm-sub">Sub-Saharan Africa · Handpicked</span>
+      {/* ── NAV ── */}
+      <nav className={`ie-nav ${scrolled ? 'scrolled' : ''}`}>
+        <div>
+          <div className="ie-wordmark">The Island Edition<small>by The Travel Catalogue</small></div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+          <a href="#destinations" className="ie-nav-link">Destinations</a>
+          <a href="#journeys" className="ie-nav-link">Journeys</a>
+          <a href="#notify" className="ie-nav-link">Notify me</a>
+          <a href="/" className="ie-back-btn">← The Safari Edition</a>
+        </div>
+      </nav>
+
+      {/* ── HERO ── */}
+      <section className="ie-hero" ref={heroRef} id="top">
+        <div className="ie-hero-bg">
+          {DESTINATIONS.map((d, i) => (
+            <img
+              key={d.id}
+              src={d.img}
+              alt={d.name}
+              style={{ position:'absolute', inset:0, opacity: i === activeImg ? 1 : 0, transition:'opacity 1.4s ease' }}
+            />
+          ))}
+        </div>
+
+        <div className="ie-hero-content">
+          <div className="ie-edition-label">✦ The Island Edition</div>
+          <h1 className="ie-hero-title">
+            Where the ocean<br /><em>is the destination</em>
+          </h1>
+          <p className="ie-hero-sub">
+            The same specialist knowledge and contracted rates that define The Safari Edition — now applied to the world's finest island escapes. Maldives. Seychelles. Zanzibar.
+          </p>
+          <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+            <a href="#notify">
+              <button className="ie-hero-cta">Request early access →</button>
+            </a>
+            <a href="#destinations">
+              <button className="ie-hero-ghost">Explore islands</button>
+            </a>
+          </div>
+        </div>
+
+        <div className="ie-dest-dots">
+          {DESTINATIONS.map((d, i) => (
+            <div
+              key={d.id}
+              className={`ie-dot ${i === activeImg ? 'active' : ''}`}
+              onClick={() => setActiveImg(i)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ── DESTINATIONS ── */}
+      <section className="ie-section" id="destinations">
+        <div className="ie-section-label">✦ Where we operate</div>
+        <h2 className="ie-section-title">Three island worlds.<br />One specialist platform.</h2>
+        <p className="ie-section-body">
+          Every resort personally evaluated. Overwater villa categories mapped. Transfer timing pre-calculated. The Island Edition applies the same rigour as the safari world to the Indian Ocean.
+        </p>
+
+        <div className="ie-dest-grid">
+          {DESTINATIONS.map(d => (
+            <div key={d.id} className="ie-dest-card">
+              <img src={d.img} alt={d.name} loading="lazy" />
+              <div className="ie-dest-card-overlay">
+                <div className="ie-dest-sub">{d.tag}</div>
+                <div className="ie-dest-name">{d.name}</div>
+                <div style={{ fontSize:12, color:C.textMid, lineHeight:1.5, marginTop:8 }}>{d.highlight}</div>
               </div>
+              <div className="ie-dest-nights">{d.nights} · from {d.from}/pp</div>
             </div>
-            <div style={{ position: 'relative' }}>
-              <button className="lh2-edition-btn" onClick={() => setEditionOpen(v => !v)}>
-                <span className="lh2-edition-arrow">{editionOpen ? '▲' : '▼'}</span>
-              </button>
-              {editionOpen && (
-                <div className="lh2-edition-menu">
-                  <div className="lh2-edition-current">
-                    <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(200,169,110,0.9)' }}>✦ The Safari Edition</div>
-                    <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.35)', marginTop: 2 }}>Sub-Saharan Africa · Active</div>
+          ))}
+        </div>
+
+        {/* Safari edition cross-sell */}
+        <div className="ie-safari-banner">
+          <div className="ie-safari-text">
+            <strong>Planning a bush & beach combination?</strong>
+            <span>The Safari Edition handles Southern Africa. We connect the two.</span>
+          </div>
+          <a href="/" className="ie-safari-btn">← The Safari Edition</a>
+        </div>
+      </section>
+
+      {/* ── JOURNEYS ── */}
+      <section style={{ padding:'0 48px 96px', maxWidth:1200, margin:'0 auto' }} id="journeys">
+        <div className="ie-section-label">✦ Curated journeys</div>
+        <h2 className="ie-section-title">Our most-booked island programmes</h2>
+
+        <div className="ie-journey-grid">
+          {JOURNEYS.map(j => {
+            const saving = Math.round((1 - j.priceFrom / j.otaPrice) * 100);
+            return (
+              <div key={j.name} className="ie-journey-card">
+                <img src={j.img} alt={j.name} className="ie-journey-img" loading="lazy" />
+                <div className="ie-journey-body">
+                  <div className="ie-journey-badge" style={{ background:`${j.badgeColor}18`, color:j.badgeColor, border:`0.5px solid ${j.badgeColor}40` }}>{j.badge}</div>
+                  <div className="ie-journey-name">{j.name}</div>
+                  <div style={{ fontSize:11, color:C.teal, marginBottom:8, letterSpacing:'0.06em' }}>{j.nights} nights</div>
+                  <div className="ie-journey-tagline">{j.tagline}</div>
+                  <div className="ie-journey-price">
+                    <span className="ie-journey-from">{fmt(j.priceFrom)} <span style={{ fontSize:11, fontWeight:300, color:C.textDim }}>/person</span></span>
+                    <span className="ie-journey-ota">{fmt(j.otaPrice)}</span>
+                    <span className="ie-journey-saving">↓ {saving}%</span>
                   </div>
-                  {OTHER_EDITIONS.map(e => (
-                    e.live && e.href ? (
-                      <a key={e.id} href={e.href} className="lh2-edition-item" style={{ opacity: 1, cursor: 'pointer', textDecoration: 'none', background: 'transparent', transition: 'background 0.15s' }}
-                        onMouseEnter={ev => (ev.currentTarget.style.background = 'rgba(96,165,250,0.07)')}
-                        onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}
-                        onClick={() => setEditionOpen(false)}>
-                        <span style={{ fontSize: 18 }}>{e.icon}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, color: e.color, fontWeight: 500 }}>{e.name}</div>
-                          <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.38)' }}>{e.desc}</div>
-                        </div>
-                        <span style={{ fontSize: 9, color: '#4ade80', background: 'rgba(74,222,128,0.1)', border: '0.5px solid rgba(74,222,128,0.28)', borderRadius: 20, padding: '2px 7px', marginLeft: 'auto' }}>Preview →</span>
-                      </a>
-                    ) : (
-                      <div key={e.id} className="lh2-edition-item">
-                        <span style={{ fontSize: 18 }}>{e.icon}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, color: 'rgba(245,240,232,0.55)', fontWeight: 400 }}>{e.name}</div>
-                          <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.28)' }}>{e.desc}</div>
-                        </div>
-                        <span className="lh2-edition-badge">Soon</span>
-                      </div>
-                    )
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <ul className="lh2-nav-links">
-            <li><a href="/how-it-works">How It Works</a></li>
-            <li><a href="/about">About</a></li>
-            <li><a href="/contact">Contact</a></li>
-          </ul>
-          <div className="lh2-nav-right">
-            <select className="lh2-currency-sel" value={activeCurrency.code}
-              onChange={e => { const c = activeCurrencies.find(x => x.code === e.target.value); if (c) handleCurrencyChange(c); }}>
-              {activeCurrencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
-            </select>
-            <a href="/admin" className="lh2-nav-admin">Partner Login</a>
-            <button className="lh2-nav-cta" onClick={onPlanJourney}>Plan My Journey</button>
-          </div>
-        </nav>
-        {editionOpen && <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setEditionOpen(false)} />}
-
-        <section className="lh2-hero">
-          <div className="lh2-bg">
-            {heroBg ? <video src={heroBg} autoPlay muted loop playsInline /> : <img src={HERO_BG_IMAGE} alt="" />}
-            <div className="lh2-ov1" /><div className="lh2-ov2" /><div className="lh2-ov3" /><div className="lh2-vignette" /><div className="lh2-grain" />
-          </div>
-          <div className="lh2-corner tl" /><div className="lh2-corner tr" />
-          <div className="lh2-corner bl" /><div className="lh2-corner br" />
-          <div className="lh2-logo-area">
-            {!logoFailed && (
-              <img src="/logo.png" alt="The Safari Edition" className="lh2-logo-img" onError={() => setLogoFailed(true)} />
-            )}
-            {logoFailed && (
-              <div className="lh2-logo-text">
-                <div className="lh2-logo-line">
-                  <div className="lh2-logo-divider" />
-                  <div style={{ width: 8, height: 8, border: '1px solid rgba(200,169,110,0.6)', transform: 'rotate(45deg)', position: 'relative' }}>
-                    <div style={{ position: 'absolute', inset: 2, background: 'rgba(200,169,110,0.7)' }} />
-                  </div>
-                  <div className="lh2-logo-divider" />
-                </div>
-                <div className="lh2-logo-name">The Safari Edition</div>
-                <div className="lh2-logo-sub" style={{ marginTop: 6 }}>Sub-Saharan Africa · Curated</div>
-              </div>
-            )}
-          </div>
-          {circleVideo && (
-            <div className="lh2-circle">
-              <video ref={circleRef} src={circleVideo} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              <div className="lh2-circle-ov" /><div className="lh2-circle-ring" />
-            </div>
-          )}
-          {/* Film bar — top cinematic detail */}
-          <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:8, height:3, background:'linear-gradient(to right, transparent 0%, rgba(200,169,110,0.4) 20%, rgba(200,169,110,0.7) 50%, rgba(200,169,110,0.4) 80%, transparent 100%)', opacity:0.6 }} />
-
-          <div className="lh2-content">
-            <div className="lh2-content-inner">
-              <div className={`lh2-r lh2-r1 ${revealed ? 'show' : ''}`}>
-                <div className="lh2-eyebrow"><div className="lh2-eyebrow-line" />Sub-Saharan Africa · Handpicked</div>
-              </div>
-              <div className={`lh2-r lh2-r2 ${revealed ? 'show' : ''}`}><div className="lh2-headline1">Africa's finest</div></div>
-              <div className={`lh2-r lh2-r3 ${revealed ? 'show' : ''}`}><div className="lh2-headline2">wilderness, <em>curated.</em></div></div>
-              <div className={`lh2-r lh2-r4 ${revealed ? 'show' : ''}`}>
-                <p className="lh2-sub">Handpicked lodges. Contracted rates up to 27% below direct.<br />Bespoke sequencing. Your dedicated concierge. Complete in minutes.</p>
-              </div>
-              <div className={`lh2-r lh2-r5 ${revealed ? 'show' : ''}`}>
-                <div className="lh2-ctas">
-                  <button className="lh2-cta-primary" onClick={onPlanJourney}>
-                    <span className="lh2-cta-title">✦ Plan My Journey</span>
-                    <span className="lh2-cta-sub">Itinerary built in minutes</span>
-                  </button>
-                  <button className="lh2-cta-ghost" onClick={onCuratedJourneys}>
-                    <span className="lh2-cta-title">Curated Journeys</span>
-                    <span className="lh2-cta-sub">Ready to book · from price</span>
-                  </button>
-                  <button className="lh2-cta-ghost" onClick={onSendBrief}>
-                    <span className="lh2-cta-title">Send Your Brief</span>
-                    <span className="lh2-cta-sub">We handle everything</span>
-                  </button>
                 </div>
               </div>
-            </div>
-          </div>
-          <div className="lh2-scroll">
-            <span className="lh2-scroll-lbl">Scroll</span>
-            <div className="lh2-scroll-line" />
-          </div>
-        </section>
+            );
+          })}
+        </div>
+      </section>
 
-        <div className="lh2-trust">
-          <div className="lh2-trust-inner">
+      {/* ── TRUST ── */}
+      <section style={{ background:C.bg2, borderTop:`0.5px solid ${C.border}`, borderBottom:`0.5px solid ${C.border}` }}>
+        <div style={{ padding:'96px 48px', maxWidth:1200, margin:'0 auto' }}>
+          <div className="ie-section-label">✦ Why book with us</div>
+          <h2 className="ie-section-title">The specialist difference</h2>
+          <div className="ie-trust-grid">
             {TRUST.map(t => (
-              <div key={t.label} className="lh2-trust-item">
-                <div className="lh2-trust-icon" style={{ flexShrink: 0, marginTop: 2, width: 20, display: 'flex', alignItems: 'flex-start' }}>
-                  {t.icon}
-                </div>
-                <div>
-                  <div className="lh2-trust-lbl">{t.label}</div>
-                  <div className="lh2-trust-sub">{t.sub}</div>
-                </div>
+              <div key={t.label} className="ie-trust-item">
+                <div className="ie-trust-icon">{t.icon}</div>
+                <div className="ie-trust-label">{t.label}</div>
+                <div className="ie-trust-sub">{t.sub}</div>
               </div>
             ))}
           </div>
         </div>
+      </section>
 
-        <div className="lh2-stats">
-          <div className="lh2-stats-inner">
-            {STATS.map(s => (
-              <div key={s.label}>
-                <div className="lh2-stat-n"><AnimatedNum value={s.value} />{s.suffix}</div>
-                <div className="lh2-stat-l">{s.label}</div>
+      {/* ── HOW IT WORKS ── */}
+      <section style={{ padding:'96px 48px', maxWidth:1200, margin:'0 auto' }}>
+        <div className="ie-section-label">✦ The process</div>
+        <h2 className="ie-section-title">Five questions.<br />A fully-priced island itinerary.</h2>
+        <div className="ie-how-grid">
+          {HOW.map(h => (
+            <div key={h.n} className="ie-how-item">
+              <div className="ie-how-n">{h.n}</div>
+              <div className="ie-how-title">{h.title}</div>
+              <div className="ie-how-body">{h.body}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── INTEREST FORM ── */}
+      <section className="ie-form-section" id="notify">
+        <div className="ie-form-inner">
+          <div className="ie-section-label">✦ Early access</div>
+          <h2 className="ie-section-title" style={{ fontSize:'clamp(28px,3vw,40px)' }}>
+            The Island Edition launches<br />Q1 2027
+          </h2>
+          <p className="ie-section-body">
+            We are currently contracting with resorts and building the Knowledge Base. Register below and your Island Specialist will reach out personally when planning opens for your dates.
+          </p>
+
+          {form.submitted ? (
+            <div className="ie-form-success">
+              <div className="ie-form-success-icon">🌊</div>
+              <div className="ie-form-success-title">You're on the list, {form.name.split(' ')[0]}.</div>
+              <div className="ie-form-success-body">
+                Your Island Specialist will be in touch before launch. In the meantime, our safari specialists are available now — the bush and beach combination is one of our most-booked pairings.
               </div>
-            ))}
-          </div>
-          <div style={{ maxWidth: 1200, margin: '18px auto 0', paddingTop: 12, borderTop: '0.5px solid rgba(255,255,255,0.05)', display: 'flex', flexWrap: 'wrap' as const, gap: 16 }}>
-            <p style={{ fontWeight: 200, fontSize: 10, color: 'rgba(245,240,232,0.22)', letterSpacing: '0.04em', lineHeight: 1.7, margin: 0 }}>* Saving compared to booking directly with the lodge. Actual saving varies by property, season and room type.</p>
-            <p style={{ fontWeight: 200, fontSize: 10, color: 'rgba(245,240,232,0.22)', letterSpacing: '0.04em', lineHeight: 1.7, margin: 0 }}>† Guest satisfaction target. Tracked via post-journey NPS survey from first confirmed booking.</p>
-          </div>
-        </div>
-
-        <div style={{ background: '#0a0a0a', borderTop: '0.5px solid rgba(255,255,255,0.04)', borderBottom: '0.5px solid rgba(255,255,255,0.04)', padding: '28px clamp(20px,5vw,64px)' }}>
-          <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-            <p style={{ textAlign: 'center' as const, fontWeight: 200, fontSize: 9, letterSpacing: '0.42em', textTransform: 'uppercase' as const, color: 'rgba(245,240,232,0.2)', marginBottom: 24 }}>Accreditation &amp; Industry Partnerships</p>
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'clamp(24px,5vw,64px)', flexWrap: 'wrap' as const }}>
-              {[
-                { abbr: 'ASATA', full: 'Association of Southern African Travel Agents', note: 'Member' },
-                { abbr: 'SATSA', full: 'Southern Africa Tourism Services Association', note: 'Member' },
-                { abbr: 'ATTA',  full: 'African Travel & Tourism Association', note: 'Applying 2026' },
-                { abbr: 'SA Tourism', full: 'South African Tourism Board', note: 'Partner' },
-              ].map(org => (
-                <div key={org.abbr} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 4, opacity: org.note === 'Applying 2026' ? 0.45 : 0.7 }}>
-                  <div style={{ fontFamily: "'Cormorant Garamond',serif", fontWeight: 400, fontSize: 15, color: 'rgba(200,169,110,0.8)', letterSpacing: '0.08em' }}>{org.abbr}</div>
-                  <div style={{ fontWeight: 200, fontSize: 8, letterSpacing: '0.22em', textTransform: 'uppercase' as const, color: 'rgba(245,240,232,0.25)', textAlign: 'center' as const, maxWidth: 120 }}>{org.full}</div>
-                  <div style={{ fontWeight: 300, fontSize: 8, letterSpacing: '0.18em', color: org.note === 'Applying 2026' ? 'rgba(167,139,250,0.6)' : 'rgba(74,222,128,0.55)', textTransform: 'uppercase' as const }}>{org.note === 'Applying 2026' ? '◌ ' : '✓ '}{org.note}</div>
-                </div>
-              ))}
+              <a href="/" style={{ display:'inline-block', marginTop:20, color:C.teal, fontSize:13, letterSpacing:'0.06em' }}>Explore The Safari Edition →</a>
             </div>
-          </div>
-        </div>
-
-        {/* ── REGION SHOWCASE ──────────────────────────────────────────── */}
-        <div className="lh2-regions">
-          <div className="lh2-regions-inner">
-            <div className="lh2-regions-head">
-              <div>
-                <div className="lh2-regions-eyebrow">Where we operate</div>
-                <div className="lh2-regions-title">Five ecosystems.<br />One seamless journey.</div>
+          ) : (
+            <form className="ie-form" onSubmit={handleSubmit}>
+              <div className="ie-form-row">
+                <input
+                  type="text" required placeholder="Your name"
+                  value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))}
+                />
+                <input
+                  type="email" required placeholder="Email address"
+                  value={form.email} onChange={e => setForm(f => ({ ...f, email:e.target.value }))}
+                />
               </div>
-              <button className="lh2-view-btn" onClick={onPlanJourney}>Start planning →</button>
-            </div>
-          </div>
-          <div className="lh2-regions-strip">
-            {Object.entries(REGION_VIDEOS).map(([slug, r]) => (
-              <div key={slug} className="lh2-region-panel" onClick={onPlanJourney}>
-                <img src={r.img} alt={r.label} />
-                <div className="lh2-region-ov" />
-                <div className="lh2-region-ov2" />
-                <div className="lh2-region-label">
-                  <div className="lh2-region-country">{r.country}</div>
-                  <div className="lh2-region-name">{r.label}</div>
-                  <div className="lh2-region-tag">{r.tag}</div>
-                </div>
-                <div className="lh2-region-cta">Explore →</div>
-              </div>
-            ))}
-          </div>
+              <select value={form.destination} onChange={e => setForm(f => ({ ...f, destination:e.target.value }))}>
+                <option value="any">Any destination — help me choose</option>
+                <option value="maldives">Maldives</option>
+                <option value="seychelles">Seychelles</option>
+                <option value="zanzibar">Zanzibar</option>
+                <option value="safari-and-island">Safari + island combination</option>
+              </select>
+              <input
+                type="text" placeholder="When are you thinking of travelling? (e.g. June 2027)"
+                value={form.when} onChange={e => setForm(f => ({ ...f, when:e.target.value }))}
+              />
+              <button type="submit" className="ie-form-submit">Register interest →</button>
+              <p style={{ fontSize:11, color:C.textDim, textAlign:'center', lineHeight:1.5 }}>
+                No spam. Your Island Specialist reaches out personally — not an automated sequence.
+              </p>
+            </form>
+          )}
         </div>
+      </section>
 
-        {/* ── HOW IT WORKS ──────────────────────────────────────────────── */}
-        <div className="lh2-hiw">
-          <div className="lh2-hiw-inner">
-            <div className="lh2-hiw-head">
-              <div style={{ fontWeight:200, fontSize:9, letterSpacing:'0.44em', textTransform:'uppercase' as const, color:'rgba(200,169,110,0.6)', marginBottom:8 }}>The process</div>
-              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontWeight:300, fontSize:'clamp(24px,3vw,36px)', color:'#f5f0e8' }}>Bespoke, not complicated</div>
-            </div>
-            <div className="lh2-hiw-steps">
-              {HOW_IT_WORKS.map(s => (
-                <div key={s.n} className="lh2-hiw-step">
-                  <div className="lh2-hiw-n">{s.n}</div>
-                  <div className="lh2-hiw-line" />
-                  <div className="lh2-hiw-title">{s.title}</div>
-                  <div className="lh2-hiw-body">{s.body}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* ── FOOTER ── */}
+      <footer className="ie-footer">
+        <div className="ie-footer-brand">The Island Edition · by The Travel Catalogue</div>
+        <div className="ie-footer-links">
+          <a href="/" className="ie-footer-link">The Safari Edition</a>
+          <a href="/privacy" className="ie-footer-link">Privacy</a>
+          <a href="/terms" className="ie-footer-link">Terms</a>
+          <a href="/contact" className="ie-footer-link">Contact</a>
         </div>
-
-        {/* ── PULLQUOTE ─────────────────────────────────────────────────── */}
-        <div className="lh2-pullquote">
-          <div className="lh2-pullquote-inner">
-            <span className="lh2-pq-mark">"</span>
-            <div className="lh2-pq-text">We did not just book a holiday. We were handed the keys to a continent, curated by people who actually live inside it.</div>
-            <div className="lh2-pq-attr">James & Sarah K. · London · Sabi Sand + Okavango, 2024</div>
-          </div>
-        </div>
-
-        <div className="lh2-curated">
-          <div className="lh2-curated-inner">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                <div className="lh2-section-eyebrow">Signature Journeys</div>
-                <div className="lh2-section-title">Bespoke itineraries, ready to book</div>
-                <div className="lh2-section-sub">All-inclusive. Contracted rates. Every detail handled by your personal specialist.</div>
-              </div>
-              <button className="lh2-view-btn" onClick={onCuratedJourneys}>View all →</button>
-            </div>
-            <div className="lh2-curated-grid">
-              {(curatedJourneys.length > 0 ? curatedJourneys : CURATED).map((j: any) => {
-                const firstRegionSlug = j.cities?.[0]?.regionSlug ?? j.regionSlug ?? '';
-                const cardImage = regionImages[firstRegionSlug] || j.hero_image || j.fallbackImage || HERO_BG_IMAGE;
-                const priceFrom = j.price_from_zar ?? j.priceFrom ?? 0;
-                const otaPrice  = j.ota_price_zar  ?? j.otaPrice  ?? 0;
-                const saving    = otaPrice - priceFrom;
-                return (
-                  <div key={j.id ?? j.name} className="lh2-curated-card" onClick={onCuratedJourneys}>
-                    <div className="lh2-curated-img">
-                      <img src={cardImage} alt={j.name} />
-                      <div className="lh2-curated-img-ov" />
-                      {j.badge && <div style={{ position: 'absolute', top: 10, left: 12, background: j.badge_color ?? j.badgeColor ?? '#d4af37', color: '#0a0a0a', fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20 }}>{j.badge}</div>}
-                    </div>
-                    <div className="lh2-card-body">
-                      <div className="lh2-card-name">{j.name}</div>
-                      <div className="lh2-card-tag">{j.tagline}</div>
-                      <div className="lh2-card-price-row">
-                        <div>
-                          <div className="lh2-card-price">{fmt(priceFrom)}</div>
-                          <div className="lh2-card-nights">{j.nights}n · 2 pax</div>
-                        </div>
-                        {saving > 0 && <div className="lh2-card-saving">Save {fmt(saving)}</div>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <footer className="lh2-footer">
-          <div className="lh2-footer-inner">
-            <div className="lh2-footer-top">
-              <div className="lh2-footer-brand">
-                <span className="lh2-footer-brand-name">The Safari Edition</span>
-                <span className="lh2-footer-brand-sub">by The Travel Catalogue</span>
-                <p>Africa's finest wilderness, contracted and curated. UK, US and German primary markets. ASATA and SATSA registered.</p>
-              </div>
-              <div className="lh2-footer-col"><h4>Journey</h4><ul>
-                <li><a href="#" onClick={e=>{e.preventDefault();onPlanJourney();}}>Plan My Journey</a></li>
-                <li><a href="#" onClick={e=>{e.preventDefault();onCuratedJourneys();}}>Curated Journeys</a></li>
-                <li><a href="#" onClick={e=>{e.preventDefault();onSendBrief();}}>Send a Brief</a></li>
-                <li><a href="/how-it-works">How It Works</a></li>
-              </ul></div>
-              <div className="lh2-footer-col"><h4>Company</h4><ul>
-                <li><a href="/about">About Us</a></li>
-                <li><a href="/contact">Contact</a></li>
-                <li><a href="/admin">Partner Login</a></li>
-              </ul></div>
-              <div className="lh2-footer-col"><h4>Legal</h4><ul>
-                <li><a href="/terms">Terms & Conditions</a></li>
-                <li><a href="/privacy">Privacy Policy</a></li>
-                <li><a href="/cancellation">Cancellation Policy</a></li>
-              </ul></div>
-            </div>
-            <div className="lh2-footer-bottom">
-              <div className="lh2-footer-legal">© {new Date().getFullYear()} The Safari Edition · A Travel Catalogue Edition · <a href="/terms">T&Cs</a> · <a href="/privacy">Privacy</a></div>
-              <div className="lh2-asata"><div className="lh2-adot" />ASATA Member<div className="lh2-adot" />SATSA Member<div className="lh2-adot" />POPIA Compliant</div>
-            </div>
-          </div>
-        </footer>
-      </div>
+      </footer>
     </>
   );
-}
-
-function AnimatedNum({ value }: { value: number }) {
-  const [n, setN] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => {
-      if (!e.isIntersecting) return; obs.disconnect();
-      const isFloat = !Number.isInteger(value);
-      const start = Date.now(); const dur = 1400;
-      const tick = () => {
-        const p = Math.min((Date.now() - start) / dur, 1);
-        const e2 = 1 - Math.pow(1 - p, 3);
-        setN(isFloat ? Math.round(e2 * value * 10) / 10 : Math.round(e2 * value));
-        if (p < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }, { threshold: 0.5 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [value]);
-  return <span ref={ref}>{n}</span>;
 }
