@@ -85,9 +85,9 @@ const REGIONS = [
 // Gateway airport → first region arrival transfer legs
 const GATEWAY_LEGS: Record<string, { fromLabel:string; toLabel:string; provider:string; duration:string; estimatedCostZAR:number; aiNote:string }> = {
   'JNB→kruger-sabi-sand': { fromLabel:'Johannesburg (JNB)', toLabel:'Kruger / Sabi Sand', provider:'Federal Air JNB→SZK (Atlas Rd terminal)', duration:'~1h 30m', estimatedCostZAR:3800, aiNote:'Federal Air departs OR Tambo Atlas Rd terminal daily at 10:00 & 13:00. Lands directly on the lodge airstrip — no road transfer. 20kg soft bag; hard cases welcome on X class.' },
-  'JNB→okavango-delta':   { fromLabel:'Johannesburg (JNB)', toLabel:'Okavango Delta',    provider:'Airlink or Fastjet JNB→Maun + Wilderness Air/MackAir to camp', duration:'~4h', estimatedCostZAR:9200, aiNote:'Fly Airlink (4Z) or Fastjet (TC) from OR Tambo to Maun (MUB). Then Wilderness Air or Mack Air light aircraft to your camp airstrip. 20kg soft bag limit on charter leg — strictly enforced.' },
+  'JNB→okavango-delta':   { fromLabel:'Johannesburg (JNB)', toLabel:'Okavango Delta',    provider:'Airlink JNB→Maun (4Z302) + Wilderness Air/MackAir to camp', duration:'~4h', estimatedCostZAR:9200, aiNote:'Fly Airlink (4Z302 JNB→MUB, dep 10:55). Then Wilderness Air or Mack Air light aircraft to your camp airstrip. 20kg soft bag limit on charter leg — strictly enforced. Note: Fastjet does not serve JNB→MUB.' },
   'JNB→madikwe':          { fromLabel:'Johannesburg (JNB)', toLabel:'Madikwe Reserve',   provider:'Federal Air JNB→Madikwe airstrip', duration:'~1h 15m', estimatedCostZAR:3200, aiNote:'Federal Air flies direct to Madikwe airstrip from OR Tambo Atlas Rd terminal. Daily at 10:00 & 13:00. Lodge vehicle meets on airstrip.' },
-  'JNB→chobe-vic-falls':  { fromLabel:'Johannesburg (JNB)', toLabel:'Victoria Falls',    provider:'Airlink (4Z) or Fastjet (TC) JNB→VFA', duration:'~2h', estimatedCostZAR:6500, aiNote:'Direct Airlink or Fastjet from OR Tambo to Victoria Falls International (VFA). Multiple daily departures. Lodge transfer from VFA on arrival.' },
+  'JNB→chobe-vic-falls':  { fromLabel:'Johannesburg (JNB)', toLabel:'Victoria Falls',    provider:'Airlink (4Z) or Fastjet (FN) JNB→VFA', duration:'~2h', estimatedCostZAR:6500, aiNote:'Direct Airlink or Fastjet from OR Tambo to Victoria Falls International (VFA). Multiple daily departures. Lodge transfer from VFA on arrival.' },
   'JNB→cape-town':        { fromLabel:'Johannesburg (JNB)', toLabel:'Cape Town',         provider:'Airlink / FlySafair / SAA JNB→CPT', duration:'~2h', estimatedCostZAR:2800, aiNote:'Multiple daily flights OR Tambo → Cape Town International. Airlink and FlySafair most frequent. ~30 min private transfer CPT → V&A Waterfront or Atlantic Seaboard on arrival.' },
   'CPT→kruger-sabi-sand': { fromLabel:'Cape Town (CPT)', toLabel:'Kruger / Sabi Sand',   provider:'Airlink CPT→JNB + Federal Air JNB→SZK', duration:'~2h 45m', estimatedCostZAR:8500, aiNote:'Morning departure from Cape Town recommended. Connect at OR Tambo — allow 2hrs. Federal Air from Atlas Rd terminal to Skukuza airstrip.' },
   'CPT→madikwe':          { fromLabel:'Cape Town (CPT)', toLabel:'Madikwe Reserve',      provider:'Airlink CPT→JNB + Federal Air JNB→Madikwe', duration:'~2h 45m', estimatedCostZAR:7200, aiNote:'Connect via OR Tambo. Allow 2hrs at JNB. Federal Air direct to Madikwe airstrip.' },
@@ -116,8 +116,8 @@ const CITY_TRANSFERS: Record<string, CityTransferOption[]> = {
   ],
   'chobe-vic-falls': [
     { id:'airlink-vfa-jnb',  icon:'🛫', label:'Airlink VFA → JNB',     provider:'Lodge transfer to VFA + Airlink (4Z) VFA→JNB', duration:'~3h 30m total', estimatedCostZAR:8500, note:'Airlink (4Z) operates daily VFA→JNB — multiple departures. Lodge vehicle to airport (~35min). Connects to international flights at OR Tambo. Allow 3hrs at JNB for international connections.', recommended:true },
-    { id:'fastjet-vfa-jnb',  icon:'🛫', label:'Fastjet VFA → JNB',     provider:'Lodge transfer to VFA + Fastjet (TC) VFA→JNB',  duration:'~3h 30m total', estimatedCostZAR:6800, note:'Fastjet (TC) operates VFA→JNB — check schedule for your dates. Budget carrier, reliable on this route. Lodge vehicle to VFA (~35min). Allow 3hrs at JNB for international connections.', recommended:false },
-    { id:'helicopter-vfa',   icon:'🚁', label:'Helicopter to VFA + Airlink', provider:'Helicopter lodge→VFA + Airlink VFA→JNB', duration:'~3h',           estimatedCostZAR:18000, note:'Spectacular aerial views of Victoria Falls on departure. Connects to Airlink VFA→JNB. Premium upgrade — worth every cent.', recommended:false },
+    { id:'fastjet-vfa-jnb',  icon:'🛫', label:'Fastjet VFA → JNB',     provider:'Lodge transfer to VFA + Fastjet (FN) VFA→JNB',  duration:'~3h 30m total', estimatedCostZAR:6800, note:'Fastjet (TC) operates VFA→JNB — check schedule for your dates. Budget carrier, reliable on this route. Lodge vehicle to VFA (~35min). Allow 3hrs at JNB for international connections.', recommended:false },
+    // helicopter-vfa REMOVED: airport→lodge is always road transfer. Helicopter never from VFA airport.
   ],
   'masai-mara': [
     { id:'light-aircraft', icon:'✈', label:'Light aircraft charter', provider:'Safarilink / Air Kenya charter', duration:'45 min',    estimatedCostZAR:6800,  note:'Nairobi to Mara airstrip. Most camps have their own airstrip — vehicle transfer included.', recommended:true },
@@ -1680,11 +1680,13 @@ function buildTransferOptions(
     // Cross-regional
     '4Z-MQP-VFA':{fn:'4Z476',dep:'11:35',arr:'13:25',dur:110,bag:'20kg · X Class 32kg avail'},
     '4Z-VFA-MQP':{fn:'4Z477',dep:'14:00',arr:'15:40',dur:100,bag:'20kg · X Class 32kg avail'},
-    // Fastjet (TC)
-    'TC-JNB-VFA':{fn:'FN8508',dep:'09:55',arr:'11:45',dur:110,bag:'20kg · hard cases OK'},
-    'TC-VFA-JNB':{fn:'FN8503',dep:'12:45',arr:'14:35',dur:110,bag:'20kg · hard cases OK'},
-    'TC-MQP-VFA':{fn:'FN8802',dep:'12:45',arr:'14:30',dur:105,bag:'20kg · hard cases OK'},
-    'TC-VFA-MQP':{fn:'FN8801',dep:'10:30',arr:'12:15',dur:105,bag:'20kg · hard cases OK'},
+    // NOTE: 4Z477 arrives MQP 15:40 — too late for all FedAir lodge shuttles (last dep 13:30).
+    // pickBestFlight returns null for this route when fedAirDep is set → option dropped correctly.
+    // Fastjet Zimbabwe (IATA: FN)
+    'FN-JNB-VFA':{fn:'FN8508',dep:'09:55',arr:'11:45',dur:110,bag:'20kg · hard cases OK'},
+    'FN-VFA-JNB':{fn:'FN8503',dep:'12:45',arr:'14:35',dur:110,bag:'20kg · hard cases OK'},
+    'FN-MQP-VFA':{fn:'FN8802',dep:'12:45',arr:'14:30',dur:105,bag:'20kg · hard cases OK'},
+    'FN-VFA-MQP':{fn:'FN8801',dep:'10:30',arr:'12:15',dur:105,bag:'20kg · hard cases OK'},
   };
 
   // ── Multiple daily frequencies per commercial route ─────────────────────────
@@ -1693,6 +1695,11 @@ function buildTransferOptions(
   // Single-frequency routes stay in SCHED only.
   type SCHEDEntry = {fn:string;dep:string;arr:string;dur:number};
   const SCHED_MULTI: Record<string, SCHEDEntry[]> = {
+    // VFA → MQP: Fastjet is the ONLY viable option when FedAir connection needed.
+    // 4Z477 (14:00→15:40) arrives 2+ hours after FedAir departs — excluded by guardrail.
+    'FN-VFA-MQP': [
+      {fn:'FN8801', dep:'10:30', arr:'12:15', dur:105}, // ← 75 min buffer to FedAir 13:30 ✓
+    ],
     // CPT → JNB: 4 viable Airlink frequencies (Trip.com confirmed June 2026)
     // 4Z922 dep 09:00 is the sweet-spot for FedAir 13:00 Madikwe (arrives JNB 11:05, 1h55 buffer ✅)
     '4Z-CPT-JNB': [
@@ -1707,6 +1714,16 @@ function buildTransferOptions(
       {fn:'4Z829', dep:'10:05', arr:'11:00', dur:55},
       {fn:'4Z841', dep:'11:05', arr:'12:00', dur:55},  // ← best for FedAir 13:00+ (1h15 buffer ✅)
       {fn:'4Z845', dep:'16:10', arr:'16:50', dur:40},  // misses all FedAir
+    ],
+    // MQP → JNB: multiple daily outbound.
+    // GUARDRAIL: 4Z824 (08:25) is too early for FedAir arrivals at MQP (earliest 10:35).
+    // pickBestFlight with fedAirDep=null picks earliest → wrong for lodge exit days.
+    // When exit leg arrives MQP 10:30+, use post-10:30 departures only.
+    '4Z-MQP-JNB': [
+      {fn:'4Z824', dep:'08:25', arr:'09:20', dur:55},   // early — only valid for overnight-at-MQP
+      {fn:'4Z838', dep:'11:35', arr:'12:30', dur:55},   // ✅ good after FedAir 09:00→MQP 10:35
+      {fn:'4Z842', dep:'13:00', arr:'13:55', dur:55},   // ✅ good after FedAir 12:05→MQP 12:30
+      {fn:'4Z846', dep:'15:00', arr:'15:55', dur:55},   // ✅ late option
     ],
     // CPT → MQP: 4Z663 only connects if FedAir dep ≥ 13:45 (none currently)
     // pickBestFlight will correctly keep 4Z661 for all current FedAir times
@@ -1740,32 +1757,49 @@ function buildTransferOptions(
   // Returns the LATEST viable commercial flight that leaves enough connection time.
   // "Latest" = best guest experience (late checkout, breakfast, civilised departure).
   // Falls back to earliest if nothing makes the connection.
-  const pickBestFlight = (routeKey: string, fedAirDep: string | null, bag: string): (SCHEDEntry & {bag:string}) | null => {
+  // minDep: if set, only pick flights departing AT or AFTER this time.
+  // Used for exit scenarios where FedAir arrives at MQP and commercial must depart after.
+  const pickBestFlight = (routeKey: string, fedAirDep: string | null, bag: string, minDep?: string): (SCHEDEntry & {bag:string}) | null => {
     const freqs = SCHED_MULTI[routeKey];
     const primary = SCHED[routeKey] ? { fn: SCHED[routeKey].fn, dep: SCHED[routeKey].dep, arr: SCHED[routeKey].arr, dur: SCHED[routeKey].dur } : null;
     const all: SCHEDEntry[] = freqs ?? (primary ? [primary] : []);
     if (!all.length) return null;
 
-    if (!fedAirDep) return { ...all[0], bag };
+    // Filter by minDep first (for post-FedAir exit connections)
+    const afterMin = minDep ? all.filter(f => t2m(f.dep) >= t2m(minDep)) : all;
+    const pool = afterMin.length ? afterMin : all;
+
+    if (!fedAirDep) return { ...pool[0], bag };
 
     // Extract dest hub from routeKey (e.g. '4Z-JNB-MQP' → 'MQP')
     const destHub = routeKey.split('-').pop()!;
     const bufferMin = CONNECTION_BUFFER[destHub] ?? 45;
     const deadline  = t2m(fedAirDep) - bufferMin;
 
-    // All flights that arrive before the deadline
-    const viable = all.filter(f => t2m(f.arr) <= deadline);
+    // All flights that arrive before the deadline (from filtered pool)
+    const viable = pool.filter(f => t2m(f.arr) <= deadline);
 
-    // Pick the LATEST departure (best for guest); fall back to first if none viable
-    const best = viable.length
-      ? viable.sort((a, b) => t2m(b.dep) - t2m(a.dep))[0]
-      : all[0]; // nothing connects — show earliest, let specialist warn
+    //     // GUARDRAIL: if no flight arrives in time for the FedAir connection, return null.
+    // The caller (option generator) skips this option entirely — no impossible combos shown.
+    if (!viable.length) return null;
+    const best = viable.sort((a, b) => t2m(b.dep) - t2m(a.dep))[0]
 
     return { ...best, bag };
   };
 
   // ── Lodge name → FedAir bush airstrip code ──────────────────────────────────
   // Source: FedAir_Routes_Final.md (June 2026)
+  // AIRSTRIP DISPLAY NAMES — shown on tile instead of lodge name (more accurate)
+  const AIRSTRIP_DISPLAY_NAME: Record<string, string> = {
+    'SSX': 'Singita private airstrip',
+    'LDZ': 'Londolozi airstrip',
+    'ULX': 'Ulusaba airstrip',      // Dulini is served by ULX (Ulusaba), NOT Dulini's own strip
+    'ASS': 'Arathusa airstrip',     // Chitwa Chitwa is served by Arathusa (ASS)
+    'GSS': 'Sabi Sabi airstrip',
+    'SAT': 'Satara airstrip',
+    'AAM': 'Inyati airstrip',
+    'SZK': 'Skukuza Airport',       // Lion Sands → SZK ✓
+  };
   const LODGE_TO_AIRSTRIP: Record<string, string> = {
     'Singita Boulders Lodge':   'SSX',
     'Singita Ebony Lodge':      'SSX',
@@ -1824,10 +1858,10 @@ function buildTransferOptions(
   // When fedAirDep is provided, selects the LATEST viable flight (best experience).
   // Without fedAirDep, falls back to primary SCHED entry.
   // Duffel meta used ONLY for fare pricing upstream — NEVER shown on tile.
-  const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string, fedAirDep?: string | null): StructuredLeg => {
+  const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string, fedAirDep?: string | null, minDep?: string): StructuredLeg => {
     const routeKey = `${carrierCode}-${originHub}-${destHub}`;
     const bag      = '20kg · X Class 32kg avail';
-    const sc       = pickBestFlight(routeKey, fedAirDep ?? null, bag)
+    const sc       = pickBestFlight(routeKey, fedAirDep ?? null, bag, minDep)
                      ?? (SCHED[routeKey] ? { ...SCHED[routeKey] } : null);
     const dur      = sc ? durStr(sc.dur) : '';
     return {
@@ -1862,7 +1896,7 @@ function buildTransferOptions(
           kind: 'exit' as const,
           badge: 'FA',
           name: 'Federal Air',
-          from: `${lodgeName ?? airstrip ?? 'Lodge'} airstrip`,
+          from: AIRSTRIP_DISPLAY_NAME[airstrip ?? ''] ?? `${lodgeName ?? airstrip ?? 'Lodge'} airstrip`,
           to: fromHub,
           flightNum: br.flt,
           depTime: br.dep,
@@ -1895,7 +1929,7 @@ function buildTransferOptions(
     if (lm.mode === 'mackair' || lm.mode === 'wilderness') {
       return {
         kind: 'exit',
-        badge: lm.mode === 'mackair' ? 'MA' : 'WA',
+        badge: lm.mode === 'mackair' ? 'MK' : 'WA',
         name: lm.mode === 'mackair' ? 'Mack Air' : 'Wilderness Air',
         from: 'Lodge',
         to: lm.fromAirport,
@@ -1930,10 +1964,10 @@ function buildTransferOptions(
     if (['MQP','HDS','SZK'].includes(originHub)) {
       carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
     } else if (originHub === 'MUB') {
-      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
+      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0}); // Fastjet does not serve MUB
     } else if (['VFA','LVI'].includes(originHub)) {
       carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
-      carrierMatrix.push({code:'TC',name:'Fastjet',adjust:1.05});
+      carrierMatrix.push({code:'FN',name:'Fastjet',adjust:1.05});
     } else {
       carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
     }
@@ -2035,12 +2069,12 @@ function buildTransferOptions(
       if (gw === 'CPT') {
         if (['MQP','HDS','SZK'].includes(originHub)) { return [{code:'4Z',name:'Airlink',adjust:1.0}]; }
         if (originHub === 'MUB') return [{code:'4Z',name:'Airlink',adjust:1.0}];
-        if (['VFA','LVI'].includes(originHub)) return [{code:'4Z',name:'Airlink',adjust:1.0},{code:'TC',name:'Fastjet',adjust:1.05}];
+        if (['VFA','LVI'].includes(originHub)) return [{code:'4Z',name:'Airlink',adjust:1.0},{code:'FN',name:'Fastjet',adjust:1.05}];
         return [{code:'4Z',name:'Airlink',adjust:1.0}];
       }
       // gw === 'JNB'
-      if (['VFA','LVI'].includes(originHub)) return [{code:'TC',name:'Fastjet',adjust:0.92},{code:'4Z',name:'Airlink',adjust:1.0}];
-      if (originHub === 'MUB')               return [{code:'4Z',name:'Airlink',adjust:1.0},{code:'TC',name:'Fastjet',adjust:1.0}];
+      if (['VFA','LVI'].includes(originHub)) return [{code:'FN',name:'Fastjet',adjust:0.92},{code:'4Z',name:'Airlink',adjust:1.0}];
+      if (originHub === 'MUB')               return [{code:'4Z',name:'Airlink',adjust:1.0}]; // Fastjet does not serve MUB
       if (['MQP','HDS','SZK'].includes(originHub)) { return [{code:'4Z',name:'Airlink',adjust:1.0}]; }
       return [{code:'4Z',name:'Airlink',adjust:1.0}];
     })();
@@ -2055,8 +2089,21 @@ function buildTransferOptions(
       const metaForThis = (!noFlight && meta && (meta.carrier === c.code)) ? meta : null;
 
       const structured: StructuredLeg[] = [];
+      // Compute FedAir exit arrival time — commercial from MQP must depart AFTER this.
+      // This fixes Image 7: FA3202 arr MQP 12:30, so commercial must depart ≥ 13:15 (12:30+45).
+      let exitArrAtHub: string | undefined;
+      if (exitRec?.mode === 'fedair' && !noFlight) {
+        const airstrip = originLodge ? (LODGE_TO_AIRSTRIP[originLodge] ?? null) : null;
+        const bushKey  = airstrip ? `${airstrip}-${originHub}` : null;
+        const br       = bushKey ? (FEDAIR_BUSH[bushKey] ?? null) : null;
+        if (br?.arr) {
+          // minDep = FedAir arrival + 45 min buffer
+          const arrMins = t2m(br.arr) + 45;
+          exitArrAtHub = `${Math.floor(arrMins/60).toString().padStart(2,'0')}:${(arrMins%60).toString().padStart(2,'0')}`;
+        }
+      }
       if (exitRec) { const ex = exitLeg(exitRec, noFlight ? gw : originHub, originLodge ?? undefined); if (ex) structured.push(ex); }
-     if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code, null)); // gateway: no FedAir conn at gateway
+      if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code, null, exitArrAtHub)); // minDep guards against pre-FedAir-arrival departures
 
       const exitMin   = exitRec?.durationMin ?? 0;
       const flightMin = noFlight ? 0 : (meta?.duration_min ?? flightMinFallback[originHub] ?? 120);
@@ -2064,7 +2111,7 @@ function buildTransferOptions(
 
       const badges: Array<{text:string;color:string}> = [];
       if (i === 0) badges.push({ text:'\u2726 Recommended', color:'rgba(212,175,55,0.9)' });
-      if (c.code === 'TC') badges.push({ text:'\u2708 Fastjet', color:'rgba(211,84,0,0.9)' });
+      if (c.code === 'FN') badges.push({ text:'\u2708 Fastjet', color:'rgba(211,84,0,0.9)' });
       if (exitRec?.mode === 'fedair') badges.push({ text:'\u2708 Federal Air charter included', color:'rgba(134,239,172,0.85)' });
       if (isEst && !noFlight) badges.push({ text:'Est.', color:'rgba(255,255,255,0.3)' });
 
@@ -2122,7 +2169,7 @@ function buildTransferOptions(
     ]);
     if (FASTJET_DIRECT.has(key)) {
       return [
-        { code:'TC', name:'Fastjet', adjust:0.92 },
+        { code:'FN', name:'Fastjet', adjust:0.92 },
         { code:'4Z', name:'Airlink', adjust:1.0 },
       ];
     }
@@ -2153,7 +2200,7 @@ function buildTransferOptions(
     } else if (arr.mode === 'fedair') {
       out.push(fedairLeg(destHub, 'Lodge airstrip', isLowveld, isMadikweArr, lodgeName, fedAirDep ?? undefined));
     } else if (arr.mode === 'mackair') {
-      out.push({ kind:'arrival', badge:'MA', name:'Mack Air', from:destHub, to:'Camp airstrip', detail:'20kg soft bag · no hard cases · lands at camp', note:arr.note, noteColor:'rgba(74,222,128,0.6)' });
+      out.push({ kind:'arrival', badge:'MK', name:'Mack Air', from:destHub, to:'Camp airstrip', detail:'20kg soft bag · no hard cases · lands at camp', note:arr.note, noteColor:'rgba(74,222,128,0.6)' });
     } else if (arr.mode === 'wilderness') {
       out.push({ kind:'arrival', badge:'WA', name:'Wilderness Air', from:destHub, to:'Camp airstrip', detail:'Included in lodge rate · 20kg soft bag strictly enforced', note:'Do not charge separately', noteColor:'rgba(74,222,128,0.6)' });
     } else if (arr.mode === 'road') {
@@ -2201,7 +2248,7 @@ function buildTransferOptions(
 
       const badges: Array<{text:string;color:string}> = [];
       if (i === 0) badges.push({ text:'\u2726 Recommended', color:'rgba(212,175,55,0.9)' });
-      if (c.code === 'TC') badges.push({ text:'\u2708 Fastjet', color:'rgba(211,84,0,0.9)' });
+      if (c.code === 'FN') badges.push({ text:'\u2708 Fastjet', color:'rgba(211,84,0,0.9)' });
       if (arrRec.mode === 'fedair') badges.push({ text:'\u2708 Federal Air included', color:'rgba(134,239,172,0.85)' });
       if (isEst) badges.push({ text:'Est.', color:'rgba(255,255,255,0.3)' });
 
@@ -2227,6 +2274,12 @@ function buildTransferOptions(
     const LOWVELD = ['MQP','HDS','SZK'];
     if (LOWVELD.includes(destHub)) {
       for (const ah of LOWVELD.filter(h => h !== destHub)) {
+        // GUARDRAIL: only generate alternative if a real schedule exists for this hub.
+        // Prevents phantom VFA→HDS and VFA→SZK options (no Airlink flights on those routes).
+        const altSchedKey = `4Z-${originHub}-${ah}`;
+        const altFnSchedKey = `FN-${originHub}-${ah}`;
+        const hasAltSched = !!(SCHED[altSchedKey] || SCHED[altFnSchedKey]);
+        if (!hasAltSched) continue; // ← drops VFA→HDS, VFA→SZK silently
         const altKey    = `${originHub}-${ah}`;
         const altMeta   = commercialMetaByRoute?.[altKey];
         const altFare   = commercialFareZarByRoute?.[altKey] ?? (COMMERCIAL_FALLBACK_ZAR[ah] ?? 4000);
@@ -2381,7 +2434,7 @@ const AIRLINE_META: Record<string,{name:string;code:string;color:string}> = {
   'FS':         {name:'FlySafair',      code:'FS', color:'#e67e22'},
   // Fastjet
   'TC':         {name:'Fastjet',        code:'TC', color:'#d35400'},
-  'Fastjet':    {name:'Fastjet',        code:'TC', color:'#d35400'},
+  'Fastjet':    {name:'Fastjet',        code:'FN', color:'#d35400'},
   // SAA
   'SA':         {name:'SAA',            code:'SA', color:'#1a5276'},
   'SAA':        {name:'SAA',            code:'SA', color:'#1a5276'},
@@ -2393,8 +2446,9 @@ const AIRLINE_META: Record<string,{name:string;code:string;color:string}> = {
   // Charter operators
   'WA':         {name:'Wilderness Air', code:'WA', color:'#1d6a54'},
   'Wilderness Air':{name:'Wilderness Air',code:'WA',color:'#1d6a54'},
-  'MA':         {name:'Mack Air',       code:'MA', color:'#5d4037'},
-  'Mack Air':   {name:'Mack Air',       code:'MA', color:'#5d4037'},
+  'MK':         {name:'Mack Air',       code:'MK', color:'#5d4037'}, // IATA: MK
+  'MA':         {name:'Mack Air',       code:'MK', color:'#5d4037'}, // legacy alias → MK
+  'Mack Air':   {name:'Mack Air',       code:'MK', color:'#5d4037'},
 };
 
 const _lc: Record<string, string | null> = {};
@@ -2469,7 +2523,7 @@ function buildTransferLegs(opt: any, _meta?: any): TransferLeg[] {
       }
 
       // ── Charter operators (Mack Air, Wilderness Air) ────────────────────
-      if (sl.badge === 'MA' || sl.badge === 'WA') {
+      if (sl.badge === 'MK' || sl.badge === 'MA' || sl.badge === 'WA') { // MA = legacy Mack Air code
         return {
           type: 'charter' as const,
           badge: sl.badge,
@@ -2532,11 +2586,11 @@ function buildTransferLegs(opt: any, _meta?: any): TransferLeg[] {
         note:'OR Tambo Atlas Rd terminal · X Class: 32kg + hard cases (+25%)',
       });
     } else if (isMackAir) {
-      legs.push({ type:'charter', badge:'MA', primary:'Mack Air', detail:'20kg soft bag · no hard cases' });
+      legs.push({ type:'charter', badge:'MK', primary:'Mack Air', detail:'20kg soft bag · no hard cases' });
     } else if (isWilderness) {
       legs.push({ type:'charter', badge:'WA', primary:'Wilderness Air', detail:'Included in lodge rate · 20kg soft bag' });
     } else if (isAirlink || isCemAir || isFlySafair || isFastjet || isSAA) {
-      const code = isAirlink?'4Z':isCemAir?'5Z':isFlySafair?'FS':isFastjet?'TC':isSAA?'SA':'4Z';
+      const code = isAirlink?'4Z':isCemAir?'5Z':isFlySafair?'FS':isFastjet?'FN':isSAA?'SA':'4Z';
       const name = AIRLINE_META[code]?.name ?? code;
       const rm   = p.match(/([A-Z]{3})\s*\u2192\s*([A-Z]{3})/);
       legs.push({
