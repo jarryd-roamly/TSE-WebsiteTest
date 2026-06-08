@@ -1748,6 +1748,11 @@ function buildTransferOptions(
     'MQP-MUB', 'SZK-MUB', 'HDS-MUB',   // Kruger → Okavango (no direct, need JNB overnight)
     'MUB-MQP', 'MUB-SZK', 'MUB-HDS',   // Okavango → Kruger (same)
     'MUB-VFA', 'VFA-MUB',               // Okavango ↔ Vic Falls (charter via Kasane only)
+    // NOTE: MQP-VFA direct (4Z476 11:35, FN8802 12:45) departs BEFORE FedAir lodge exits arrive
+    // at MQP (12:25–12:35) + 60-min buffer (13:25–13:35). No same-day direct works from a
+    // standard Sabi Sand lodge exit. Mon/Wed/Fri/Sun guests must overnight at MQP/Hoedspruit
+    // OR depart lodge the previous day. Routing is correctly via JNB on exit day.
+    // Remove from this set ONLY if lodge offers an early 07:00 exit catching Airlink 11:35.
   ]);
 
   // ── VIA-JNB MULTI-LEG BUILDER ──────────────────────────────────────────────
@@ -1900,7 +1905,7 @@ function buildTransferOptions(
 
   // Generic FedAir departure times when specific lodge is unknown
   const FEDAIR_GENERIC_DEP: Record<string, string> = {
-    'MQP':'13:30', // flexible afternoon — holds for 4Z663 (arr 12:45) and departs 13:30, lodges by 15:00
+    'MQP':'10:10', // FedAir flt 3301 SSX→MQP arr 10:10 (earliest exit). 60-min buffer → min dep 11:10. Both 4Z476 (11:35) and FN8802 (12:45) connect.
     'HDS':'11:55', 'SZK':'13:00',
     'JNB':'13:00', // FedAir 13:00 is primary Madikwe dep — allows 09:00 CPT departure (4Z922)
   };
@@ -1984,14 +1989,19 @@ function buildTransferOptions(
     'MQP-GSS': { flt:'FA3203', dep:'13:30', arr:'13:50', dur:30,  stops:0 },
     'MQP-SAT': { flt:'FA3301', dep:'08:20', arr:'09:15', dur:55,  stops:0 },
     'MQP-AAM': { flt:'FA3201', dep:'08:50', arr:'09:10', dur:20,  stops:0 },
-    // ── Lodge → MQP exits ────────────────────────────────────────────
-    'SSX-MQP': { flt:'FA3102', dep:'12:15', arr:'12:35', dur:20,  stops:0 },
-    'LDZ-MQP': { flt:'FA3302', dep:'11:40', arr:'12:25', dur:45,  stops:1, via:'Sabi Sabi (GSS)' },
-    'ULX-MQP': { flt:'FA3202', dep:'11:40', arr:'12:30', dur:50,  stops:1, via:'Arathusa (ASS)' },
-    'ASS-MQP': { flt:'FA3202', dep:'12:05', arr:'12:30', dur:25,  stops:0 },
-    'GSS-MQP': { flt:'FA3302', dep:'12:05', arr:'12:25', dur:20,  stops:0 },
-    'SAT-MQP': { flt:'FA3301', dep:'09:15', arr:'10:10', dur:55,  stops:1, via:'Singita (SSX)' },
-    'AAM-MQP': { flt:'FA3201', dep:'09:25', arr:'10:35', dur:70,  stops:2, via:'Londolozi/Arathusa' },
+    // ── Lodge → MQP exits — verified from FedAir schedule 18 May 2026 ────────
+    // Flt 3301: MQP→SAT 08:20, SAT→SSX 09:15 arr 09:35, SSX→MQP dep 09:50 arr 10:10 ✓
+    // Flt 301:  All lodges→MQP dep 09:00 arr 10:35 (Lowveld Shuttle) ✓
+    // Flt 3201: MQP→AAM 08:50, AAM→LDZ 09:25, LDZ→ASS 09:50, ASS→MQP arr 10:35 ✓
+    // Flt 3302: GSS→MQP arr 12:25. Flt 3102: SSX→MQP arr 12:35 (afternoon option).
+    // USE EARLIEST exits for MQP→VFA connections:
+    'SSX-MQP': { flt:'FA3301', dep:'09:50', arr:'10:10', dur:20,  stops:0 },  // via SAT dep 08:20
+    'LDZ-MQP': { flt:'FA3201', dep:'09:35', arr:'10:35', dur:60,  stops:2, via:'AAM/ASS' },
+    'ULX-MQP': { flt:'FA3201', dep:'09:25', arr:'10:35', dur:70,  stops:2, via:'LDZ/ASS' },
+    'ASS-MQP': { flt:'FA3201', dep:'10:10', arr:'10:35', dur:25,  stops:0 },
+    'GSS-MQP': { flt:'FA3302', dep:'12:05', arr:'12:25', dur:20,  stops:0 },  // afternoon only
+    'SAT-MQP': { flt:'FA3301', dep:'09:15', arr:'10:10', dur:55,  stops:1, via:'SSX' },
+    'AAM-MQP': { flt:'FA3201', dep:'09:25', arr:'10:35', dur:70,  stops:2, via:'LDZ/ASS' },
     // ── SZK connections ──────────────────────────────────────────────
     'ULX-SZK': { flt:'FA3101', dep:'09:00', arr:'09:10', dur:10,  stops:0 },
     'SZK-MQP': { flt:'FA3101', dep:'09:25', arr:'09:45', dur:20,  stops:0 },
@@ -2127,8 +2137,7 @@ function buildTransferOptions(
     } else if (originHub === 'MUB') {
       carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0}); // Fastjet does not serve MUB
     } else if (['VFA','LVI'].includes(originHub)) {
-      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
-      carrierMatrix.push({code:'FN',name:'Fastjet',adjust:1.05});
+      carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0}); // Fastjet does NOT operate VFA/LVI→CPT
     } else {
       carrierMatrix.push({code:'4Z',name:'Airlink',adjust:1.0});
     }
