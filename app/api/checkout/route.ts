@@ -37,7 +37,7 @@ function buildPayFastUrl(params: {
   const merchantId  = process.env.PAYFAST_MERCHANT_ID  || '10000100'
   const merchantKey = process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a'
   // PayFast sandbox test account passphrase is 'payfast' — set PAYFAST_PASSPHRASE in env for production
-  const passphrase  = process.env.PAYFAST_PASSPHRASE   ?? 'payfast'
+  const passphrase  = process.env.PAYFAST_PASSPHRASE   || 'payfast'
 
   // Sanitize item_name - PayFast only accepts ASCII characters
   const sanitizedItemName = params.itemName.replace(/[^\x00-\x7F]/g, '-').substring(0, 100)
@@ -75,6 +75,10 @@ function buildPayFastUrl(params: {
     : sigString
 
   const signature = crypto.createHash('md5').update(sigWithPassphrase).digest('hex')
+  console.log('[PayFast] host:', params.notifyUrl.split('/api')[0])
+  console.log('[PayFast] passphrase length:', passphrase.length)
+  console.log('[PayFast] amount:', params.amount)
+  console.log('[PayFast] signature:', signature)
 
   const host = process.env.PAYFAST_LIVE === 'true'
     ? 'https://www.payfast.co.za/eng/process'
@@ -293,7 +297,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Use fallback booking if primary insert failed
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.get('host')}` || 'https://tse-website-test.vercel.app'
       if (action === 'quote' || action === 'hold') {
         await sendQuoteEmail({ email: traveller_email, name: traveller_name || '', bookingRef, itinerary, depositTotal, totalZAR, baseUrl })
         return NextResponse.json({
