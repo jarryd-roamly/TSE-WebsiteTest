@@ -1821,7 +1821,8 @@ function buildTransferOptions(
 
     // ── Okavango → Kruger hubs ─────────────────────────────────────────────
     if (fromSlug === 'okavango-delta' && ['kruger-sabi-sand','madikwe'].includes(toSlug)) {
-      const hub = destHubR; // MQP, SZK, or HDS
+      // hub comes from arrRec parameter (arrival last-mile hub)
+      const hub = arrRec?.fromAirport ?? 'MQP'; // MQP, SZK, or HDS
       const jnbSc = SCHED['4Z-MUB-JNB']; // 4Z303 13:05→14:45
       const hubKey = `4Z-JNB-${hub}`;
       const hubSc = SCHED_MULTI[hubKey]
@@ -4059,7 +4060,7 @@ useEffect(() => {
   }, [costBreakdown, selectedFlightOffer, flightAncillaryTotal, adults, children]);
 
   // ── Scroll-reveal for KB columns ──────────────────────────────────────────
-  const kbRevealRefs = React.useRef<Map<string,HTMLDivElement>>(new Map());
+  const kbRevealRefs = React.useRef(new Map<string, HTMLDivElement>());
   React.useEffect(() => {
     const observers: IntersectionObserver[] = [];
     kbRevealRefs.current.forEach((el) => {
@@ -5263,7 +5264,7 @@ const runBriefPlanner = (briefText: string) => {
               })();
 
               return (
-                <div ref={(el: HTMLDivElement | null) => { if (el) kbRevealRefs.current.set(slug+'-'+cityIdx, el as HTMLDivElement); else kbRevealRefs.current.delete(slug+'-'+cityIdx); }}>
+                <div ref={(el) => { if (el) kbRevealRefs.current.set(slug+'-'+cityIdx, el); else kbRevealRefs.current.delete(slug+'-'+cityIdx); }}>
                 <RegionChapter
                   key={cityIdx}
                   chapterIndex={cityIdx}
