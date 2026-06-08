@@ -27,6 +27,7 @@ export type Segment = {
   tone: string; img?: string; reel?: string; sensory?: string; kb?: string;
   value: number; ref: string; status: LegStatus; gameCamp: boolean; vehPerDay?: number;
   cancel: [number, number][];
+  nights?: number;
 };
 
 export type Journey = {
@@ -107,7 +108,7 @@ function mapToJourney(booking: any, itinerary: any): Journey {
   const segments: Segment[] = hotelComponents.map((comp: any, i: number) => {
     const slug    = comp.region_slug || '';
     const lodge   = comp.name || 'Lodge TBC';
-    const cNights = comp.nights || 1;
+    const cNights = Number(comp.nights) || 1;
     
     const segCheckIn  = runningDate ? new Date(runningDate) : null;
     const segCheckOut = segCheckIn  ? new Date(new Date(segCheckIn).setDate(segCheckIn.getDate() + cNights)) : null;
@@ -127,8 +128,9 @@ function mapToJourney(booking: any, itinerary: any): Journey {
       bandName:   lodge,
       region:     comp.region_label || regionLabel(slug),
       lodge,
-      day:        `${cNights}`,
+      day:        String(cNights),
       dayWord:    (cNights === 1 ? 'Day' : 'Days') as 'Day' | 'Days',
+      nights:     cNights,
       dates:      segDates,
       narrative:  comp.fun_fact || '',
       detail:     comp.inclusions?.slice(0, 4) || [],
@@ -149,7 +151,7 @@ function mapToJourney(booking: any, itinerary: any): Journey {
     segments.push({
       id: 'seg-0', scene: 'kruger' as SceneName, bandRegion: 'Your Safari',
       bandName: 'Lodge TBC', region: 'Your Safari', lodge: 'Lodge TBC',
-      day: `${nights}`, dayWord: 'Days' as 'Days', dates: formatDateRange(checkIn, checkOut),
+      day: String(nights || 1), dayWord: 'Days' as 'Days', nights: nights || 1, dates: formatDateRange(checkIn, checkOut),
       narrative: '', detail: [], badges: [], acts: [], tone: '',
       value: totalZAR, ref: booking.booking_reference || '',
       status: 'confirming' as LegStatus, gameCamp: true, cancel: [[45, 50], [30, 100]] as [number, number][],
@@ -165,6 +167,31 @@ function mapToJourney(booking: any, itinerary: any): Journey {
     .filter(c => (c.type || '').toLowerCase().includes('flight'))
     .reduce((s, c) => s + (c.price_display_zar || 0), 0);
   const accZAR   = totalZAR - flyZAR;
+
+  // Build inter-region transfer notes between properties
+  const transferNotes = hotelComponents.length > 1
+    ? hotelComponents.slice(0, -1).map((comp: any, i: number) => {
+        const from = comp.region_label || comp.name || 'Previous destination';
+        const to   = hotelComponents[i + 1]?.region_label || hotelComponents[i + 1]?.name || 'Next destination';
+        return {
+          tag:   `${from} → ${to}`,
+          legs:  [],
+          notes: [{ good: true, text: `Your specialist will confirm all transfer and flight details for this leg within 2 hours of booking.` }],
+        };
+      })
+    : [];
+
+  const arrivalTransfer = {
+    tag:   checkIn ? `Arrival — ${formatDateRange(checkIn, checkIn)}` : 'Arrival transfer',
+    legs:  [],
+    notes: [{ good: true, text: 'Airport arrival transfer confirmed by your specialist.' }],
+  };
+
+  const homewardTransfer = {
+    tag:   checkOut ? `Departure — ${formatDateRange(checkOut, checkOut)}` : 'Departure transfer',
+    legs:  [],
+    notes: [{ good: true, text: 'Departure transfer and final logistics confirmed by your specialist.' }],
+  };
 
   return {
     ref:       booking.booking_reference || booking.idempotency_key || 'TSE-DEMO',
@@ -207,16 +234,8 @@ function mapToJourney(booking: any, itinerary: any): Journey {
       years:    8,
     },
     segments,
-    transfers: segments.map(() => ({
-      tag:   'Transfer confirmed by specialist',
-      legs:  [],
-      notes: [{ good: true, text: 'Your specialist will confirm all transfer details within 2 hours.' }],
-    })),
-    homeward: {
-      tag:   'Homeward journey',
-      legs:  [],
-      notes: [{ good: true, text: 'Return transfer details confirmed by your specialist.' }],
-    },
+    transfers: [arrivalTransfer, ...transferNotes],
+    homeward: homewardTransfer,
   };
 }
 
