@@ -137,18 +137,20 @@ async function sendQuoteEmail(params: {
     </html>
   `
 
-  const { Resend } = await import('resend')
-  const resend = new Resend(RESEND_KEY)
-  const { error } = await resend.emails.send({
-    from:    'The Safari Edition <onboarding@resend.dev>',
-    to:      params.email,
-    subject: (params as any).isDeposit
-      ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
-      : `Your Safari Journey Quote · ${params.bookingRef}`,
-    html,
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_KEY}` },
+    body: JSON.stringify({
+      from:    'The Safari Edition <onboarding@resend.dev>',
+      to:      params.email,
+      subject: (params as any).isDeposit
+        ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
+        : `Your Safari Journey Quote · ${params.bookingRef}`,
+      html,
+    }),
   })
-  if (error) console.error('[resend error]', error)
-  return { ok: !error }
+  if (!res.ok) console.error('[resend error]', res.status, await res.text())
+  return { ok: res.ok }
 }
 
 export async function POST(req: NextRequest) {
