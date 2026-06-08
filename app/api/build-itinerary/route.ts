@@ -439,6 +439,8 @@ export async function POST(req: NextRequest) {
       fetchOverrideEntries(regionsToFetch, editionId),
     ]);
 
+    console.log('[KB] overrideEntries count:', overrideEntries.length)
+    console.log('[KB] override linked_names:', overrideEntries.map((e: any) => e.linked_name))
     const kbContext       = buildKBContext(kbEntries, regionsToFetch, editionId);
     const kbForSkeleton   = buildKBContextForSkeleton(kbEntries, regionsToFetch);
     const marginRankMap   = buildMarginRankMap(kbEntries);
