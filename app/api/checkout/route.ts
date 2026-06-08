@@ -146,6 +146,27 @@ async function sendQuoteEmail(params: {
     </html>
   `
 
+  // Try Brevo first (no domain verification needed, works with any email)
+  const BREVO_KEY = process.env.BREVO_API_KEY
+  if (BREVO_KEY) {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': BREVO_KEY },
+      body: JSON.stringify({
+        sender:  { name: 'The Safari Edition', email: 'noreply@thesafariedition.com' },
+        to:      [{ email: params.email, name: params.name || 'Traveller' }],
+        subject: (params as any).isDeposit
+          ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
+          : `Your Safari Journey Quote · ${params.bookingRef}`,
+        htmlContent: html,
+      }),
+    })
+    if (!res.ok) console.error('[brevo error]', res.status, await res.text())
+    else console.log('[brevo] sent to', params.email)
+    return { ok: res.ok }
+  }
+
+  // Fallback: Resend
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_KEY}` },
