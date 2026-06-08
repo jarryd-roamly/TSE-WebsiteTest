@@ -2,7 +2,12 @@
 // POST: saves draft itinerary to `itineraries` table. Returns { success, id }.
 // GET:  reads itinerary by ?id=UUID (checkout) or ?code=TSE-XXXX (journey mini-site).
 //
-// Supabase `itineraries` table needs these columns:
+// FIX: POST now uses an explicit column whitelist instead of spreading the full
+//      request body. This prevents unknown fields (deposit_zar, etc.) from ever
+//      reaching Supabase and causing schema cache errors — regardless of what
+//      the client sends.
+//
+// Supabase `itineraries` table columns:
 //   id uuid PK, idempotency_key text, edition_id text, state text,
 //   title text, adults int, children_count int, nights int,
 //   check_in text, check_out text, total_display_zar numeric,
@@ -32,7 +37,6 @@ export async function GET(req: NextRequest) {
     const key = getKey();
 
     if (id) {
-      // Checkout page: load draft itinerary by UUID
       const res = await fetch(
         `${url}/rest/v1/itineraries?id=eq.${id}&select=*&limit=1`,
         { headers: { apikey: key, Authorization: `Bearer ${key}` } }
@@ -45,7 +49,6 @@ export async function GET(req: NextRequest) {
     }
 
     if (code) {
-      // Journey mini-site: load confirmed booking by booking_reference
       const res = await fetch(
         `${url}/rest/v1/bookings?booking_reference=eq.${code}&select=*&limit=1`,
         { headers: { apikey: key, Authorization: `Bearer ${key}` } }
@@ -54,7 +57,6 @@ export async function GET(req: NextRequest) {
       if (!rows?.length) {
         return NextResponse.json({ success: false, error: 'Journey not found' }, { status: 404 });
       }
-      // Enrich with itinerary data if available
       const booking = rows[0];
       if (booking.itinerary_id) {
         const iRes = await fetch(
@@ -76,13 +78,13 @@ export async function GET(req: NextRequest) {
 // ── POST ─────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const booking = await req.json();
-    const url = getUrl();
-    const key = getKey();
+    const body = await req.json();
+    const url  = getUrl();
+    const key  = getKey();
 
     // Idempotency: return existing record if same key already saved
     const existing = await fetch(
-      `${url}/rest/v1/itineraries?idempotency_key=eq.${booking.idempotency_key}&select=id&limit=1`,
+      `${url}/rest/v1/itineraries?idempotency_key=eq.${body.idempotency_key}&select=id&limit=1`,
       { headers: { apikey: key, Authorization: `Bearer ${key}` } }
     );
     const rows = await existing.json();
@@ -90,7 +92,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: rows[0].id, duplicate: true });
     }
 
-    // Save draft itinerary
+    // ── EXPLICIT WHITELIST — only known columns reach Supabase ──────────────
+    // This prevents any unknown field (deposit_zar, depositZar, etc.) from
+    // causing a schema cache error, regardless of what the client sends.
+    const record = {
+      idempotency_key:   body.idempotency_key   ?? null,
+      edition_id:        body.edition_id         ?? null,
+      state:             body.state              ?? 'quote',
+      title:             body.title              ?? null,
+      adults:            body.adults             ?? 2,
+      children_count:    body.children_count     ?? 0,
+      nights:            body.nights             ?? 0,
+      check_in:          body.check_in           ?? null,
+      check_out:         body.check_out          ?? null,
+      total_display_zar: body.total_display_zar  ?? 0,
+      total_net_zar:     body.total_net_zar      ?? 0,
+      budget_zar:        body.budget_zar         ?? 0,
+      components:        body.components         ?? [],
+      input_mode:        body.input_mode         ?? null,
+      created_at:        new Date().toISOString(),
+    };
+
     const res = await fetch(`${url}/rest/v1/itineraries`, {
       method: 'POST',
       headers: {
@@ -99,14 +121,18 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${key}`,
         Prefer: 'return=representation',
       },
-      body: JSON.stringify({ ...booking, created_at: new Date().toISOString() }),
+      body: JSON.stringify(record),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      return NextResponse.json({ success: false, error: data?.message || 'Save failed' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: data?.message || 'Save failed' },
+        { status: 400 }
+      );
     }
     return NextResponse.json({ success: true, id: data[0]?.id });
+
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e.message }, { status: 500 });
   }
