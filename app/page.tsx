@@ -2218,7 +2218,7 @@ function buildTransferOptions(
       if (gw === 'CPT') {
         if (['MQP','HDS','SZK'].includes(originHub)) { return [{code:'4Z',name:'Airlink',adjust:1.0}]; }
         if (originHub === 'MUB') return [{code:'4Z',name:'Airlink',adjust:1.0}];
-        if (['VFA','LVI'].includes(originHub)) return [{code:'4Z',name:'Airlink',adjust:1.0}]; // Fastjet does NOT operate VFA/LVI→CPT
+        if (['VFA','LVI'].includes(originHub)) return [{code:'4Z',name:'Airlink',adjust:1.0}]; // Fastjet does NOT fly VFA/LVI→CPT
         return [{code:'4Z',name:'Airlink',adjust:1.0}];
       }
       // gw === 'JNB'
@@ -4433,7 +4433,7 @@ const runBriefPlanner = (briefText: string) => {
       const _transfersTotal = _bd.transferCost + _bd.cityXferCost + _intl;
       const _lodgesTotal    = _bd.lodgeCost + _bd.activityCost;
       const depositZar = _transfersTotal + Math.round(_lodgesTotal * (edition.payment.depositPercent/100));
-      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:checkinDate, check_out:addDays(checkinDate,nights), total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), deposit_zar:depositZar, budget_zar:budget, components, input_mode:inputMode };
+      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:checkinDate, check_out:addDays(checkinDate,nights), total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), /* deposit_zar derived at checkout — not persisted to itineraries */ budget_zar:budget, components, input_mode:inputMode };
       const res  = await fetch('/api/itinerary', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(booking) });
       const data = await res.json();
       if (data.success&&data.id) { track('checkout_started',edition.id,{bookingId:data.id,grandTotal}); window.location.href=`/checkout?id=${data.id}`; }
