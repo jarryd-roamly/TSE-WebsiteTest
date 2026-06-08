@@ -1,341 +1,377 @@
-// app/lib/journey.ts — PRODUCTION VERSION
-// getJourney() now reads from Supabase bookings + itineraries tables
-// Falls back to DEMO_JOURNEY if booking not found (for demo URLs)
+// app/api/checkout/route.ts
+// Handles three actions: 'deposit' (PayFast), 'hold' (48hr hold), 'quote' (email PDF)
+//
+// FIX: Removed `deposit_zar` column reference that caused the Supabase schema error.
+//      The bookings table uses `total_display_zar` — deposit amount is derived,
+//      not stored as a separate column.
+// FIX: Column is `state` not `status` — all inserts updated accordingly.
+//
+// ADDITIONS:
+//   - deposit_pct support (30–100%)
+//   - traveller phone + nationality saved to lead_traveller_snapshot
+//   - action: 'deposit' | 'hold' | 'quote'
+//   - For 'hold' and 'quote': booking saved with state 'on_hold' / 'quote'
+//     and email dispatched via Resend (or logged if not configured)
 
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
-export type Currency = 'ZAR' | 'GBP' | 'USD' | 'EUR';
-export type Money = { sym: string; acc: number; fly: number };
-export type Badge = { type: 'free' | 'care' | 'visa' | 'family'; label: string };
-export type SceneName = 'cape' | 'madikwe' | 'falls' | 'delta' | 'kruger' | 'chobe';
-export type LegStatus = 'confirmed' | 'confirming';
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export type Leg = {
-  kind: 'air' | 'bush' | 'longhaul' | 'road';
-  carrier: string; no: string; depApt: string; arrApt: string;
-  dep: string; arr: string;
-  status: LegStatus; cross?: boolean;
-};
-export type TransferNote = { good?: boolean; text: string };
-export type Transfer = { tag: string; legs: Leg[]; notes: TransferNote[] };
-
-export type Segment = {
-  id: string;
-  scene: SceneName; bandRegion: string; bandName: string; region: string; lodge: string;
-  day: string; dayWord: 'Day' | 'Days'; dates: string;
-  narrative: string; detail: string[]; badges: Badge[]; acts: string[];
-  tone: string; img?: string; reel?: string; sensory?: string; kb?: string;
-  value: number; ref: string; status: LegStatus; gameCamp: boolean; vehPerDay?: number;
-  cancel: [number, number][];
-};
-
-export type Journey = {
-  ref: string; eyebrow: string; title: string; subtitle: string; route: string[];
-  nights: number; dates: string; departIn: number; startISO: string;
-  travellers: string[]; pax: number; surname: string; email: string;
-  price: Record<Currency, Money>;
-  included: string[]; prep: { title: string; body: string; daysBefore?: number }[];
-  specialist: { initials: string; name: string; role: string; rec: string; years?: number; fav?: string; response?: string };
-  heroReel?: string;
-  segments: Segment[];
-  transfers: Transfer[];
-  homeward: Transfer;
-};
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-const durStr = (a: string, b: string) => {
-  const m = Math.round((+new Date(b) - +new Date(a)) / 6e4);
-  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
-};
-
-function formatDateRange(checkIn: string, checkOut: string): string {
-  if (!checkIn) return 'Dates TBC';
-  const a = new Date(checkIn);
-  const b = checkOut ? new Date(checkOut) : null;
-  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  return b ? `${fmt(a)} — ${fmt(b)}` : fmt(a);
+function getSupabase() {
+  return createClient(SUPABASE_URL, SUPABASE_KEY)
 }
 
-function daysUntil(dateStr: string): number {
-  if (!dateStr) return 0;
-  return Math.max(0, Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000));
-}
+function buildPayFastUrl(params: {
+  amount: number
+  itemName: string
+  bookingRef: string
+  email: string
+  name: string
+  returnUrl: string
+  cancelUrl: string
+  notifyUrl: string
+}) {
+  const merchantId  = process.env.PAYFAST_MERCHANT_ID  || '10000100'
+  const merchantKey = process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a'
+  const passphrase  = process.env.PAYFAST_PASSPHRASE   || ''
 
-function sceneForRegion(slug: string): SceneName {
-  if (slug.includes('cape')) return 'cape';
-  if (slug.includes('madikwe')) return 'madikwe';
-  if (slug.includes('vic') || slug.includes('chobe') || slug.includes('falls')) return 'falls';
-  if (slug.includes('okavango') || slug.includes('delta')) return 'delta';
-  if (slug.includes('kruger') || slug.includes('sabi')) return 'kruger';
-  return 'kruger';
-}
-
-function regionLabel(slug: string): string {
-  const map: Record<string, string> = {
-    'kruger-sabi-sand': 'Kruger / Sabi Sand',
-    'okavango-delta':   'Okavango Delta',
-    'cape-town':        'Cape Town',
-    'madikwe':          'Madikwe',
-    'chobe-vic-falls':  'Chobe / Victoria Falls',
-    'masai-mara':       'Masai Mara',
-    'bwindi':           'Bwindi',
-  };
-  return map[slug] || slug;
-}
-
-// ── Map booking + itinerary rows → Journey shape ─────────────────────────────
-function mapToJourney(booking: any, itinerary: any): Journey {
-  const snap     = booking.lead_traveller_snapshot || {};
-  const name     = snap.name || 'Traveller';
-  const parts    = name.trim().split(' ');
-  const surname  = parts.length > 1 ? parts[parts.length - 1] : name;
-  const checkIn  = itinerary?.check_in  || booking.check_in  || '';
-  const checkOut = itinerary?.check_out || booking.check_out || '';
-  const nights   = itinerary?.nights    || booking.nights    || 0;
-  const adults   = itinerary?.adults    || booking.adults    || 2;
-  const totalZAR = booking.total_display_zar || itinerary?.total_display_zar || 0;
-  const components: any[] = itinerary?.components || [];
-
-  // Build segments from enriched components (saved from page.tsx)
-  const hotelComponents = components.filter((c: any) => 
-    c.pillar === 'hotel' || c.type === 'accommodation'
-  );
-
-  // Calculate per-segment dates
-  let runningDate = checkIn ? new Date(checkIn) : null;
-
-  const segments: Segment[] = hotelComponents.map((comp: any, i: number) => {
-    const slug    = comp.region_slug || '';
-    const lodge   = comp.name || 'Lodge TBC';
-    const cNights = comp.nights || 1;
-    
-    const segCheckIn  = runningDate ? new Date(runningDate) : null;
-    const segCheckOut = segCheckIn  ? new Date(new Date(segCheckIn).setDate(segCheckIn.getDate() + cNights)) : null;
-    if (runningDate) runningDate.setDate(runningDate.getDate() + cNights);
-
-    const segDates = segCheckIn && segCheckOut
-      ? formatDateRange(segCheckIn.toISOString().slice(0,10), segCheckOut.toISOString().slice(0,10))
-      : formatDateRange(checkIn, checkOut);
-
-    const badges: Badge[] = [];
-    if (comp.malaria_free) badges.push({ type: 'care', label: 'Malaria-free' });
-
-    return {
-      id:         `seg-${i}`,
-      scene:      sceneForRegion(slug),
-      bandRegion: comp.region_label || regionLabel(slug),
-      bandName:   lodge,
-      region:     comp.region_label || regionLabel(slug),
-      lodge,
-      day:        `${cNights}`,
-      dayWord:    (cNights === 1 ? 'Day' : 'Days') as 'Day' | 'Days',
-      dates:      segDates,
-      narrative:  comp.fun_fact || '',
-      detail:     comp.inclusions?.slice(0, 4) || [],
-      badges,
-      acts:       [],
-      tone:       '',
-      img:        comp.hero_image_url || undefined,
-      value:      comp.display_rate_zar || 0,
-      ref:        booking.booking_reference || '',
-      status:     'confirming' as LegStatus,
-      gameCamp:   slug.includes('kruger') || slug.includes('okavango') || slug.includes('madikwe') || slug.includes('chobe'),
-      cancel:     [[45, 50], [30, 100]] as [number, number][],
-    };
-  });
-
-  // Fallback if no hotel components
-  if (segments.length === 0) {
-    segments.push({
-      id: 'seg-0', scene: 'kruger' as SceneName, bandRegion: 'Your Safari',
-      bandName: 'Lodge TBC', region: 'Your Safari', lodge: 'Lodge TBC',
-      day: `${nights}`, dayWord: 'Days' as 'Days', dates: formatDateRange(checkIn, checkOut),
-      narrative: '', detail: [], badges: [], acts: [], tone: '',
-      value: totalZAR, ref: booking.booking_reference || '',
-      status: 'confirming' as LegStatus, gameCamp: true, cancel: [[45, 50], [30, 100]] as [number, number][],
-    });
+  const data: Record<string, string> = {
+    merchant_id:  merchantId,
+    merchant_key: merchantKey,
+    return_url:   params.returnUrl,
+    cancel_url:   params.cancelUrl,
+    notify_url:   params.notifyUrl,
+    email_address: params.email,
+    name_first:   params.name.split(' ')[0] || params.name,
+    name_last:    params.name.split(' ').slice(1).join(' ') || '',
+    m_payment_id: params.bookingRef,
+    amount:       params.amount.toFixed(2),
+    item_name:    params.itemName,
+    custom_str1:  params.bookingRef,
   }
 
-  const route = hotelComponents.length > 0
-    ? [...new Set(hotelComponents.map((c: any) => c.region_label || regionLabel(c.region_slug || '')).filter(Boolean))]
-    : ['Your Safari'];
+  // Remove empty values (PayFast rejects blank fields)
+  Object.keys(data).forEach(k => { if (!data[k]) delete data[k] })
 
-  const EXCHANGE = { GBP: 0.042, USD: 0.054, EUR: 0.049 };
-  const flyZAR   = components
-    .filter(c => (c.type || '').toLowerCase().includes('flight'))
-    .reduce((s, c) => s + (c.price_display_zar || 0), 0);
-  const accZAR   = totalZAR - flyZAR;
+  const sigString = Object.entries(data)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v).replace(/%20/g, '+')}`)
+    .join('&')
 
-  return {
-    ref:       booking.booking_reference || booking.idempotency_key || 'TSE-DEMO',
-    eyebrow:   'The Safari Edition · Bespoke Journey',
-    title:     itinerary?.title || `${nights}-Night Safari`,
-    subtitle:  route.join(' · '),
-    route,
-    nights,
-    dates:     formatDateRange(checkIn, checkOut),
-    departIn:  daysUntil(checkIn),
-    startISO:  checkIn ? new Date(checkIn).toISOString() : new Date().toISOString(),
-    travellers: [name],
-    pax:       adults,
-    surname,
-    email:     snap.email || '',
-    price: {
-      ZAR: { sym: 'R',   acc: accZAR,                          fly: flyZAR },
-      GBP: { sym: '£',   acc: Math.round(accZAR * EXCHANGE.GBP), fly: Math.round(flyZAR * EXCHANGE.GBP) },
-      USD: { sym: 'US$', acc: Math.round(accZAR * EXCHANGE.USD), fly: Math.round(flyZAR * EXCHANGE.USD) },
-      EUR: { sym: '€',   acc: Math.round(accZAR * EXCHANGE.EUR), fly: Math.round(flyZAR * EXCHANGE.EUR) },
-    },
-    included: [
-      `All accommodation — ${nights} nights`,
-      'All meals & game activities on safari',
-      'All internal flights, charters & private transfers',
-      'Park, conservation & concession fees',
-      'Dedicated specialist + 24/7 concierge',
-    ],
-    prep: [
-      { title: 'Pack light for bush legs', body: '20kg soft bag limit on light aircraft. Hard cases can be stored at your gateway hotel.', daysBefore: 60 },
-      { title: 'Visa requirements', body: 'Check requirements for all countries on your itinerary well in advance.', daysBefore: 90 },
-      { title: 'Malaria prophylactics', body: 'Consult your GP 6 weeks before travel for safari regions.', daysBefore: 45 },
-    ],
-    specialist: {
-      initials: 'SM',
-      name:     'Sarah Mitchell',
-      role:     'Senior Safari Specialist',
-      rec:      'Your journey specialist — available on WhatsApp & email.',
-      years:    8,
-    },
-    segments,
-    transfers: segments.map(() => ({
-      tag:   'Transfer confirmed by specialist',
-      legs:  [],
-      notes: [{ good: true, text: 'Your specialist will confirm all transfer details within 2 hours.' }],
-    })),
-    homeward: {
-      tag:   'Homeward journey',
-      legs:  [],
-      notes: [{ good: true, text: 'Return transfer details confirmed by your specialist.' }],
-    },
-  };
+  const sigWithPassphrase = passphrase
+    ? `${sigString}&passphrase=${encodeURIComponent(passphrase).replace(/%20/g, '+')}`
+    : sigString
+
+  const signature = crypto.createHash('md5').update(sigWithPassphrase).digest('hex')
+
+  // Use sandbox in non-production, live otherwise
+  const host = process.env.PAYFAST_LIVE === 'true'
+    ? 'https://www.payfast.co.za/eng/process'
+    : 'https://sandbox.payfast.co.za/eng/process'
+
+  return `${host}?${sigString}&signature=${signature}`
 }
 
-// ── getJourney — reads Supabase, falls back to demo ──────────────────────────
-export async function getJourney(code: string): Promise<Journey> {
-  // Demo codes — return demo journey immediately
-  if (!code || code === 'KR7P2MX4' || code === 'DEMO') return DEMO_JOURNEY;
+async function sendQuoteEmail(params: {
+  email: string
+  name: string
+  bookingRef: string
+  itinerary: any
+  depositTotal: number
+  totalZAR: number
+  baseUrl: string
+}) {
+  const RESEND_KEY = process.env.RESEND_API_KEY
+  if (!RESEND_KEY) {
+    console.log('[checkout] RESEND_API_KEY not set — skipping email for', params.bookingRef)
+    return { ok: true, skipped: true }
+  }
 
+  const nights = params.itinerary?.nights || 0
+  const title  = params.itinerary?.title  || 'Your Safari Journey'
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="background:#0a0a0a;color:#f5f0e8;font-family:Georgia,serif;margin:0;padding:0">
+      <div style="max-width:600px;margin:0 auto;padding:40px 24px">
+        <div style="color:#c8a96e;font-size:10px;letter-spacing:0.4em;text-transform:uppercase;margin-bottom:20px">
+          The Safari Edition
+        </div>
+        <h1 style="font-size:32px;font-weight:300;margin:0 0 8px;color:#f5f0e8">
+          ${title}
+        </h1>
+        <div style="color:rgba(245,240,232,0.5);font-size:13px;margin-bottom:32px">
+          ${nights > 0 ? `${nights} nights · ` : ''}Booking reference: <strong style="color:#c8a96e">${params.bookingRef}</strong>
+        </div>
+        <div style="background:#141414;border:1px solid rgba(200,169,110,0.2);border-radius:12px;padding:24px;margin-bottom:24px">
+          <div style="font-size:11px;color:rgba(200,169,110,0.7);letter-spacing:0.2em;text-transform:uppercase;margin-bottom:16px">
+            Payment Summary
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+            <span style="color:rgba(245,240,232,0.6)">Total journey value</span>
+            <span style="font-size:20px;color:#f5f0e8">R ${Math.round(params.totalZAR).toLocaleString()}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.07);padding-top:12px;margin-top:12px">
+            <span style="color:rgba(245,240,232,0.6)">Deposit to secure</span>
+            <span style="font-size:24px;color:#c8a96e">R ${Math.round(params.depositTotal).toLocaleString()}</span>
+          </div>
+        </div>
+        <p style="color:rgba(245,240,232,0.6);font-size:13px;line-height:1.7">
+          This quote is valid for 48 hours. Your Journey Specialist will be in touch within 2 hours 
+          to answer any questions and confirm availability.
+        </p>
+        <a href="${params.baseUrl}/checkout?id=${params.itinerary?.id}" 
+           style="display:inline-block;padding:14px 28px;background:#c8a96e;color:#0a0a0a;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;margin-top:16px">
+          Confirm &amp; Pay Deposit →
+        </a>
+        <div style="margin-top:40px;padding-top:24px;border-top:1px solid rgba(255,255,255,0.07);font-size:11px;color:rgba(245,240,232,0.3);line-height:1.7">
+          The Safari Edition · journeys@thesafariedition.com<br>
+          ASATA registered · SSL secured
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  const { Resend } = await import('resend')
+  const resend = new Resend(RESEND_KEY)
+  const { error } = await resend.emails.send({
+    from:    'The Safari Edition <onboarding@resend.dev>',
+    to:      params.email,
+    subject: (params as any).isDeposit
+      ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
+      : `Your Safari Journey Quote · ${params.bookingRef}`,
+    html,
+  })
+  if (error) console.error('[resend error]', error)
+  return { ok: !error }
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return DEMO_JOURNEY;
+    const body = await req.json()
+    const {
+      itinerary_id,
+      traveller_email,
+      traveller_name,
+      traveller_phone,
+      traveller_nationality,
+      deposit_pct = 30,
+      action = 'deposit', // 'deposit' | 'hold' | 'quote'
+    } = body
 
-    const supabase = createClient(url, key);
-
-    // Look up booking by booking_reference
-    const { data: booking, error: bErr } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('booking_reference', code)
-      .single();
-
-    if (bErr || !booking) return DEMO_JOURNEY;
-
-    // Load the itinerary if linked
-    let itinerary = null;
-    if (booking.itinerary_id) {
-      const { data: itin } = await supabase
-        .from('itineraries')
-        .select('*')
-        .eq('id', booking.itinerary_id)
-        .single();
-      itinerary = itin;
+    if (!itinerary_id || !traveller_email) {
+      return NextResponse.json(
+        { success: false, error: 'Missing itinerary_id or traveller_email' },
+        { status: 400 }
+      )
     }
 
-    return mapToJourney(booking, itinerary);
+    const supabase = getSupabase()
 
-  } catch {
-    return DEMO_JOURNEY;
+    // Load itinerary
+    const { data: itinerary, error: iErr } = await supabase
+      .from('itineraries')
+      .select('id, title, nights, adults, check_in, check_out, total_display_zar, components')
+      .eq('id', itinerary_id)
+      .single()
+
+    if (iErr || !itinerary) {
+      return NextResponse.json({ success: false, error: 'Itinerary not found' }, { status: 404 })
+    }
+
+    const totalZAR = itinerary.total_display_zar || 0
+
+    // Separate flights/transfers (always full) from accommodation (deposit %)
+    const components: any[] = itinerary.components || []
+    const flightTotal   = components.filter(c => {
+      const t = (c.type || c.component_type || '').toLowerCase()
+      return t.includes('flight') || t.includes('air') || c.is_flight
+    }).reduce((s: number, c: any) => s + (c.price_display_zar || 0), 0)
+    const transferTotal = components.filter(c => {
+      const t = (c.type || c.component_type || '').toLowerCase()
+      return (t.includes('transfer') || t === 'transport') && !t.includes('flight')
+    }).reduce((s: number, c: any) => s + (c.price_display_zar || 0), 0)
+    const landTotal     = totalZAR - flightTotal - transferTotal
+    const depositOnLand = Math.round(landTotal * deposit_pct / 100)
+    const depositTotal  = depositOnLand + flightTotal + transferTotal
+    const balanceAmount = totalZAR - depositTotal
+
+    const bookingRef = 'TSE-' + Math.random().toString(36).substring(2, 10).toUpperCase()
+
+    const statusMap: Record<string, string> = {
+      deposit: 'pending_payment',
+      hold:    'on_hold',
+      quote:   'quote',
+    }
+
+    // ── Save booking record ─────────────────────────────────────────────────
+    // NOTE: We do NOT write `deposit_zar` — that column does not exist in the schema.
+    //       Deposit amount is always recalculated from total_display_zar + deposit_pct.
+    const { data: booking, error: bErr } = await supabase
+      .from('bookings')
+      .insert({
+        itinerary_id,
+        booking_reference:     bookingRef,
+        idempotency_key:       bookingRef,
+        edition_id:            'safari',
+        state:                 statusMap[action] || 'pending_payment',
+        title:                 itinerary.title || 'Safari Journey',
+        adults:                itinerary.adults || 2,
+        children_count:        0,
+        nights:                itinerary.nights || 1,
+        check_in:              itinerary.check_in || null,
+        check_out:             itinerary.check_out || null,
+        total_display_zar:     totalZAR,
+        total_net_zar:         Math.round(totalZAR * 0.82),
+        total_paid_zar:        0,
+        outstanding_zar:       totalZAR,
+        budget_zar:            totalZAR,
+        currency_paid:         'ZAR',
+        deposit_pct:           deposit_pct,
+        booked_at:             new Date().toISOString(),
+        lead_traveller_snapshot: {
+          name:        traveller_name  || '',
+          email:       traveller_email,
+          phone:       traveller_phone || '',
+          nationality: traveller_nationality || '',
+        },
+      })
+      .select('id, booking_reference')
+      .single()
+
+    if (bErr) {
+      // Fallback with only guaranteed columns
+      const { data: bFallback, error: bFallbackErr } = await supabase
+        .from('bookings')
+        .insert({
+          itinerary_id,
+          booking_reference: bookingRef,
+          idempotency_key:   bookingRef,
+          edition_id:        'safari',
+          state:             statusMap[action] || 'pending_payment',
+          title:             itinerary.title || 'Safari Journey',
+          adults:            itinerary.adults || 2,
+          children_count:    0,
+          nights:            itinerary.nights || 1,
+          check_in:          itinerary.check_in || null,
+          check_out:         itinerary.check_out || null,
+          total_display_zar: totalZAR,
+          total_net_zar:     Math.round(totalZAR * 0.82),
+          budget_zar:        totalZAR,
+          booked_at:         new Date().toISOString(),
+          lead_traveller_snapshot: {
+            name:        traveller_name  || '',
+            email:       traveller_email,
+            phone:       traveller_phone || '',
+            nationality: traveller_nationality || '',
+          },
+        })
+        .select('id, booking_reference')
+        .single()
+
+      if (bFallbackErr) {
+        return NextResponse.json(
+          { success: false, error: `Could not save booking: ${bFallbackErr.message}` },
+          { status: 500 }
+        )
+      }
+
+      // Use fallback booking if primary insert failed
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+      if (action === 'quote' || action === 'hold') {
+        await sendQuoteEmail({ email: traveller_email, name: traveller_name || '', bookingRef, itinerary, depositTotal, totalZAR, baseUrl })
+        return NextResponse.json({
+          success: true,
+          booking_id:     bFallback!.id,
+          booking_ref:    bFallback!.booking_reference,
+          action,
+          deposit_amount: depositTotal,
+          total_amount:   totalZAR,
+        })
+      }
+
+      const payfastUrl = buildPayFastUrl({
+        amount:    Math.round(depositTotal * 100) / 100,
+        itemName:  `The Safari Edition — ${bookingRef}`,
+        bookingRef,
+        email:     traveller_email,
+        name:      traveller_name || '',
+        returnUrl: `${baseUrl}/booking/confirmed?ref=${bookingRef}`,
+        cancelUrl: `${baseUrl}/checkout?id=${itinerary_id}&cancelled=1`,
+        notifyUrl: `${baseUrl}/api/payfast/notify`,
+      })
+
+      return NextResponse.json({
+        success: true,
+        booking_id:     bFallback!.id,
+        booking_ref:    bFallback!.booking_reference,
+        deposit_amount: depositTotal,
+        balance_amount: balanceAmount,
+        total_amount:   totalZAR,
+        payfast_url:    payfastUrl,
+      })
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
+    // ── Hold or Quote ────────────────────────────────────────────────────────
+    if (action === 'quote' || action === 'hold') {
+      await sendQuoteEmail({ email: traveller_email, name: traveller_name || '', bookingRef, itinerary, depositTotal, totalZAR, baseUrl })
+      return NextResponse.json({
+        success:        true,
+        booking_id:     booking!.id,
+        booking_ref:    booking!.booking_reference,
+        action,
+        deposit_amount: depositTotal,
+        total_amount:   totalZAR,
+      })
+    }
+
+    // ── Deposit → send confirmation email + PayFast ─────────────────────────
+    // Send booking confirmation email (non-blocking — don't fail payment if email fails)
+    try {
+      await sendQuoteEmail({
+        email:       traveller_email,
+        name:        traveller_name || '',
+        bookingRef,
+        itinerary,
+        depositTotal,
+        totalZAR,
+        baseUrl,
+        isDeposit:   true,
+      })
+    } catch { /* email failure must never block PayFast redirect */ }
+
+    const payfastUrl = buildPayFastUrl({
+      amount:    Math.round(depositTotal * 100) / 100,
+      itemName:  `The Safari Edition — ${bookingRef}`,
+      bookingRef,
+      email:     traveller_email,
+      name:      traveller_name || '',
+      returnUrl: `${baseUrl}/booking/confirmed?ref=${bookingRef}`,
+      cancelUrl: `${baseUrl}/checkout?id=${itinerary_id}&cancelled=1`,
+      notifyUrl: `${baseUrl}/api/payfast/notify`,
+    })
+
+    return NextResponse.json({
+      success:        true,
+      booking_id:     booking!.id,
+      booking_ref:    booking!.booking_reference,
+      deposit_amount: depositTotal,
+      balance_amount: balanceAmount,
+      total_amount:   totalZAR,
+      payfast_url:    payfastUrl,
+    })
+
+  } catch (e: any) {
+    return NextResponse.json(
+      { success: false, error: e?.message || 'Server error' },
+      { status: 500 }
+    )
   }
 }
-
-export function getJourneySync(): Journey { return DEMO_JOURNEY; }
-
-// ── totals helper ─────────────────────────────────────────────────────────────
-export function totals(j: Journey, cur: Currency = 'GBP', vehTotal = 0, repriceDelta = 0) {
-  const p = j.price[cur];
-  const total   = p.acc + p.fly + vehTotal + repriceDelta;
-  const deposit = p.fly + Math.round(p.acc * 0.3);
-  return { sym: p.sym, acc: p.acc, fly: p.fly, total, deposit, paid: deposit, balance: total - deposit };
-}
-
-export const balanceDue = (j: Journey) => {
-  const d = new Date(j.startISO);
-  d.setDate(d.getDate() - 45);
-  return d;
-};
-
-const hm = (iso: string) => new Date(iso).toTimeString().slice(0, 5);
-const logoOf = (carrier: string) =>
-  carrier.startsWith('British') ? 'BA' : carrier.startsWith('Airlink') ? '4Z'
-  : carrier.startsWith('Federal') ? 'FA' : carrier.startsWith('Wilderness') ? 'WA' : '✈';
-
-export function toTimelineItems(j: Journey) {
-  const transferToItem = (t: Transfer) => ({
-    kind: 'transfer' as const, tag: t.tag,
-    items: [
-      ...t.legs.map((l) => l.kind === 'road'
-        ? { type: 'leg' as const, route: `${l.carrier} · ${l.depApt} → ${l.arrApt}`, dur: durStr(l.dep, l.arr) }
-        : { type: 'flight' as const, logo: logoOf(l.carrier), airline: l.carrier, sub: `${l.no}${l.status === 'confirming' ? ' · confirming' : ''}`,
-            dep: hm(l.dep), depApt: l.depApt, dur: durStr(l.dep, l.arr), arr: hm(l.arr), arrApt: l.arrApt }),
-      ...t.notes.map((n) => ({ type: 'note' as const, good: n.good, text: n.text })),
-    ],
-  });
-  const stopToItem = (s: Segment) => ({
-    kind: 'stop' as const, day: s.day, dayWord: s.dayWord, dates: s.dates, scene: s.scene,
-    bandRegion: s.bandRegion, bandName: s.bandName, region: s.region, lodge: s.lodge,
-    narrative: s.narrative, detail: s.detail, badges: s.badges, acts: s.acts,
-  });
-  const items: any[] = [transferToItem(j.transfers[0] || j.homeward)];
-  j.segments.forEach((s, i) => {
-    items.push(stopToItem(s));
-    if (i < j.segments.length - 1 && j.transfers[i + 1]) items.push(transferToItem(j.transfers[i + 1]));
-  });
-  items.push(transferToItem(j.homeward));
-  return items;
-}
-
-// ── DEMO_JOURNEY (kept for fallback + demo URLs) ──────────────────────────────
-const D = (day: number, hm: string) => `2026-09-${String(day).padStart(2, '0')}T${hm}:00`;
-const legD = (kind: Leg['kind'], carrier: string, no: string, depApt: string, dep: string,
-             arrApt: string, arr: string, status: LegStatus, cross = false): Leg =>
-  ({ kind, carrier, no, depApt, arrApt, dep, arr, status, cross });
-
-export const DEMO_JOURNEY: Journey = {
-  ref: 'KR7P2MX4',
-  eyebrow: 'The Safari Edition · Bespoke Journey',
-  title: 'An Untamed Honeymoon',
-  subtitle: 'Sabi Sand · Okavango · Victoria Falls · Cape Town',
-  route: ['Sabi Sand', 'Okavango', 'Victoria Falls', 'Cape Town'],
-  nights: 11, dates: '15 – 26 Sept 2026', departIn: 98, startISO: D(15, '00:00'),
-  travellers: ['James Harrington', 'Eleanor Harrington'], pax: 2, surname: 'Harrington', email: 'j.harrington@example.com',
-  price: {
-    GBP: { sym: '£', acc: 38500, fly: 7000 },
-    ZAR: { sym: 'R', acc: 895000, fly: 163000 },
-    USD: { sym: 'US$', acc: 48500, fly: 8800 },
-    EUR: { sym: '€', acc: 45000, fly: 8200 },
-  },
-  included: [
-    'All accommodation — 11 nights across 4 camps', 'All meals & game activities on safari',
-    'All internal flights, charters & private transfers', 'Park, conservation & concession fees',
-    'Zimbabwe / KAZA entry arranged for you', 'Dedicated specialist + 24/7 concierge',
-  ],
-  prep: [
-    { title: 'Pack light for bush legs', body: '20kg soft bag limit on light aircraft.', daysBefore: 60 },
-    { title: 'Visa requirements', body: 'Check requirements for all countries 90 days before travel.', daysBefore: 90 },
-    { title: 'Malaria prophylactics', body: 'Consult your GP 6 weeks before travel.', daysBefore: 45 },
-  ],
-  specialist: { initials: 'SM', name: 'Sarah Mitchell', role: 'Senior Safari Specialist', rec: 'I hand-picked each camp for the September conditions — Mombo for wild dog, Singita for leopard.', years: 8, fav: 'Mombo', response: '< 2 hours' },
-  segments: [],
-  transfers: [],
-  homeward: { tag: 'Homeward journey', legs: [], notes: [] },
-};
