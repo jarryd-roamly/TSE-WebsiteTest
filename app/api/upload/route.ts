@@ -54,9 +54,37 @@ export async function POST(req: NextRequest) {
     // TSE admin uploads skip the review queue and go live immediately
     const autoApprove   = uploadedBy === 'admin';
 
+    const uploadContext = (formData.get('upload_context') as string | null) ?? 'supplier';
+
     // ── Validation ──────────────────────────────────────────────────────────
-    if (!file)       return NextResponse.json({ error: 'No file provided' },       { status: 400 });
-    if (!supplierId) return NextResponse.json({ error: 'supplier_id required' },   { status: 400 });
+    if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+
+    // Curated journey uploads don't need a supplier_id
+    if (!supplierId && uploadContext !== 'curated') {
+      return NextResponse.json({ error: 'supplier_id required' }, { status: 400 });
+    }
+
+    // ── Handle curated journey uploads separately ────────────────────────────
+    if (uploadContext === 'curated') {
+      const validImageTypes = ['image/jpeg','image/jpg','image/png','image/webp','image/gif'];
+      if (!validImageTypes.includes(file.type)) {
+        return NextResponse.json({ error: 'Images only for curated journeys' }, { status: 400 });
+      }
+      const supabase = getServiceClient();
+      const ts = Date.now();
+      const sanitised = file.name.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+      const storagePath = `curated/${ts}-${sanitised}`;
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const { error: uploadError } = await supabase.storage
+        .from('supplier-media')
+        .upload(storagePath, buffer, { contentType: file.type, upsert: true });
+      if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
+      const { data: { publicUrl } } = supabase.storage
+        .from('supplier-media')
+        .getPublicUrl(storagePath);
+      return NextResponse.json({ success: true, url: publicUrl, path: storagePath });
+    }
 
     const validImageTypes = ['image/jpeg','image/jpg','image/png','image/webp','image/gif'];
     const validVideoTypes = ['video/mp4','video/quicktime','video/mov'];
