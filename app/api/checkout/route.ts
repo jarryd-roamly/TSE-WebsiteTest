@@ -4,12 +4,13 @@
 // FIX: Removed `deposit_zar` column reference that caused the Supabase schema error.
 //      The bookings table uses `total_display_zar` — deposit amount is derived,
 //      not stored as a separate column.
+// FIX: Column is `state` not `status` — all inserts updated accordingly.
 //
 // ADDITIONS:
 //   - deposit_pct support (30–100%)
 //   - traveller phone + nationality saved to lead_traveller_snapshot
 //   - action: 'deposit' | 'hold' | 'quote'
-//   - For 'hold' and 'quote': booking saved with status 'hold' / 'quote_sent'
+//   - For 'hold' and 'quote': booking saved with state 'on_hold' / 'quote'
 //     and email dispatched via Resend (or logged if not configured)
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -201,10 +202,10 @@ export async function POST(req: NextRequest) {
 
     const bookingRef = 'TSE-' + Math.random().toString(36).substring(2, 10).toUpperCase()
 
-    const statusMap: Record<string, string> = {
+    const stateMap: Record<string, string> = {
       deposit: 'pending_payment',
       hold:    'on_hold',
-      quote:   'quote_sent',
+      quote:   'quote',         // matches existing DB value
     }
 
     // ── Save booking record ─────────────────────────────────────────────────
@@ -215,12 +216,12 @@ export async function POST(req: NextRequest) {
       .insert({
         itinerary_id,
         booking_reference:     bookingRef,
-        status:                statusMap[action] || 'pending_payment',
+        state:                 stateMap[action] || 'pending_payment',
         total_display_zar:     totalZAR,
         total_paid_zar:        0,
         outstanding_zar:       totalZAR,
         currency_paid:         'ZAR',
-        deposit_pct:           deposit_pct, // store the chosen deposit percentage
+        deposit_pct:           deposit_pct,
         booked_at:             new Date().toISOString(),
         lead_traveller_snapshot: {
           name:        traveller_name  || '',
@@ -239,7 +240,7 @@ export async function POST(req: NextRequest) {
         .insert({
           itinerary_id,
           booking_reference: bookingRef,
-          status:            statusMap[action] || 'pending_payment',
+          state:             stateMap[action] || 'pending_payment',
           total_display_zar: totalZAR,
           total_paid_zar:    0,
           outstanding_zar:   totalZAR,
