@@ -33,18 +33,9 @@ const FONTS = `
 // (Unsplash is free for commercial use — same licence you're already using.)
 // For launch: host own/licensed images in /public/islands/ and update these paths.
 const IMAGES = {
-  // Should show: overwater villa / turquoise lagoon
-  // Swap at: https://unsplash.com/s/photos/maldives-overwater-villa
-  maldives:   'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=1000&q=80',
-
-  // Should show: granite boulders + white sand (La Digue / Anse Source d'Argent)
-  // ← THIS is the one you flagged. Verify it isn't Praslin/generic.
-  // Swap at: https://unsplash.com/s/photos/seychelles-la-digue
-  seychelles: 'https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=1000&q=80',
-
-  // Should show: white sand + turquoise water / dhow sail
-  // Swap at: https://unsplash.com/s/photos/zanzibar-beach
-  zanzibar:   'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=1000&q=80',
+  maldives:   'https://images.unsplash.com/photo-1573843981267-be1999ff37cd?w=1200&q=85',
+  seychelles: 'https://images.unsplash.com/photo-1555400038-63f5ba517a47?w=1200&q=85',
+  zanzibar:   'https://images.unsplash.com/photo-1602652462026-60a87fb67b22?w=1200&q=85',
 } as const;
 
 // ── Island destinations ──────────────────────────────────────────────────────
@@ -166,7 +157,7 @@ export default function IslandEditionLanding() {
   if (!mounted) return null;
 
   return (
-    <>
+    <div style={{ position:'relative', zIndex:1, background:'#060d14', minHeight:'100vh' }}>
       <style suppressHydrationWarning>{`
         ${FONTS}
         *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
@@ -506,6 +497,6 @@ export default function IslandEditionLanding() {
           <a href="/contact" className="ie-footer-link">Contact</a>
         </div>
       </footer>
-    </>
+    </div>
   );
 }
