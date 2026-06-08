@@ -7,26 +7,45 @@
 import { useState, useEffect, useRef } from 'react';
 
 // ── Design tokens — Island Edition ─────────────────────────────────────────
-// Same dark base as Safari, but ocean teal replaces safari gold
 const C = {
-  bg:     '#060d14',
-  bg2:    '#0a1520',
-  bg3:    '#0f1e2e',
-  surf:   '#132233',
-  border: 'rgba(255,255,255,0.07)',
+  bg:         '#060d14',
+  bg2:        '#0a1520',
+  bg3:        '#0f1e2e',
+  surf:       '#132233',
+  border:     'rgba(255,255,255,0.07)',
   borderTeal: 'rgba(32,178,170,0.28)',
-  teal:   '#20b2aa',
-  tealDim:'rgba(32,178,170,0.12)',
-  tealGlow:'rgba(32,178,170,0.22)',
-  text:   '#eef4f8',
-  textMid:'rgba(238,244,248,0.58)',
-  textDim:'rgba(238,244,248,0.32)',
-  white:  '#ffffff',
+  teal:       '#20b2aa',
+  tealDim:    'rgba(32,178,170,0.12)',
+  tealGlow:   'rgba(32,178,170,0.22)',
+  text:       '#eef4f8',
+  textMid:    'rgba(238,244,248,0.58)',
+  textDim:    'rgba(238,244,248,0.32)',
+  white:      '#ffffff',
 };
 
 const FONTS = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=Jost:wght@200;300;400;500;600&display=swap');
 `;
+
+// ── Image config — one place to manage all destination photos ───────────────
+// Glance at each in your preview after pushing; swap any that's off right here.
+// Source for verified replacements: https://unsplash.com/s/photos/[destination]
+// (Unsplash is free for commercial use — same licence you're already using.)
+// For launch: host own/licensed images in /public/islands/ and update these paths.
+const IMAGES = {
+  // Should show: overwater villa / turquoise lagoon
+  // Swap at: https://unsplash.com/s/photos/maldives-overwater-villa
+  maldives:   'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=1000&q=80',
+
+  // Should show: granite boulders + white sand (La Digue / Anse Source d'Argent)
+  // ← THIS is the one you flagged. Verify it isn't Praslin/generic.
+  // Swap at: https://unsplash.com/s/photos/seychelles-la-digue
+  seychelles: 'https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=1000&q=80',
+
+  // Should show: white sand + turquoise water / dhow sail
+  // Swap at: https://unsplash.com/s/photos/zanzibar-beach
+  zanzibar:   'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=1000&q=80',
+} as const;
 
 // ── Island destinations ──────────────────────────────────────────────────────
 const DESTINATIONS = [
@@ -35,7 +54,7 @@ const DESTINATIONS = [
     name: 'Maldives',
     sub: 'The definitive island escape',
     tag: 'North Malé · Baa Atoll · Noonu Atoll',
-    img: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=900&q=80',
+    img: IMAGES.maldives,
     highlight: 'Overwater bungalows. House reef snorkelling at dawn. No shoes required.',
     nights: '5–10 nights',
     from: '$8,400',
@@ -45,8 +64,8 @@ const DESTINATIONS = [
     name: 'Seychelles',
     sub: 'Pristine granite archipelago',
     tag: 'Mahé · Praslin · La Digue · Fregate',
-    img: 'https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=900&q=80',
-    highlight: 'World\'s only island coco de mer forest. Secluded beaches with zero footprints.',
+    img: IMAGES.seychelles,
+    highlight: "World's only coco de mer forest. Secluded beaches with zero footprints.",
     nights: '7–14 nights',
     from: '$11,200',
   },
@@ -55,7 +74,7 @@ const DESTINATIONS = [
     name: 'Zanzibar',
     sub: 'Spice island & turquoise coast',
     tag: 'Stone Town · North Coast · Pemba',
-    img: 'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=900&q=80',
+    img: IMAGES.zanzibar,
     highlight: 'Swahili culture, coral reefs, and dhow sunsets. The perfect safari extension.',
     nights: '3–7 nights',
     from: '$3,200',
@@ -70,7 +89,7 @@ const JOURNEYS = [
     tagline: 'Two atolls. Reef to horizon. Nothing else.',
     badge: 'Most booked',
     badgeColor: C.teal,
-    img: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?w=700&q=80',
+    img: IMAGES.maldives,
     priceFrom: 142000,
     otaPrice: 198000,
   },
@@ -80,7 +99,7 @@ const JOURNEYS = [
     tagline: 'Begin Mahé. Discover Praslin. Disappear to Fregate.',
     badge: 'Our favourite',
     badgeColor: '#a78bfa',
-    img: 'https://images.unsplash.com/photo-1587974928442-77dc3e0dba72?w=700&q=80',
+    img: IMAGES.seychelles,
     priceFrom: 198000,
     otaPrice: 271000,
   },
@@ -90,7 +109,7 @@ const JOURNEYS = [
     tagline: 'Three nights Zanzibar. The perfect safari ending.',
     badge: 'Pairs perfectly',
     badgeColor: '#4ade80',
-    img: 'https://images.unsplash.com/photo-1560969184-10fe8719e047?w=700&q=80',
+    img: IMAGES.zanzibar,
     priceFrom: 98000,
     otaPrice: 134000,
   },
@@ -98,28 +117,30 @@ const JOURNEYS = [
 
 // ── Trust signals ─────────────────────────────────────────────────────────────
 const TRUST = [
-  { icon: '🪸', label: 'Reef-certified partners', sub: 'Every resort scored on marine conservation' },
-  { icon: '🛥', label: 'Private transfers only', sub: 'No shared speedboats or group shuttles' },
+  { icon: '🪸', label: 'Reef-certified partners',   sub: 'Every resort scored on marine conservation' },
+  { icon: '🛥',  label: 'Private transfers only',    sub: 'No shared speedboats or group shuttles' },
   { icon: '👤', label: 'Island Specialist assigned', sub: 'Before, during, and after your trip' },
-  { icon: '📍', label: 'Atoll-level expertise', sub: 'We know which overwater faces the sunset' },
+  { icon: '📍', label: 'Atoll-level expertise',      sub: 'We know which overwater faces the sunset' },
 ];
 
 // ── How it works ──────────────────────────────────────────────────────────────
 const HOW = [
-  { n: '01', title: 'Choose your atoll', body: 'Tell us your island vision in two minutes — pace, privacy, experience level.' },
+  { n: '01', title: 'Choose your atoll',        body: 'Tell us your island vision in two minutes — pace, privacy, experience level.' },
   { n: '02', title: 'Itinerary builds instantly', body: 'Our engine sequences transfers, tides, and resort rates. Everything timed.' },
-  { n: '03', title: 'Specialist refines it', body: 'A human island specialist confirms every detail and personalises your stay.' },
-  { n: '04', title: 'Travel with confidence', body: 'Concierge available throughout. Every reef transfer pre-arranged.' },
+  { n: '03', title: 'Specialist refines it',     body: 'A human island specialist confirms every detail and personalises your stay.' },
+  { n: '04', title: 'Travel with confidence',    body: 'Concierge available throughout. Every reef transfer pre-arranged.' },
 ];
 
 // ── Interest form state ──────────────────────────────────────────────────────
-interface FormState { name: string; email: string; destination: string; when: string; submitted: boolean; }
+interface FormState {
+  name: string; email: string; destination: string; when: string; submitted: boolean;
+}
 
 export default function IslandEditionLanding() {
-  const [scrolled,   setScrolled]   = useState(false);
-  const [activeImg,  setActiveImg]  = useState(0);
-  const [form,       setForm]       = useState<FormState>({ name:'', email:'', destination:'any', when:'', submitted:false });
-  const [mounted,    setMounted]    = useState(false);
+  const [scrolled,  setScrolled]  = useState(false);
+  const [activeImg, setActiveImg] = useState(0);
+  const [form,      setForm]      = useState<FormState>({ name: '', email: '', destination: 'any', when: '', submitted: false });
+  const [mounted,   setMounted]   = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
@@ -130,7 +151,6 @@ export default function IslandEditionLanding() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Rotate hero background
   useEffect(() => {
     const t = setInterval(() => setActiveImg(i => (i + 1) % DESTINATIONS.length), 5000);
     return () => clearInterval(t);
@@ -250,13 +270,16 @@ export default function IslandEditionLanding() {
       {/* ── NAV ── */}
       <nav className={`ie-nav ${scrolled ? 'scrolled' : ''}`}>
         <div>
-          <div className="ie-wordmark">The Island Edition<small>by The Travel Catalogue</small></div>
+          <div className="ie-wordmark">
+            The Island Edition
+            <small>by The Travel Catalogue</small>
+          </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
           <a href="#destinations" className="ie-nav-link">Destinations</a>
-          <a href="#journeys" className="ie-nav-link">Journeys</a>
-          <a href="#notify" className="ie-nav-link">Notify me</a>
-          <a href="/" className="ie-back-btn">← The Safari Edition</a>
+          <a href="#journeys"     className="ie-nav-link">Journeys</a>
+          <a href="#notify"       className="ie-nav-link">Notify me</a>
+          <a href="/"             className="ie-back-btn">← The Safari Edition</a>
         </div>
       </nav>
 
@@ -268,7 +291,11 @@ export default function IslandEditionLanding() {
               key={d.id}
               src={d.img}
               alt={d.name}
-              style={{ position:'absolute', inset:0, opacity: i === activeImg ? 1 : 0, transition:'opacity 1.4s ease' }}
+              style={{
+                position: 'absolute', inset: 0,
+                opacity: i === activeImg ? 1 : 0,
+                transition: 'opacity 1.4s ease',
+              }}
             />
           ))}
         </div>
@@ -281,7 +308,7 @@ export default function IslandEditionLanding() {
           <p className="ie-hero-sub">
             The same specialist knowledge and contracted rates that define The Safari Edition — now applied to the world's finest island escapes. Maldives. Seychelles. Zanzibar.
           </p>
-          <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <a href="#notify">
               <button className="ie-hero-cta">Request early access →</button>
             </a>
@@ -317,14 +344,15 @@ export default function IslandEditionLanding() {
               <div className="ie-dest-card-overlay">
                 <div className="ie-dest-sub">{d.tag}</div>
                 <div className="ie-dest-name">{d.name}</div>
-                <div style={{ fontSize:12, color:C.textMid, lineHeight:1.5, marginTop:8 }}>{d.highlight}</div>
+                <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5, marginTop: 8 }}>
+                  {d.highlight}
+                </div>
               </div>
               <div className="ie-dest-nights">{d.nights} · from {d.from}/pp</div>
             </div>
           ))}
         </div>
 
-        {/* Safari edition cross-sell */}
         <div className="ie-safari-banner">
           <div className="ie-safari-text">
             <strong>Planning a bush & beach combination?</strong>
@@ -335,7 +363,7 @@ export default function IslandEditionLanding() {
       </section>
 
       {/* ── JOURNEYS ── */}
-      <section style={{ padding:'0 48px 96px', maxWidth:1200, margin:'0 auto' }} id="journeys">
+      <section style={{ padding: '0 48px 96px', maxWidth: 1200, margin: '0 auto' }} id="journeys">
         <div className="ie-section-label">✦ Curated journeys</div>
         <h2 className="ie-section-title">Our most-booked island programmes</h2>
 
@@ -346,12 +374,26 @@ export default function IslandEditionLanding() {
               <div key={j.name} className="ie-journey-card">
                 <img src={j.img} alt={j.name} className="ie-journey-img" loading="lazy" />
                 <div className="ie-journey-body">
-                  <div className="ie-journey-badge" style={{ background:`${j.badgeColor}18`, color:j.badgeColor, border:`0.5px solid ${j.badgeColor}40` }}>{j.badge}</div>
+                  <div
+                    className="ie-journey-badge"
+                    style={{
+                      background: `${j.badgeColor}18`,
+                      color: j.badgeColor,
+                      border: `0.5px solid ${j.badgeColor}40`,
+                    }}
+                  >
+                    {j.badge}
+                  </div>
                   <div className="ie-journey-name">{j.name}</div>
-                  <div style={{ fontSize:11, color:C.teal, marginBottom:8, letterSpacing:'0.06em' }}>{j.nights} nights</div>
+                  <div style={{ fontSize: 11, color: C.teal, marginBottom: 8, letterSpacing: '0.06em' }}>
+                    {j.nights} nights
+                  </div>
                   <div className="ie-journey-tagline">{j.tagline}</div>
                   <div className="ie-journey-price">
-                    <span className="ie-journey-from">{fmt(j.priceFrom)} <span style={{ fontSize:11, fontWeight:300, color:C.textDim }}>/person</span></span>
+                    <span className="ie-journey-from">
+                      {fmt(j.priceFrom)}{' '}
+                      <span style={{ fontSize: 11, fontWeight: 300, color: C.textDim }}>/person</span>
+                    </span>
                     <span className="ie-journey-ota">{fmt(j.otaPrice)}</span>
                     <span className="ie-journey-saving">↓ {saving}%</span>
                   </div>
@@ -363,8 +405,8 @@ export default function IslandEditionLanding() {
       </section>
 
       {/* ── TRUST ── */}
-      <section style={{ background:C.bg2, borderTop:`0.5px solid ${C.border}`, borderBottom:`0.5px solid ${C.border}` }}>
-        <div style={{ padding:'96px 48px', maxWidth:1200, margin:'0 auto' }}>
+      <section style={{ background: C.bg2, borderTop: `0.5px solid ${C.border}`, borderBottom: `0.5px solid ${C.border}` }}>
+        <div style={{ padding: '96px 48px', maxWidth: 1200, margin: '0 auto' }}>
           <div className="ie-section-label">✦ Why book with us</div>
           <h2 className="ie-section-title">The specialist difference</h2>
           <div className="ie-trust-grid">
@@ -380,7 +422,7 @@ export default function IslandEditionLanding() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section style={{ padding:'96px 48px', maxWidth:1200, margin:'0 auto' }}>
+      <section style={{ padding: '96px 48px', maxWidth: 1200, margin: '0 auto' }}>
         <div className="ie-section-label">✦ The process</div>
         <h2 className="ie-section-title">Five questions.<br />A fully-priced island itinerary.</h2>
         <div className="ie-how-grid">
@@ -398,7 +440,7 @@ export default function IslandEditionLanding() {
       <section className="ie-form-section" id="notify">
         <div className="ie-form-inner">
           <div className="ie-section-label">✦ Early access</div>
-          <h2 className="ie-section-title" style={{ fontSize:'clamp(28px,3vw,40px)' }}>
+          <h2 className="ie-section-title" style={{ fontSize: 'clamp(28px,3vw,40px)' }}>
             The Island Edition launches<br />Q1 2027
           </h2>
           <p className="ie-section-body">
@@ -412,21 +454,28 @@ export default function IslandEditionLanding() {
               <div className="ie-form-success-body">
                 Your Island Specialist will be in touch before launch. In the meantime, our safari specialists are available now — the bush and beach combination is one of our most-booked pairings.
               </div>
-              <a href="/" style={{ display:'inline-block', marginTop:20, color:C.teal, fontSize:13, letterSpacing:'0.06em' }}>Explore The Safari Edition →</a>
+              <a href="/" style={{ display: 'inline-block', marginTop: 20, color: C.teal, fontSize: 13, letterSpacing: '0.06em' }}>
+                Explore The Safari Edition →
+              </a>
             </div>
           ) : (
             <form className="ie-form" onSubmit={handleSubmit}>
               <div className="ie-form-row">
                 <input
                   type="text" required placeholder="Your name"
-                  value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))}
+                  value={form.name}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 />
                 <input
                   type="email" required placeholder="Email address"
-                  value={form.email} onChange={e => setForm(f => ({ ...f, email:e.target.value }))}
+                  value={form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 />
               </div>
-              <select value={form.destination} onChange={e => setForm(f => ({ ...f, destination:e.target.value }))}>
+              <select
+                value={form.destination}
+                onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}
+              >
                 <option value="any">Any destination — help me choose</option>
                 <option value="maldives">Maldives</option>
                 <option value="seychelles">Seychelles</option>
@@ -435,10 +484,11 @@ export default function IslandEditionLanding() {
               </select>
               <input
                 type="text" placeholder="When are you thinking of travelling? (e.g. June 2027)"
-                value={form.when} onChange={e => setForm(f => ({ ...f, when:e.target.value }))}
+                value={form.when}
+                onChange={e => setForm(f => ({ ...f, when: e.target.value }))}
               />
               <button type="submit" className="ie-form-submit">Register interest →</button>
-              <p style={{ fontSize:11, color:C.textDim, textAlign:'center', lineHeight:1.5 }}>
+              <p style={{ fontSize: 11, color: C.textDim, textAlign: 'center', lineHeight: 1.5 }}>
                 No spam. Your Island Specialist reaches out personally — not an automated sequence.
               </p>
             </form>
@@ -450,9 +500,9 @@ export default function IslandEditionLanding() {
       <footer className="ie-footer">
         <div className="ie-footer-brand">The Island Edition · by The Travel Catalogue</div>
         <div className="ie-footer-links">
-          <a href="/" className="ie-footer-link">The Safari Edition</a>
+          <a href="/"        className="ie-footer-link">The Safari Edition</a>
           <a href="/privacy" className="ie-footer-link">Privacy</a>
-          <a href="/terms" className="ie-footer-link">Terms</a>
+          <a href="/terms"   className="ie-footer-link">Terms</a>
           <a href="/contact" className="ie-footer-link">Contact</a>
         </div>
       </footer>
