@@ -103,6 +103,13 @@ export default function JourneyMiniSite({ journey, mode = 'quote', visitCount = 
   const [priceChange, setPriceChange] = useState<any>(null);
   const fired = useRef(false);
 
+  // Store itineraryId on window so SecurePanel can access it for checkout redirect
+  useEffect(() => {
+    if ((j as any).itineraryId) {
+      (window as any).__journeyItineraryId = (j as any).itineraryId;
+    }
+  }, [j]);
+
   useEffect(() => {
     const link = document.createElement('link'); link.rel = 'stylesheet';
     link.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Jost:wght@200;300;400;500;600&display=swap';
@@ -148,26 +155,17 @@ export default function JourneyMiniSite({ journey, mode = 'quote', visitCount = 
 
       <SpecialistCard j={j} onChat={() => setModal('chat')} showNote={mode === 'quote' || immersive} />
 
+      <SectionTitle k="Day by day" t="Your itinerary" sub="In date order — confirmed properties and what your specialist is arranging." />
+      {j.segments.map((sg, i) => <Property key={sg.id} sg={sg} start={j.segments.slice(0, i).reduce((a, x) => a + x.nights, 0)} startISO={j.startISO} mode={mode} immersive={immersive} />)}
+
+
       <SectionTitle k="Your camps" t={mode === 'quote' ? 'Held for you' : 'Confirmation status'} sub={mode === 'quote' ? 'Live availability checked for your exact dates.' : 'If it appears here, it is booked — one is finalising now.'} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(228px,1fr))', gap: 14 }}>
         {j.segments.map((sg) => <div key={sg.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ position: 'relative', height: 92 }}><Scene tone={sg.tone} img={sg.img} reel={sg.reel} immersive={immersive} dim={.3} /></div>
-          <div style={{ padding: 13 }}><div style={{ fontFamily: F.d, fontSize: 18 }}>{sg.lodge}</div><div style={{ fontSize: 12, color: C.textMid, marginBottom: 9 }}>{place(sg)} · {sg.nights} nts</div>
+          <div style={{ padding: 13 }}><div style={{ fontFamily: F.d, fontSize: 18 }}>{sg.lodge}</div><div style={{ fontSize: 12, color: C.textMid, marginBottom: 9 }}>{sg.lodge}, {sg.bandRegion}{sg.nights ? ` · ${sg.nights} nights` : ""}</div>
             <Chip status={mode === 'quote' ? 'held' : sg.status} small /></div></div>)}
       </div>
-
-      {immersive && <>
-        <SectionTitle k="Your journey in motion" t="Press play on the wild" sub="The places waiting for you — patched from each camp’s own films." />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
-          {j.segments.map((sg) => <div key={sg.id} style={{ position: 'relative', height: 150, borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.border}` }}>
-            <Scene tone={sg.tone} img={sg.img} reel={sg.reel} immersive dim={.4} />
-            <div style={{ position: 'absolute', left: 12, bottom: 10, right: 12 }}><div style={{ fontFamily: F.d, fontSize: 17 }}>{sg.bandName}</div><div style={{ fontSize: 12, color: C.text }}>{sg.sensory}</div></div></div>)}
-        </div>
-      </>}
-
-      <SectionTitle k="Day by day" t="Your itinerary" sub="In date order — confirmed properties and what your specialist is arranging." />
-      {j.segments.map((sg, i) => <Property key={sg.id} sg={sg} start={j.segments.slice(0, i).reduce((a, x) => a + x.nights, 0)} startISO={j.startISO} mode={mode} immersive={immersive} />)}
-
 
       <SectionTitle k="Getting you there" t="Flights & transfers" sub="Every leg, with the joins we’ve smoothed so nothing feels rushed." />
       <div style={{ display: 'grid', gap: 12 }}>{j.transfers.map((t, i) => <TransferBlock key={i} t={t} />)}<TransferBlock t={j.homeward} /></div>
@@ -177,7 +175,7 @@ export default function JourneyMiniSite({ journey, mode = 'quote', visitCount = 
         {j.segments.map((sg) => { const on = !!veh[sg.id];
           return sg.gameCamp
             ? <div key={sg.id} style={{ background: on ? C.goldDim : C.surface, border: `1px solid ${on ? C.borderGold : C.border}`, borderRadius: 12, padding: 15 }}>
-                <div style={{ fontFamily: F.d, fontSize: 17 }}>{sg.lodge}</div><div style={{ fontSize: 12, color: C.textMid, margin: '4px 0 8px' }}>{place(sg)} · {sg.nights} nts</div>
+                <div style={{ fontFamily: F.d, fontSize: 17 }}>{sg.lodge}</div><div style={{ fontSize: 12, color: C.textMid, margin: '4px 0 8px' }}>{sg.lodge}, {sg.bandRegion}{sg.nights ? ` · ${sg.nights} nights` : ""}</div>
                 {sg.vehPerDay
                   ? <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ color: C.goldLight, fontSize: 14 }}>{m(sg.vehPerDay)}/day · {m(sg.vehPerDay * sg.nights)}</span><Btn small kind={on ? 'dark' : 'ghost'} onClick={() => setVeh({ ...veh, [sg.id]: !on })}>{on ? '✓ Added' : 'Add'}</Btn></div>
                   : <div style={{ fontSize: 12, color: C.textMid }}>Private vehicle pricing confirmed by your specialist.</div>}
@@ -266,7 +264,10 @@ function SecurePanel({ total, m, onChat, onPrint }: any) {
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20 }}>
       <div style={{ display: 'flex', gap: 9, fontSize: 14, color: C.text, marginBottom: 8 }}><span style={{ color: C.gold }}>✦</span>Today’s price is locked — flight fares and lodge rates can move for these dates.</div>
       <div style={{ display: 'flex', gap: 9, fontSize: 14, color: C.text }}><span style={{ color: C.gold }}>✦</span>Complimentary Cancel-for-any-Reason Cover — your deposit is fully refundable.</div>
-      <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}><Btn onClick={onChat}>Secure this journey →</Btn><Btn kind="ghost" onClick={onPrint}>Simple itinerary</Btn></div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+        <Btn onClick={() => { if ((window as any).__journeyItineraryId) { window.location.href = `/checkout?id=${(window as any).__journeyItineraryId}`; } else { onChat(); } }}>Secure this journey →</Btn>
+        <Btn kind="ghost" onClick={onPrint}>Simple itinerary</Btn>
+      </div>
       <TrustRow /></div></>;
 }
 const TrustRow = () => <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
