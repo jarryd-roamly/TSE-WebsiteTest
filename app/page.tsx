@@ -111,13 +111,14 @@ type CityTransferOption = { id:string; icon:string; label:string; provider:strin
 const CITY_TRANSFERS: Record<string, CityTransferOption[]> = {
   'cape-town': [
     { id:'private-car',  icon:'🚗', label:'Private transfer',    provider:'Private vehicle — door to door',    duration:'30–45 min', estimatedCostZAR:2800,  note:'Most popular. Driver meets you at arrivals with name board. Includes luggage handling.', recommended:true },
-    { id:'helicopter',   icon:'🚁', label:'Helicopter transfer',  provider:'NAC Helicopters — aerial city tour', duration:'12 min',    estimatedCostZAR:18000, note:'The unforgettable arrival. 12 minutes airside to the hotel pad with full city panorama.', recommended:false },
+    // helicopter REMOVED: airport→hotel is road only across all regions
     { id:'shuttle',      icon:'🚌', label:'Shared shuttle',       provider:'Backpacker Bus / Myciti',           duration:'45–75 min', estimatedCostZAR:850,   note:'Budget option. Shared with other passengers, scheduled times only.', recommended:false },
   ],
+  // VFA ARRIVAL: road transfer only. 20-30 min from VFA airport to any lodge in town.
+  // NOTE: The departure options (VFA→JNB via Airlink/Fastjet) are handled by the
+  // inter-region routing engine — NOT shown here as arrival transfers.
   'chobe-vic-falls': [
-    { id:'airlink-vfa-jnb',  icon:'🛫', label:'Airlink VFA → JNB',     provider:'Lodge transfer to VFA + Airlink (4Z) VFA→JNB', duration:'~3h 30m total', estimatedCostZAR:8500, note:'Airlink (4Z) operates daily VFA→JNB — multiple departures. Lodge vehicle to airport (~35min). Connects to international flights at OR Tambo. Allow 3hrs at JNB for international connections.', recommended:true },
-    { id:'fastjet-vfa-jnb',  icon:'🛫', label:'Fastjet VFA → JNB',     provider:'Lodge transfer to VFA + Fastjet (FN) VFA→JNB',  duration:'~3h 30m total', estimatedCostZAR:6800, note:'Fastjet (TC) operates VFA→JNB — check schedule for your dates. Budget carrier, reliable on this route. Lodge vehicle to VFA (~35min). Allow 3hrs at JNB for international connections.', recommended:false },
-    // helicopter-vfa REMOVED: airport→lodge is always road transfer. Helicopter never from VFA airport.
+    { id:'vfa-road', icon:'🚗', label:'Private road transfer', provider:'Private vehicle — VFA airport to lodge', duration:'20–30 min', estimatedCostZAR:0, note:'VFA airport is 20 min from Victoria Falls town. Most lodges include airport collection at no extra charge — confirm at booking.', recommended:true },
   ],
   'masai-mara': [
     { id:'light-aircraft', icon:'✈', label:'Light aircraft charter', provider:'Safarilink / Air Kenya charter', duration:'45 min',    estimatedCostZAR:6800,  note:'Nairobi to Mara airstrip. Most camps have their own airstrip — vehicle transfer included.', recommended:true },
@@ -1737,6 +1738,152 @@ function buildTransferOptions(
     ],
   };
 
+  // Routes that require a JNB hub connection — no direct Airlink service.
+  // These must NEVER appear as single-hop commercial legs.
+  const VIA_JNB_REQUIRED = new Set([
+    'MQP-MUB', 'SZK-MUB', 'HDS-MUB',   // Kruger → Okavango (no direct, need JNB overnight)
+    'MUB-MQP', 'MUB-SZK', 'MUB-HDS',   // Okavango → Kruger (same)
+    'MUB-VFA', 'VFA-MUB',               // Okavango ↔ Vic Falls (charter via Kasane only)
+  ]);
+
+  // ── VIA-JNB MULTI-LEG BUILDER ──────────────────────────────────────────────
+  // For routes that require a JNB connection (no direct service), build a
+  // properly structured multi-leg option showing BOTH flight numbers + times.
+  // Kruger→Okavango and reverse require overnight at JNB (4Z302 dep 10:55 is
+  // the only JNB→MUB service — it departs before any same-day Lowveld exit lands).
+  const buildViaJNBOption = (
+    fromSlug: string, toSlug: string,
+    originHub: string, exitRec: any, arrRec: any,
+    pax: number
+  ): TransferOption | null => {
+    // ── Kruger hubs → Okavango ─────────────────────────────────────────────
+    if (['kruger-sabi-sand','madikwe'].includes(fromSlug) && toSlug === 'okavango-delta') {
+      const hub = originHub; // MQP, SZK, or HDS
+      // Pick best MQP→JNB flight after FedAir arr 10:35 (min 45 min buffer = by 11:20)
+      const jnbKey = `4Z-${hub}-JNB`;
+      const jnbSc = SCHED_MULTI[jnbKey]
+        ? SCHED_MULTI[jnbKey].find(f => t2m(f.dep) >= t2m('11:20')) ?? SCHED[jnbKey]
+        : SCHED[jnbKey];
+      const mubSc = SCHED['4Z-JNB-MUB']; // 4Z302 10:55→12:35
+      if (!jnbSc || !mubSc) return null;
+
+      const exitCost  = exitRec ? lastMileZar(exitRec, 18.62, pax) : 0;
+      const arrCost   = arrRec  ? lastMileZar(arrRec,  18.62, pax) : 0;
+      const leg1Cost  = Math.round((COMMERCIAL_FALLBACK_ZAR[hub] ?? 2800) * pax);
+      const leg2Cost  = Math.round((COMMERCIAL_FALLBACK_ZAR['MUB'] ?? 8500) * pax);
+      const totalCost = exitCost + leg1Cost + leg2Cost + arrCost;
+
+      const structured: StructuredLeg[] = [];
+      if (exitRec) { const ex = exitLeg(exitRec, hub, undefined); if (ex) structured.push(ex); }
+      structured.push({
+        kind:'commercial', badge:'4Z', name:'Airlink',
+        from:hub, to:'JNB',
+        depTime:jnbSc.dep, arrTime:jnbSc.arr,
+        flightNum:(jnbSc as any).fn ?? `4Z-${hub}-JNB`,
+        detail:`Nonstop · ${durStr(jnbSc.dur)} · 20kg · X Class 32kg avail`,
+        note:'Schedule indicative · confirm seat availability at booking',
+        noteColor:'rgba(212,175,55,0.4)',
+      });
+      structured.push({
+        kind:'info', badge:'🌙', name:'Overnight at Johannesburg (JNB)',
+        from:'JNB', to:'JNB',
+        detail:'Airport hotel — arranged by your Journey Specialist',
+        note:'4Z302 departs JNB 10:55 next morning. Same-day connection not possible.',
+        noteColor:'rgba(96,165,250,0.6)',
+      });
+      structured.push({
+        kind:'commercial', badge:'4Z', name:'Airlink',
+        from:'JNB', to:'MUB',
+        depTime:mubSc.dep, arrTime:mubSc.arr,
+        flightNum:(mubSc as any).fn ?? '4Z302',
+        detail:`Nonstop · ${durStr(mubSc.dur)} · 20kg · X Class 32kg avail`,
+        note:'Schedule indicative · confirm seat availability at booking',
+        noteColor:'rgba(212,175,55,0.4)',
+      });
+      if (arrRec) { buildArrivalLegs(arrRec, 'MUB', undefined, null).forEach(l => structured.push(l)); }
+
+      return {
+        id:'via-jnb-recommended', mode:'combo', icon:'✈',
+        label:'Via Johannesburg (JNB) — overnight required',
+        provider:`${hub}→JNB (${(jnbSc as any).fn}) + overnight + JNB→MUB (4Z302) + charter to camp`,
+        duration:`~26h door-to-door · overnight JNB`,
+        estimatedCostZAR: totalCost,
+        badges:[
+          {text:'✦ Recommended routing',color:'rgba(212,175,55,0.9)'},
+          {text:'Overnight JNB required',color:'rgba(96,165,250,0.85)'},
+          {text:'Est.',color:'rgba(255,255,255,0.3)'},
+        ],
+        aiNote:`Kruger→Okavango requires overnight at JNB. ${hub}→JNB ${(jnbSc as any).fn} dep ${jnbSc.dep}, arr ${jnbSc.arr}. Overnight JNB airport hotel (specialist arranges). Next morning: 4Z302 JNB 10:55→MUB 12:35 — Mack Air to camp. 20kg SOFT BAG strictly enforced on all charter legs.`,
+        recommended: true,
+        structuredLegs: structured,
+      };
+    }
+
+    // ── Okavango → Kruger hubs ─────────────────────────────────────────────
+    if (fromSlug === 'okavango-delta' && ['kruger-sabi-sand','madikwe'].includes(toSlug)) {
+      const hub = destHubR; // MQP, SZK, or HDS
+      const jnbSc = SCHED['4Z-MUB-JNB']; // 4Z303 13:05→14:45
+      const hubKey = `4Z-JNB-${hub}`;
+      const hubSc = SCHED_MULTI[hubKey]
+        ? SCHED_MULTI[hubKey].find(f => t2m(f.dep) >= t2m('09:00')) ?? SCHED[hubKey]
+        : SCHED[hubKey]; // 4Z829 10:05→11:00 for MQP
+      if (!jnbSc || !hubSc) return null;
+
+      const exitCost  = exitRec ? lastMileZar(exitRec, 18.62, pax) : 0;
+      const arrCost   = arrRec  ? lastMileZar(arrRec,  18.62, pax) : 0;
+      const leg1Cost  = Math.round((COMMERCIAL_FALLBACK_ZAR['MUB'] ?? 8500) * pax);
+      const leg2Cost  = Math.round((COMMERCIAL_FALLBACK_ZAR[hub] ?? 2800) * pax);
+      const totalCost = exitCost + leg1Cost + leg2Cost + arrCost;
+
+      const structured: StructuredLeg[] = [];
+      if (exitRec) { const ex = exitLeg(exitRec, 'MUB', undefined); if (ex) structured.push(ex); }
+      structured.push({
+        kind:'commercial', badge:'4Z', name:'Airlink',
+        from:'MUB', to:'JNB',
+        depTime:jnbSc.dep, arrTime:jnbSc.arr,
+        flightNum:(jnbSc as any).fn ?? '4Z303',
+        detail:`Nonstop · ${durStr(jnbSc.dur)} · 20kg · X Class 32kg avail`,
+        note:'Schedule indicative · confirm seat availability at booking',
+        noteColor:'rgba(212,175,55,0.4)',
+      });
+      structured.push({
+        kind:'info', badge:'🌙', name:'Overnight at Johannesburg (JNB)',
+        from:'JNB', to:'JNB',
+        detail:'Airport hotel — arranged by your Journey Specialist',
+        note:'FedAir lodge shuttles depart next morning from Atlas Rd terminal, OR Tambo.',
+        noteColor:'rgba(96,165,250,0.6)',
+      });
+      structured.push({
+        kind:'commercial', badge:'4Z', name:'Airlink',
+        from:'JNB', to:hub,
+        depTime:hubSc.dep, arrTime:hubSc.arr,
+        flightNum:(hubSc as any).fn ?? `4Z-JNB-${hub}`,
+        detail:`Nonstop · ${durStr(hubSc.dur)} · 20kg · X Class 32kg avail`,
+        note:'Schedule indicative · confirm seat availability at booking',
+        noteColor:'rgba(212,175,55,0.4)',
+      });
+      if (arrRec) { buildArrivalLegs(arrRec, hub, undefined, '13:30').forEach(l => structured.push(l)); }
+
+      return {
+        id:'via-jnb-recommended', mode:'combo', icon:'✈',
+        label:'Via Johannesburg (JNB) — overnight required',
+        provider:`MUB→JNB (4Z303) + overnight + JNB→${hub} (${(hubSc as any).fn}) + FedAir to lodge`,
+        duration:`~26h door-to-door · overnight JNB`,
+        estimatedCostZAR: totalCost,
+        badges:[
+          {text:'✦ Recommended routing',color:'rgba(212,175,55,0.9)'},
+          {text:'Overnight JNB required',color:'rgba(96,165,250,0.85)'},
+          {text:'Est.',color:'rgba(255,255,255,0.3)'},
+        ],
+        aiNote:`Okavango→Kruger requires overnight at JNB. 4Z303 MUB ${jnbSc.dep}→JNB ${jnbSc.arr}. Overnight JNB (specialist arranges). Morning: ${(hubSc as any).fn} JNB ${hubSc.dep}→${hub} ${hubSc.arr}, then FedAir 13:30→lodge. 20kg SOFT BAG on Mack Air.`,
+        recommended: true,
+        structuredLegs: structured,
+      };
+    }
+
+    return null; // no specific handler — fall through to INTERNAL_LEGS
+  };
+
   // Minimum connection buffer (minutes) at each regional hub before FedAir departure.
   // JNB = 90 min (must clear international/domestic, Atlas Rd terminal transit).
   // Lowveld hubs = 45 min (small terminal, no security re-screen).
@@ -1948,7 +2095,8 @@ function buildTransferOptions(
   // CityTransferStrip handles CPT airport → hotel separately.
   // ═══════════════════════════════════════════════════════════════════════
   if (toSlug === 'cape-town') {
-    const originHub = originHubAirport(originLodge ?? '', fromSlug);
+    // VFA lodges: originHub must be VFA airport (not MQP — transfers.ts default is wrong for VFA)
+    const originHub = fromSlug === 'chobe-vic-falls' ? 'VFA' : originHubAirport(originLodge ?? '', fromSlug);
     const routeKey  = `${originHub}-CPT`;
     const liveFare  = commercialFareZarByRoute?.[routeKey];
     const fallback  = COMMERCIAL_FALLBACK_ZAR['CPT'] ?? 2800;
@@ -2053,7 +2201,8 @@ function buildTransferOptions(
   // ═══════════════════════════════════════════════════════════════════════
   if (toSlug.startsWith('gateway-')) {
     const gw = toSlug.replace('gateway-', '').toUpperCase(); // 'JNB' | 'CPT'
-    const originHub = originHubAirport(originLodge ?? '', fromSlug);
+    // VFA lodges: force VFA airport as origin hub (overrides incorrect MQP from transfers.ts)
+    const originHub = fromSlug === 'chobe-vic-falls' ? 'VFA' : originHubAirport(originLodge ?? '', fromSlug);
     const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
     const exitRec     = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
     const exitZar     = exitRec ? lastMileZar(exitRec, usdToZar, pax) : 0;
@@ -2157,7 +2306,8 @@ function buildTransferOptions(
 
   const exitOptions = exitLastMileFor(originLodge ?? '', fromSlug);
   const exitRec2    = exitOptions.find(l => l.recommended) ?? exitOptions[0] ?? null;
-  const originHub   = originHubAirport(originLodge ?? '', fromSlug);
+  // VFA override: transfers.ts returns MQP for VFA lodges (wrong — VFA airport is the hub)
+  const originHub   = fromSlug === 'chobe-vic-falls' ? 'VFA' : originHubAirport(originLodge ?? '', fromSlug);
   // ── Carriers serving a commercial hub-to-hub leg, Fastjet prioritised on its network ──
   const carriersForRoute = (oHub: string, dHub: string): Array<{code:string;name:string;adjust:number}> => {
     const key = `${oHub}-${dHub}`;
@@ -2226,6 +2376,23 @@ function buildTransferOptions(
     ? (FEDAIR_BUSH[`${destHubR}-${LODGE_TO_AIRSTRIP[destLodge] ?? ''}`]?.dep ?? FEDAIR_GENERIC_DEP[destHubR] ?? null)
     : (FEDAIR_GENERIC_DEP[destHubR] ?? null);
 
+  // GUARDRAIL: if the hub-to-hub route requires a JNB connection, build a proper
+  // multi-leg structured option instead of falling through to a generic text description.
+  const routeRequiresJNB = VIA_JNB_REQUIRED.has(`${originHub}-${destHubR}`);
+
+  if (routeRequiresJNB) {
+    const viaOpt = buildViaJNBOption(fromSlug, toSlug, originHub, exitRec2, arrRec, pax ?? 2);
+    if (viaOpt) return [viaOpt];
+    // No structured handler — fall through to INTERNAL_LEGS text description
+    const fallback = getInternalLeg(fromSlug, toSlug);
+    if (!fallback) return [];
+    return [{ id:'via-jnb-fallback', mode:'combo' as TransferOption['mode'], icon:'✈',
+      label:fallback.provider, provider:fallback.provider,
+      duration:fallback.duration, estimatedCostZAR:fallback.estimatedCostZAR,
+      badges:[{text:'✦ Overnight JNB required',color:'rgba(96,165,250,0.85)'},{text:'Est.',color:'rgba(255,255,255,0.3)'}],
+      aiNote:fallback.aiNote, recommended:true }];
+  }
+
   if (needCommR && carriersR.length > 0) {
     const destHub  = destHubR;
     const routeKey = `${originHub}-${destHub}`;
@@ -2279,11 +2446,12 @@ function buildTransferOptions(
     if (LOWVELD.includes(destHub)) {
       for (const ah of LOWVELD.filter(h => h !== destHub)) {
         // GUARDRAIL: only generate alternative if a real schedule exists for this hub.
-        // Prevents phantom VFA→HDS and VFA→SZK options (no Airlink flights on those routes).
+        // Prevents phantom VFA→HDS, VFA→SZK, and any via-JNB single-hop options.
         const altSchedKey = `4Z-${originHub}-${ah}`;
         const altFnSchedKey = `FN-${originHub}-${ah}`;
         const hasAltSched = !!(SCHED[altSchedKey] || SCHED[altFnSchedKey]);
-        if (!hasAltSched) continue; // ← drops VFA→HDS, VFA→SZK silently
+        const altNeedsJNB = VIA_JNB_REQUIRED.has(`${originHub}-${ah}`);
+        if (!hasAltSched || altNeedsJNB) continue; // drops phantom routes silently
         const altKey    = `${originHub}-${ah}`;
         const altMeta   = commercialMetaByRoute?.[altKey];
         const altFare   = commercialFareZarByRoute?.[altKey] ?? (COMMERCIAL_FALLBACK_ZAR[ah] ?? 4000);
@@ -3820,8 +3988,14 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [itinerary?.cities, cityStays, checkinDate, adults, children, hotelsByMargin]);
 
-  const grandTotal = useMemo(() => {
-    if (!itinerary?.cities || cityStays.length===0) return 0;
+  // ── Cost breakdown — source of truth for bottom bar + deposit calculation ───
+  // Separated so the bottom bar can show lodge vs flight+transfer split cleanly.
+  // Rule: ALL inter-region transfers + city transfers settled immediately (100%).
+  //       Lodge + activity costs use the configured deposit percentage (30%).
+  const costBreakdown = useMemo(() => {
+    if (!itinerary?.cities || cityStays.length === 0)
+      return { lodgeCost:0, transferCost:0, cityXferCost:0, activityCost:0 };
+
     const lodgeCost = itinerary.cities.reduce((sum, city, i) => {
       const stay = cityStays[i]; if (!stay) return sum;
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
@@ -3832,6 +4006,9 @@ useEffect(() => {
       const extra = Object.values(resolved).reduce((s:number,v:any)=>s+(v?.extra??0),0);
       return sum + Math.round((hotel.netRate*stay.nights+extra)*M.hotels);
     }, 0);
+
+    // ALL inter-region transfer costs — regardless of mode (commercial/charter/road).
+    // Every leg between regions is settled upfront.
     const transferCost = itinerary.cities.reduce((sum, city, i) => {
       if (i >= itinerary.cities.length - 1) return sum;
       const nextCity = itinerary.cities[i + 1];
@@ -3848,16 +4025,19 @@ useEffect(() => {
       const usdRate = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
       const options = buildTransferOptions(fromSlug, toSlug, destHotel?.name, Math.max(adults + children, 1), usdRate, transferFares, transferMeta, originHotel?.name);
       if (!options.length) return sum;
-      const selId   = selectedTransferIds[legKey];
-      const chosen  = selId ? options.find(o => o.id === selId) : options.find(o => o.recommended) ?? options[0];
+      const selId  = selectedTransferIds[legKey];
+      const chosen = selId ? options.find(o => o.id === selId) : options.find(o => o.recommended) ?? options[0];
       return sum + (chosen?.estimatedCostZAR ?? 0);
     }, 0);
+
     const activityCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
       const sel = selectedActivities[slug] ?? [];
       const pax = Math.max(adults + children, 1);
       return sum + activities.filter(a => sel.includes(String(a.id))).reduce((s, a) => s + Math.round(a.netRate * M.activities) * pax, 0);
     }, 0);
+
+    // City arrival/departure transfers (VFA road, CPT road etc) — also settled immediately
     const cityXferCost = itinerary.cities.reduce((sum, city) => {
       const slug = CITY_TO_SLUG[city.city.toLowerCase().trim()] ?? '';
       if (!CITY_TYPE_SLUGS.has(slug)) return sum;
@@ -3867,13 +4047,38 @@ useEffect(() => {
       const chosen = selId ? opts.find(o => o.id === selId) : opts.find(o => o.recommended) ?? opts[0];
       return sum + (chosen?.estimatedCostZAR ?? 0);
     }, 0);
-    // [V7.1] International flights — Duffel offer price is in USD; grandTotal is ZAR.
+
+    return { lodgeCost, transferCost, cityXferCost, activityCost };
+  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds,
+      selectedActivities, cityTransferIds, adults, children, activities, transferFares]);
+
+  const grandTotal = useMemo(() => {
+    const { lodgeCost, transferCost, cityXferCost, activityCost } = costBreakdown;
     const USD_ZAR = CURRENCIES.find(c => c.code === 'USD')?.rate ?? 18.62;
-    const flightCostZAR = selectedFlightOffer
+    const intlFlightZAR = selectedFlightOffer
       ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
       : 0;
-    return lodgeCost + transferCost + activityCost + cityXferCost + flightCostZAR;
-  }, [itinerary?.cities, cityStays, hotelsByMargin, M.hotels, selectedTransferIds, selectedActivities, cityTransferIds, selectedFlightOffer, flightAncillaryTotal, adults, children, activities, transferFares]);
+    return lodgeCost + transferCost + activityCost + cityXferCost + intlFlightZAR;
+  }, [costBreakdown, selectedFlightOffer, flightAncillaryTotal, adults, children]);
+
+  // ── Scroll-reveal for KB columns ──────────────────────────────────────────
+  const kbRevealRefs = React.useRef<Map<string,HTMLDivElement>>(new Map());
+  React.useEffect(() => {
+    const observers: IntersectionObserver[] = [];
+    kbRevealRefs.current.forEach((el) => {
+      if (!el) return;
+      const obs = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) {
+          // Add kb-vis to any elements carrying the kb-col-* classes inside the chapter
+          el.querySelectorAll('.kb-col-left, .kb-col-right').forEach(d => d.classList.add('kb-vis'));
+          obs.disconnect();
+        }
+      }, { threshold: 0.12 });
+      obs.observe(el);
+      observers.push(obs);
+    });
+    return () => observers.forEach(o => o.disconnect());
+  }, [itinerary?.cities]);
 
   // [V7-4] Route reversal — uses real INTERNAL_LEGS transfer costs. Fires after itinerary builds.
   const routeReversalResult = useMemo(() => {
@@ -4139,7 +4344,15 @@ const runBriefPlanner = (briefText: string) => {
         const extra = Object.values(resolved).reduce((s:number,v:any)=>s+(v?.extra??0),0);
         return { pillar:'hotel', name:hotel.name, location:hotel.location, nights:stay.nights, net_rate_zar:hotel.netRate*stay.nights+extra, display_rate_zar:Math.round((hotel.netRate*stay.nights+extra)*M.hotels), margin_pct:15, inclusion_source:'contract' as const };
       }).filter(Boolean) as BookingComponent[];
-      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:checkinDate, check_out:addDays(checkinDate,nights), total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), budget_zar:budget, components, input_mode:inputMode };
+      // Deposit = flights+transfers 100% + lodges 30% (per V7-5 spec)
+      const _bd = costBreakdown;
+      const _USD = CURRENCIES.find(cur => cur.code === 'USD')?.rate ?? 18.62;
+      const _intl = selectedFlightOffer
+        ? Math.round((selectedFlightOffer.display_price * (adults+children) + flightAncillaryTotal) * _USD) : 0;
+      const _transfersTotal = _bd.transferCost + _bd.cityXferCost + _intl;
+      const _lodgesTotal    = _bd.lodgeCost + _bd.activityCost;
+      const depositZar = _transfersTotal + Math.round(_lodgesTotal * (edition.payment.depositPercent/100));
+      const booking: BookingIntent = { edition_id:edition.id, idempotency_key:checkoutKey, state:'quote', title:itinerary.title, adults, children_count:children, nights, check_in:checkinDate, check_out:addDays(checkinDate,nights), total_display_zar:grandTotal, total_net_zar:Math.round(grandTotal/M.hotels), deposit_zar:depositZar, budget_zar:budget, components, input_mode:inputMode };
       const res  = await fetch('/api/itinerary', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(booking) });
       const data = await res.json();
       if (data.success&&data.id) { track('checkout_started',edition.id,{bookingId:data.id,grandTotal}); window.location.href=`/checkout?id=${data.id}`; }
@@ -4161,6 +4374,13 @@ const runBriefPlanner = (briefText: string) => {
   return (
     <>
       <style suppressHydrationWarning>{GLOBAL_CSS}</style>
+      <style>{`
+        @keyframes kbFadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        .kb-col-left  { opacity:0; transition:none; }
+        .kb-col-right { opacity:0; transition:none; }
+        .kb-col-left.kb-vis  { animation: kbFadeUp 0.75s ease forwards; }
+        .kb-col-right.kb-vis { animation: kbFadeUp 0.75s ease forwards 0.5s; }
+      `}</style>
 
       {showValidation && <ValidationModal issues={validationIssues} onProceed={doCheckout} onBack={()=>setShowValidation(false)} />}
 
@@ -5033,6 +5253,7 @@ const runBriefPlanner = (briefText: string) => {
               })();
 
               return (
+                <div ref={(el: HTMLDivElement | null) => { if (el) kbRevealRefs.current.set(slug+'-'+cityIdx, el as HTMLDivElement); else kbRevealRefs.current.delete(slug+'-'+cityIdx); }}>
                 <RegionChapter
                   key={cityIdx}
                   chapterIndex={cityIdx}
@@ -5148,6 +5369,7 @@ const runBriefPlanner = (briefText: string) => {
                     );
                   })()}
                 </RegionChapter>
+                </div>
               );
             })}
 
@@ -5206,34 +5428,59 @@ const runBriefPlanner = (briefText: string) => {
             <div style={{ maxWidth:680, margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
               {/* Left: breakdown — inline, same row as total */}
               {(() => {
+                const { lodgeCost, transferCost, cityXferCost, activityCost } = costBreakdown;
                 const USD_ZAR = CURRENCIES.find((c:any) => c.code === 'USD')?.rate ?? 18.62;
+                // International flights (Duffel)
                 const intlFlightZAR = selectedFlightOffer
                   ? Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * USD_ZAR)
                   : 0;
-                const lodgesAndRest = grandTotal - intlFlightZAR;
-                const hasFlights    = intlFlightZAR > 0;
-                const nights        = itinerary.cities.reduce((s:number,c:any)=>s+c.nights,0);
+                // ALL transfers settled immediately (100%) — inter-region + city transfers
+                const allTransferZAR = transferCost + cityXferCost;
+                // Total in ✈ Flights & Transfers column
+                const flightsAndTransfersTotal = intlFlightZAR + allTransferZAR;
+                // Lodge & activities column (subject to 30% deposit)
+                const lodgesOnly = lodgeCost + activityCost;
+                const hasFlightsOrTransfers = flightsAndTransfersTotal > 0;
+                // Deposit = 100% of all flights+transfers + 30% of lodges
+                const depositPct = edition.payment.depositPercent / 100;
+                const depositAmount = flightsAndTransfersTotal + Math.round(lodgesOnly * depositPct);
+                const nights = itinerary.cities.reduce((s:number,c:any)=>s+c.nights,0);
                 return (
                   <>
                     {grandTotal > 0 && (
                       <div style={{ display:'flex', gap:20, alignItems:'flex-end' }}>
+                        {/* Column 1: Lodges */}
                         <div>
-                          <div style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:2 }}>Lodges & transfers</div>
-                          <div style={{ fontSize:13, color:'rgba(245,240,232,0.78)', fontWeight:400 }}>{fmt(lodgesAndRest)}</div>
+                          <div style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:2 }}>Lodges</div>
+                          <div style={{ fontSize:13, color:'rgba(245,240,232,0.78)', fontWeight:400 }}>{fmt(lodgesOnly)}</div>
                         </div>
+                        {/* Column 2: Flights & Transfers — settled immediately */}
                         <div>
                           <div style={{ display:'flex', alignItems:'center', gap:4, marginBottom:2 }}>
-                            <span style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em' }}>✈ Flights</span>
-                            {hasFlights && <span style={{ fontSize:7, background:'rgba(212,175,55,0.12)', color:T.gold, border:'0.5px solid rgba(212,175,55,0.35)', borderRadius:3, padding:'1px 4px', letterSpacing:'0.08em', fontWeight:700 }}>PAID IN FULL</span>}
+                            <span style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em' }}>✈ Flights & Transfers</span>
+                            {hasFlightsOrTransfers && (
+                              <span style={{ fontSize:7, background:'rgba(212,175,55,0.12)', color:T.gold, border:'0.5px solid rgba(212,175,55,0.35)', borderRadius:3, padding:'1px 4px', letterSpacing:'0.08em', fontWeight:700 }}>SETTLED IN FULL</span>
+                            )}
                           </div>
-                          <div style={{ fontSize:13, color: hasFlights ? T.gold : 'rgba(245,240,232,0.28)', fontWeight:400 }}>
-                            {hasFlights ? fmt(intlFlightZAR) : <span style={{ fontSize:11 }}>Add flights</span>}
+                          <div style={{ fontSize:13, color: hasFlightsOrTransfers ? T.gold : 'rgba(245,240,232,0.28)', fontWeight:400 }}>
+                            {hasFlightsOrTransfers
+                              ? fmt(flightsAndTransfersTotal)
+                              : <span style={{ fontSize:11 }}>Add international flights</span>
+                            }
                           </div>
                         </div>
+                        {/* Divider */}
                         <div style={{ width:'0.5px', height:28, background:'rgba(255,255,255,0.08)', alignSelf:'center' }} />
+                        {/* Column 3: Total + deposit note */}
                         <div>
                           <div style={{ fontSize:8, color:'rgba(245,240,232,0.38)', textTransform:'uppercase' as const, letterSpacing:'0.12em', marginBottom:2 }}>Total · {nights}n · {adults+children} guests</div>
                           <div style={{ fontSize:22, fontWeight:700, color:T.gold, fontFamily:"'Cormorant Garamond',serif", lineHeight:1 }}>{fmt(grandTotal || itinerary.totalEstimate)}</div>
+                          {depositAmount > 0 && depositAmount < grandTotal && (
+                            <div style={{ fontSize:9, color:T.textDim, marginTop:2 }}>
+                              Pay today: <span style={{ color:T.gold, fontWeight:600 }}>{fmt(depositAmount)}</span>
+                              <span style={{ opacity:0.5 }}> · balance 30 days before travel</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
