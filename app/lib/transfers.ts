@@ -15,6 +15,7 @@
 // Fares marked indicative — confirmed by specialist / Duffel at booking.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { filterValidCombinations, PHANTOM_ROUTES, ROUTES_TO_REMOVE } from './transferGuardrails';
 export type AirportCode =
   | 'CPT'   // Cape Town International
   | 'JNB'   // O.R. Tambo, Johannesburg (FedAir terminal: Atlas Rd entrance)
