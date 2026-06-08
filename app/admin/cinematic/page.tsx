@@ -1,352 +1,666 @@
 'use client';
+/**
+ * app/admin/cinematic/page.tsx
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Manages the single video that plays on the Journey Loading Screen —
+ * the 13-second cinematic shown after "Validate & Pay".
+ *
+ * Region key in cinematic_videos: 'journey-loading'
+ *
+ * ALSO UPDATE in JourneyLoadingScreen.tsx — change the Supabase fetch
+ * from looking for `${primaryRegion}-journey` to also fall back to
+ * 'journey-loading'. Simplest patch in that file:
+ *
+ *   const { data } = await sb
+ *     .from('cinematic_videos')
+ *     .select('region, url')
+ *     .in('region', [`${primaryRegion}-journey`, 'journey-loading']);
+ *   const videoRow = data?.find(r => r.region === `${primaryRegion}-journey`)
+ *                 ?? data?.find(r => r.region === 'journey-loading');
+ *   setVideoUrl(videoRow?.url ?? null);
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 
-// CinematicVideoAdmin.tsx
-// Deploy to: app/admin/cinematic/page.tsx
-//
-// Uploads MP4 files directly to Cloudflare R2
-// Saves region→url mapping to Supabase table: cinematic_videos
-// SafariCinematicResearch.jsx reads from this table at runtime
-//
-// Supabase table (run once):
-// CREATE TABLE cinematic_videos (
-//   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-//   region text NOT NULL UNIQUE,
-//   url text NOT NULL,
-//   label text,
-//   updated_at timestamptz DEFAULT now()
-// );
-
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// ── Region key ────────────────────────────────────────────────────────────────
+const REGION_ID = 'journey-loading';
 
-const R2_ACCOUNT_ID  = '0e1c19cd5fe02f593ae2071caa30bc49';
-const R2_ACCESS_KEY  = '91c1255971f560cfbb69ee9362dbec6a';
-const R2_SECRET_KEY  = '9a2828d5a0e0fbac300e77a4bbb97a431566e7d08d595fb161981d2be130399f';
-const R2_BUCKET      = 'safari-edition-media';
-const R2_PUBLIC_BASE = 'https://pub-e9a9b8d329454195b19ec8971297583a.r2.dev';
-const R2_ENDPOINT    = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-
-const REGIONS = [
-  { id: 'hero',             label: 'Hero Background', country: 'Landing Page',  icon: '🎬', description: 'Full-screen background video on the homepage' },
-  { id: 'hero_circle',      label: 'Hero Circle',     country: 'Landing Page',  icon: '⭕', description: 'Circular wildlife video on the right side of the hero' },
-  { id: 'kruger-sabi-sand-journey', label: 'Sabi Sand — Journey',    country: 'Journey Loader', icon: '🐆', description: 'Background for Journey Loading Screen · Sabi Sand bookings' },
-  { id: 'okavango-delta-journey',   label: 'Okavango — Journey',     country: 'Journey Loader', icon: '🐘', description: 'Background for Journey Loading Screen · Okavango bookings' },
-  { id: 'chobe-vic-falls-journey',  label: 'Victoria Falls — Journey',country: 'Journey Loader', icon: '💧', description: 'Background for Journey Loading Screen · Vic Falls bookings' },
-  { id: 'cape-town-journey',        label: 'Cape Town — Journey',     country: 'Journey Loader', icon: '🏔', description: 'Background for Journey Loading Screen · Cape Town bookings' },
-  { id: 'madikwe-journey',          label: 'Madikwe — Journey',       country: 'Journey Loader', icon: '🦏', description: 'Background for Journey Loading Screen · Madikwe bookings' },
-  { id: 'kruger-sabi-sand', label: 'Sabi Sand',       country: 'South Africa',  icon: '🐆', description: 'Leopard territory · Private reserves' },
-  { id: 'okavango-delta',   label: 'Okavango Delta',  country: 'Botswana',      icon: '🐘', description: 'Aerial waterways · Elephant herds' },
-  { id: 'chobe-vic-falls',  label: 'Victoria Falls',  country: 'Zimbabwe',      icon: '💧', description: 'The smoke that thunders' },
-  { id: 'cape-town',        label: 'Cape Town',        country: 'South Africa', icon: '🏔', description: 'Table Mountain · City panorama' },
-  { id: 'madikwe',          label: 'Madikwe',          country: 'South Africa', icon: '🦏', description: 'Koppie · Elephant · Malaria-free' },
-];
-
-// ── AWS Signature V4 for browser
-async function sha256(data: ArrayBuffer | string): Promise<string> {
-  const buf = typeof data === 'string' ? new TextEncoder().encode(data).buffer : data;
-  const hash = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-async function hmac(key: ArrayBuffer | string, msg: string): Promise<ArrayBuffer> {
-  const k = typeof key === 'string' ? new TextEncoder().encode(key) : key;
-  const ck = await crypto.subtle.importKey('raw', k, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
-  return crypto.subtle.sign('HMAC', ck, new TextEncoder().encode(msg));
-}
-
-async function uploadToR2(file: File, key: string, onProgress: (p: number) => void): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const now    = new Date();
-  const amzDate   = now.toISOString().replace(/[:\-]|\.\d{3}/g,'').slice(0,15) + 'Z';
-  const dateStamp = amzDate.slice(0,8);
-  const host      = `${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-  const bodyHash  = await sha256(buffer);
-
-  const headers: Record<string,string> = {
-    'host':                  host,
-    'x-amz-date':            amzDate,
-    'x-amz-content-sha256':  bodyHash,
-    'content-type':          'video/mp4',
-    'cache-control':         'public, max-age=31536000',
-  };
-
-  const signedKeys  = Object.keys(headers).sort();
-  const canonHdrs   = signedKeys.map(k => `${k}:${headers[k]}\n`).join('');
-  const signedHdrs  = signedKeys.join(';');
-  const encodedKey  = key.split('/').map(encodeURIComponent).join('/');
-
-  const canonReq = ['PUT', `/${R2_BUCKET}/${encodedKey}`, '', canonHdrs, signedHdrs, bodyHash].join('\n');
-  const scope    = `${dateStamp}/auto/s3/aws4_request`;
-  const sts      = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256(new TextEncoder().encode(canonReq).buffer)].join('\n');
-
-  const kDate    = await hmac(`AWS4${R2_SECRET_KEY}`, dateStamp);
-  const kRegion  = await hmac(kDate, 'auto');
-  const kService = await hmac(kRegion, 's3');
-  const kSign    = await hmac(kService, 'aws4_request');
-  const sigHex   = Array.from(new Uint8Array(await hmac(kSign, sts))).map(b=>b.toString(16).padStart(2,'0')).join('');
-
-  const auth = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${scope}, SignedHeaders=${signedHdrs}, Signature=${sigHex}`;
-
-  onProgress(30);
-
-  const res = await fetch(`${R2_ENDPOINT}/${R2_BUCKET}/${encodedKey}`, {
-    method: 'PUT',
-    headers: {
-      'x-amz-date':           amzDate,
-      'x-amz-content-sha256': bodyHash,
-      'content-type':         'video/mp4',
-      'cache-control':        'public, max-age=31536000',
-      'Authorization':        auth,
-    },
-    body: buffer,
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`R2 upload failed: ${res.status} — ${txt.slice(0,200)}`);
-  }
-
-  onProgress(90);
-  return `${R2_PUBLIC_BASE}/${key}`;
-}
-
-type RegionState = {
-  file:     File | null;
-  url:      string;
-  status:   'idle' | 'uploading' | 'done' | 'error';
-  progress: number;
-  error:    string;
-  existing: string;
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const T = {
+  bg:          '#07080f',
+  bg2:         '#0d0e1a',
+  surface:     '#12142a',
+  surface2:    '#1a1c35',
+  gold:        '#d4af37',
+  goldDim:     'rgba(212,175,55,0.10)',
+  goldMid:     'rgba(212,175,55,0.28)',
+  borderGold:  'rgba(212,175,55,0.30)',
+  text:        '#f5f0e8',
+  textMid:     'rgba(245,240,232,0.55)',
+  textDim:     'rgba(245,240,232,0.30)',
+  border:      'rgba(255,255,255,0.07)',
+  green:       '#4ade80',
+  greenDim:    'rgba(74,222,128,0.10)',
+  red:         '#f87171',
+  redDim:      'rgba(248,113,113,0.10)',
+  amber:       '#fbbf24',
+  amberDim:    'rgba(251,191,36,0.10)',
 };
 
-export default function CinematicVideoAdmin() {
-  const [regions, setRegions] = useState<Record<string, RegionState>>(
-    Object.fromEntries(REGIONS.map(r => [r.id, { file:null, url:'', status:'idle', progress:0, error:'', existing:'' }]))
+// ── Supabase ──────────────────────────────────────────────────────────────────
+const sb = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);
+
+// ── Helper: pill badge ────────────────────────────────────────────────────────
+function Pill({ children, color, bg }: { children: React.ReactNode; color: string; bg: string }) {
+  return (
+    <span style={{
+      display:       'inline-flex',
+      alignItems:    'center',
+      gap:           5,
+      padding:       '3px 10px',
+      borderRadius:  99,
+      background:    bg,
+      color,
+      fontSize:      10,
+      fontWeight:    600,
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase' as const,
+    }}>
+      {children}
+    </span>
   );
-  const [saving, setSaving] = useState<string | null>(null);
-  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+}
 
-  const update = (id: string, patch: Partial<RegionState>) =>
-    setRegions(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
-
-  const handleFile = (id: string, file: File | null) => {
-    if (!file) return;
-    if (!file.type.startsWith('video/')) { update(id, { error:'Must be a video file (MP4)' }); return; }
-    if (file.size > 150 * 1024 * 1024)  { update(id, { error:'Max file size is 150MB' }); return; }
-    update(id, { file, error:'', status:'idle', url:'' });
-  };
-
-  const handleUpload = async (regionId: string) => {
-    const state = regions[regionId];
-    if (!state.file) return;
-    update(regionId, { status:'uploading', progress:10, error:'' });
-
-    try {
-      const key = `cinematic/${regionId}.mp4`;
-      const url = await uploadToR2(state.file, key, p => update(regionId, { progress: p }));
-
-      // Save to Supabase
-      const { error } = await supabase
-        .from('cinematic_videos')
-        .upsert({ region: regionId, url, label: REGIONS.find(r=>r.id===regionId)?.label }, { onConflict: 'region' });
-
-      if (error) throw new Error(error.message);
-
-      update(regionId, { status:'done', progress:100, url, existing: url });
-    } catch (e: any) {
-      update(regionId, { status:'error', error: e.message, progress:0 });
-    }
-  };
-
+// ── Spec row ──────────────────────────────────────────────────────────────────
+function SpecRow({ label, value, good }: { label: string; value: string; good?: boolean }) {
   return (
     <div style={{
-      minHeight:'100vh', background:'#0a0800',
-      fontFamily:"'Jost',sans-serif", padding:'48px 40px',
+      display:       'flex',
+      justifyContent:'space-between',
+      alignItems:    'center',
+      padding:       '10px 0',
+      borderBottom:  `0.5px solid ${T.border}`,
     }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Jost:wght@200;300;400;500&display=swap');
-        *{box-sizing:border-box;}
-        .cv-card{
-          background:#111008; border:1px solid rgba(200,169,110,0.12);
-          border-radius:14px; padding:24px 28px;
-          display:grid; grid-template-columns:1fr auto;
-          gap:20px; align-items:start;
-          transition:border-color 0.2s;
-          margin-bottom:16px;
-        }
-        .cv-card:hover{border-color:rgba(200,169,110,0.25);}
-        .cv-card.done{border-color:rgba(74,222,128,0.25);}
-        .cv-card.uploading{border-color:rgba(200,169,110,0.4);}
-        .cv-card.error{border-color:rgba(248,113,113,0.35);}
-        .cv-drop{
-          border:1.5px dashed rgba(200,169,110,0.2);
-          border-radius:8px; padding:18px 20px;
-          text-align:center; cursor:pointer;
-          transition:all 0.2s; margin-top:12px;
-          background:rgba(200,169,110,0.02);
-        }
-        .cv-drop:hover{border-color:rgba(200,169,110,0.5);background:rgba(200,169,110,0.05);}
-        .cv-drop.has-file{border-color:rgba(200,169,110,0.45);background:rgba(200,169,110,0.06);}
-        .cv-btn{
-          display:inline-flex;align-items:center;justify-content:center;gap:8px;
-          padding:10px 22px;border:1px solid rgba(200,169,110,0.8);border-radius:6px;
-          color:rgba(200,169,110,0.9);background:transparent;cursor:pointer;
-          font-family:'Jost',sans-serif;font-size:10px;font-weight:400;
-          letter-spacing:0.2em;text-transform:uppercase;
-          transition:all 0.2s;white-space:nowrap;
-        }
-        .cv-btn:hover{background:rgba(200,169,110,0.1);}
-        .cv-btn:disabled{opacity:0.35;cursor:not-allowed;}
-        .cv-btn.primary{background:rgba(200,169,110,0.9);color:#0a0800;border-color:transparent;}
-        .cv-btn.primary:hover{background:rgba(200,169,110,1);}
-        .cv-prog{height:2px;background:rgba(255,255,255,0.06);border-radius:1px;margin-top:10px;overflow:hidden;}
-        .cv-prog-fill{height:100%;background:rgba(200,169,110,0.8);border-radius:1px;transition:width 0.3s ease;}
-      `}</style>
+      <span style={{ fontSize: 12, color: T.textDim, letterSpacing: '0.04em' }}>{label}</span>
+      <span style={{
+        fontSize:   12,
+        color:      good === undefined ? T.textMid : good ? T.green : T.red,
+        fontWeight: 500,
+      }}>{value}</span>
+    </div>
+  );
+}
 
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:40 }}>
-        <div style={{ width:16,height:16,border:'1.5px solid rgba(200,169,110,0.8)',transform:'rotate(45deg)',position:'relative',flexShrink:0 }}>
-          <div style={{ position:'absolute',inset:3,background:'rgba(200,169,110,0.8)' }}/>
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function CinematicAdminPage() {
+  const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
+  const [loading,       setLoading]       = useState(true);
+  const [uploadStatus,  setUploadStatus]  = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
+  const [uploadProgress,setUploadProgress]= useState(0);
+  const [error,         setError]         = useState('');
+  const [slow,          setSlow]          = useState(false);
+  const [removing,      setRemoving]      = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // ── Load existing video ──────────────────────────────────────────────────
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data } = await sb
+          .from('cinematic_videos')
+          .select('url')
+          .eq('region', REGION_ID)
+          .maybeSingle();
+        if (data?.url) setVideoUrl(data.url);
+      } catch { /* no row — leave null */ }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  // ── Speed toggle ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = slow ? 0.5 : 1.0;
+  }, [slow, videoUrl]);
+
+  // ── Upload handler ───────────────────────────────────────────────────────
+  const handleFile = useCallback(async (file: File) => {
+    const valid = ['video/mp4', 'video/quicktime', 'video/mov'];
+    if (!valid.includes(file.type)) {
+      setError('MP4 or MOV files only'); return;
+    }
+    if (file.size > 500 * 1024 * 1024) {
+      setError('Max file size is 500 MB'); return;
+    }
+
+    setUploadStatus('uploading');
+    setUploadProgress(0);
+    setError('');
+
+    try {
+      const ts  = Date.now();
+      const ext = file.name.split('.').pop() ?? 'mp4';
+      const key = `cinematic/${REGION_ID}/${ts}.${ext}`;
+
+      // Step 1 — get R2 presigned URL
+      const presignRes = await fetch(`/api/r2-presign?key=${encodeURIComponent(key)}`);
+      if (!presignRes.ok) throw new Error('Could not get upload URL — check R2 config');
+      const { uploadUrl, publicUrl } = await presignRes.json() as { uploadUrl: string; publicUrl: string };
+
+      // Step 2 — upload directly to R2 (XHR for progress tracking)
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 90));
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`R2 upload failed: ${xhr.status}`));
+        };
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.open('PUT', uploadUrl);
+        xhr.setRequestHeader('Content-Type', file.type);
+        xhr.send(file);
+      });
+
+      setUploadProgress(95);
+
+      // Step 3 — upsert to Supabase
+      const { error: sbErr } = await sb
+        .from('cinematic_videos')
+        .upsert({ region: REGION_ID, url: publicUrl }, { onConflict: 'region' });
+      if (sbErr) throw new Error(sbErr.message);
+
+      setUploadProgress(100);
+      setVideoUrl(publicUrl);
+      setUploadStatus('done');
+      setTimeout(() => { setUploadStatus('idle'); setUploadProgress(0); }, 3_500);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Upload failed');
+      setUploadStatus('error');
+    }
+  }, []);
+
+  // ── Drag & drop ──────────────────────────────────────────────────────────
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  // ── Remove handler ───────────────────────────────────────────────────────
+  const handleRemove = async () => {
+    if (!confirmRemove) { setConfirmRemove(true); return; }
+    setRemoving(true);
+    await sb.from('cinematic_videos').delete().eq('region', REGION_ID);
+    setVideoUrl(null);
+    setRemoving(false);
+    setConfirmRemove(false);
+    setUploadStatus('idle');
+  };
+
+  // ── File input ref click ─────────────────────────────────────────────────
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <div style={{
+      minHeight:  '100vh',
+      background: T.bg,
+      padding:    '52px 48px 80px',
+      fontFamily: '"DM Sans", "Inter", sans-serif',
+    }}>
+      {/* ── Page header ── */}
+      <div style={{ marginBottom: 52 }}>
+        {/* Eyebrow */}
+        <div style={{
+          fontSize:      11,
+          letterSpacing: '0.22em',
+          textTransform: 'uppercase' as const,
+          color:         T.gold,
+          marginBottom:  16,
+          fontWeight:    500,
+        }}>
+          ✦ &nbsp;Admin · Cinematic Media
         </div>
-        <div>
-          <h1 style={{ fontFamily:"'Cormorant Garamond',serif",fontWeight:300,fontSize:28,color:'#fff',margin:0 }}>
-            Cinematic <span style={{ color:'rgba(200,169,110,0.9)',fontStyle:'italic' }}>Video Manager</span>
-          </h1>
-          <p style={{ margin:'4px 0 0',fontSize:10,letterSpacing:'0.35em',textTransform:'uppercase',color:'rgba(255,255,255,0.3)' }}>
-            Upload one MP4 per region · Max 150MB · Served from Cloudflare R2
-          </p>
-        </div>
+
+        {/* Main title */}
+        <h1 style={{
+          fontFamily:  '"Cormorant Garamond", "Cormorant", Georgia, serif',
+          fontSize:    52,
+          fontWeight:  300,
+          color:       T.text,
+          margin:      0,
+          lineHeight:  1.05,
+          letterSpacing: '-0.01em',
+        }}>
+          You're going on Safari
+        </h1>
+
+        {/* Subtitle */}
+        <p style={{
+          fontSize:   14,
+          color:      T.textMid,
+          lineHeight: 1.7,
+          maxWidth:   560,
+          marginTop:  16,
+          marginBottom: 0,
+        }}>
+          This video plays full-screen for 13 seconds after a traveller clicks
+          "Validate &amp; Pay" — while their itinerary is being confirmed.
+          Upload one cinematic clip. The component plays it at 0.75× speed
+          automatically, so normal footage looks cinematic without extra editing.
+        </p>
       </div>
 
-      <p style={{ fontSize:12,color:'rgba(255,255,255,0.35)',lineHeight:1.7,marginBottom:36,maxWidth:600,fontWeight:300 }}>
-        These videos play on the cinematic loading screen between the Socratic flow and the itinerary builder.
-        Each clip should be <strong style={{color:'rgba(200,169,110,0.7)',fontWeight:400}}>8–12 seconds</strong>, landscape, no audio needed. 
-        Upload the best 8-second window of a region-specific video — trim before uploading.
-      </p>
-
-      {REGIONS.map(region => {
-        const state = regions[region.id];
-        const cardClass = `cv-card ${state.status !== 'idle' ? state.status : state.existing ? 'done' : ''}`;
-
-        return (
-          <div key={region.id} className={cardClass}>
+      {/* ── Two-column layout ── */}
+      <div style={{
+        display:   'grid',
+        gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
+        gap:       36,
+        alignItems: 'start',
+      }}>
+        {/* ── Left: video card ── */}
+        <div>
+          {loading ? (
+            <div style={{
+              height:       360,
+              background:   T.surface,
+              borderRadius: 14,
+              display:      'flex',
+              alignItems:   'center',
+              justifyContent: 'center',
+              color:        T.textDim,
+              fontSize:     13,
+            }}>
+              Loading…
+            </div>
+          ) : videoUrl ? (
+            /* ── Preview state ── */
             <div>
-              {/* Region header */}
-              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:4 }}>
-                <span style={{ fontSize:22 }}>{region.icon}</span>
-                <div>
-                  <div style={{ fontFamily:"'Cormorant Garamond',serif",fontWeight:300,fontSize:22,color:'#fff',lineHeight:1 }}>
-                    {region.label}
-                  </div>
-                  <div style={{ fontSize:10,letterSpacing:'0.3em',textTransform:'uppercase',color:'rgba(200,169,110,0.7)',marginTop:2 }}>
-                    {region.country}
-                  </div>
-                </div>
-                {(state.status === 'done' || state.existing) && (
-                  <div style={{ marginLeft:'auto',fontSize:10,color:'#4ade80',letterSpacing:'0.15em',textTransform:'uppercase',display:'flex',alignItems:'center',gap:5 }}>
-                    <div style={{width:6,height:6,borderRadius:'50%',background:'#4ade80'}}/>
-                    Uploaded
-                  </div>
-                )}
-              </div>
-              <p style={{ fontSize:11,color:'rgba(255,255,255,0.3)',margin:'0 0 0 34px',fontStyle:'italic' }}>
-                {region.description}
-              </p>
-
-              {/* Current URL if exists */}
-              {state.existing && (
-                <div style={{ margin:'10px 0 0 34px',fontSize:10,color:'rgba(255,255,255,0.25)',fontFamily:'monospace',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'90%' }}>
-                  {state.existing}
-                </div>
-              )}
-
-              {/* Drop zone */}
-              <div
-                className={`cv-drop ${state.file ? 'has-file' : ''}`}
-                style={{ marginLeft:34 }}
-                onClick={() => fileRefs.current[region.id]?.click()}
-                onDragOver={e => { e.preventDefault(); }}
-                onDrop={e => { e.preventDefault(); handleFile(region.id, e.dataTransfer.files[0]||null); }}
-              >
-                <input
-                  ref={el => { fileRefs.current[region.id] = el; }}
-                  type="file" accept="video/mp4,video/*"
-                  style={{ display:'none' }}
-                  onChange={e => handleFile(region.id, e.target.files?.[0]||null)}
+              {/* Video preview */}
+              <div style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+                <video
+                  ref={videoRef}
+                  key={videoUrl}
+                  src={videoUrl}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  onCanPlay={() => { if (videoRef.current) videoRef.current.playbackRate = slow ? 0.5 : 1.0; }}
+                  style={{
+                    width:     '100%',
+                    display:   'block',
+                    maxHeight: 420,
+                    objectFit: 'cover',
+                  }}
                 />
-                {state.file ? (
-                  <div>
-                    <div style={{ fontSize:12,color:'rgba(200,169,110,0.9)',fontWeight:400 }}>
-                      {state.file.name}
-                    </div>
-                    <div style={{ fontSize:10,color:'rgba(255,255,255,0.35)',marginTop:3 }}>
-                      {(state.file.size/1024/1024).toFixed(1)}MB · click to change
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ fontSize:11,color:'rgba(255,255,255,0.35)' }}>
-                      Drop MP4 here or <span style={{color:'rgba(200,169,110,0.7)'}}>click to browse</span>
-                    </div>
-                    <div style={{ fontSize:10,color:'rgba(255,255,255,0.2)',marginTop:4 }}>
-                      8–12 seconds · Max 150MB
-                    </div>
-                  </div>
-                )}
+                {/* Speed badge overlay */}
+                <div style={{
+                  position:   'absolute',
+                  top:        12,
+                  right:      12,
+                  background: 'rgba(8,8,24,0.75)',
+                  backdropFilter: 'blur(8px)',
+                  border:     `0.5px solid ${T.border}`,
+                  borderRadius: 8,
+                  padding:    '5px 10px',
+                  fontSize:   11,
+                  color:      T.textMid,
+                }}>
+                  {slow ? '½×' : '¾×'} preview
+                </div>
+
+                {/* Live badge */}
+                <div style={{
+                  position:   'absolute',
+                  top:        12,
+                  left:       12,
+                }}>
+                  <Pill color={T.green} bg={T.greenDim}>● Live</Pill>
+                </div>
               </div>
 
-              {/* Progress bar */}
-              {state.status === 'uploading' && (
-                <div className="cv-prog" style={{marginLeft:34}}>
-                  <div className="cv-prog-fill" style={{width:`${state.progress}%`}}/>
+              {/* Controls row */}
+              <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' as const }}>
+                {/* Replace */}
+                <label style={{
+                  display:       'inline-flex',
+                  alignItems:    'center',
+                  gap:           7,
+                  padding:       '9px 18px',
+                  background:    T.goldDim,
+                  border:        `0.5px solid ${T.borderGold}`,
+                  borderRadius:  8,
+                  color:         T.gold,
+                  fontSize:      12,
+                  fontWeight:    600,
+                  cursor:        uploadStatus === 'uploading' ? 'not-allowed' : 'pointer',
+                  opacity:       uploadStatus === 'uploading' ? 0.6 : 1,
+                  letterSpacing: '0.04em',
+                  transition:    'all 0.15s',
+                }}>
+                  ↑ Replace video
+                  <input
+                    type="file"
+                    accept="video/mp4,video/quicktime,video/mov"
+                    style={{ display: 'none' }}
+                    disabled={uploadStatus === 'uploading'}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+                  />
+                </label>
+
+                {/* Speed toggle */}
+                <button
+                  onClick={() => setSlow((s) => !s)}
+                  style={{
+                    display:    'inline-flex',
+                    alignItems: 'center',
+                    gap:        7,
+                    padding:    '9px 18px',
+                    background: slow ? T.goldDim : 'rgba(255,255,255,0.04)',
+                    border:     `0.5px solid ${slow ? T.borderGold : T.border}`,
+                    borderRadius: 8,
+                    color:      slow ? T.gold : T.textMid,
+                    fontSize:   12,
+                    fontWeight: 500,
+                    cursor:     'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {slow ? '← 1× Normal' : '½× Slow preview'}
+                </button>
+
+                {/* Remove */}
+                <button
+                  onClick={handleRemove}
+                  disabled={removing}
+                  style={{
+                    display:    'inline-flex',
+                    alignItems: 'center',
+                    gap:        7,
+                    padding:    '9px 18px',
+                    background: confirmRemove ? T.redDim : 'rgba(255,255,255,0.03)',
+                    border:     `0.5px solid ${confirmRemove ? 'rgba(248,113,113,0.4)' : T.border}`,
+                    borderRadius: 8,
+                    color:      confirmRemove ? T.red : T.textDim,
+                    fontSize:   12,
+                    fontWeight: 500,
+                    cursor:     removing ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s',
+                    marginLeft: 'auto',
+                  }}
+                >
+                  {removing ? 'Removing…' : confirmRemove ? '⚠ Confirm remove?' : 'Remove'}
+                </button>
+              </div>
+
+              {/* Upload progress bar */}
+              {uploadStatus === 'uploading' && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{
+                    height:       3,
+                    background:   'rgba(255,255,255,0.07)',
+                    borderRadius: 2,
+                    overflow:     'hidden',
+                  }}>
+                    <div style={{
+                      height:     '100%',
+                      width:      `${uploadProgress}%`,
+                      background: `linear-gradient(90deg, ${T.gold}88, ${T.gold})`,
+                      borderRadius: 2,
+                      transition: 'width 0.2s ease',
+                    }} />
+                  </div>
+                  <div style={{ marginTop: 7, fontSize: 11, color: T.amber }}>
+                    ⏳ Uploading to R2… {uploadProgress}%
+                  </div>
                 </div>
               )}
 
-              {/* Error */}
-              {state.error && (
-                <div style={{ marginLeft:34,marginTop:8,fontSize:11,color:'#f87171' }}>
-                  {state.error}
+              {/* Status messages */}
+              {uploadStatus === 'done' && (
+                <div style={{ marginTop: 10, fontSize: 12, color: T.green }}>
+                  ✓ New video is live — the loading screen will show it immediately.
+                </div>
+              )}
+              {uploadStatus === 'error' && error && (
+                <div style={{ marginTop: 10, fontSize: 12, color: T.red, lineHeight: 1.6 }}>
+                  ⚠ {error}
                 </div>
               )}
 
-              {/* Success URL */}
-              {state.status === 'done' && state.url && (
-                <div style={{ marginLeft:34,marginTop:8,fontSize:10,color:'#4ade80' }}>
-                  ✓ Live at: <span style={{fontFamily:'monospace',color:'rgba(255,255,255,0.4)'}}>{state.url}</span>
+              {/* URL (small) */}
+              <div style={{
+                marginTop:     12,
+                fontSize:      10,
+                color:         'rgba(245,240,232,0.18)',
+                overflow:      'hidden',
+                textOverflow:  'ellipsis',
+                whiteSpace:    'nowrap' as const,
+              }}>
+                {videoUrl}
+              </div>
+            </div>
+          ) : (
+            /* ── Empty / upload state ── */
+            <div>
+              <label
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+                style={{
+                  display:       'flex',
+                  flexDirection: 'column',
+                  alignItems:    'center',
+                  justifyContent:'center',
+                  gap:           16,
+                  height:        340,
+                  background:    T.surface,
+                  border:        `1.5px dashed ${T.goldMid}`,
+                  borderRadius:  14,
+                  cursor:        uploadStatus === 'uploading' ? 'not-allowed' : 'pointer',
+                  transition:    'border-color 0.2s, background 0.2s',
+                }}
+              >
+                {uploadStatus === 'uploading' ? (
+                  <>
+                    <div style={{ fontSize: 32 }}>⏳</div>
+                    <div style={{ fontSize: 14, color: T.textMid }}>Uploading to R2…</div>
+                    {/* Progress bar */}
+                    <div style={{ width: 240 }}>
+                      <div style={{
+                        height:   3,
+                        background: 'rgba(255,255,255,0.07)',
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          height:   '100%',
+                          width:    `${uploadProgress}%`,
+                          background: `linear-gradient(90deg, ${T.gold}88, ${T.gold})`,
+                          borderRadius: 2,
+                          transition: 'width 0.2s ease',
+                        }} />
+                      </div>
+                      <div style={{ marginTop: 8, textAlign: 'center', fontSize: 11, color: T.amber }}>
+                        {uploadProgress}%
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{
+                      width:        64,
+                      height:       64,
+                      borderRadius: '50%',
+                      background:   T.goldDim,
+                      border:       `0.5px solid ${T.borderGold}`,
+                      display:      'flex',
+                      alignItems:   'center',
+                      justifyContent: 'center',
+                      fontSize:     26,
+                    }}>
+                      🎬
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{
+                        fontFamily:  '"Cormorant Garamond", Georgia, serif',
+                        fontSize:    20,
+                        color:       T.text,
+                        marginBottom: 6,
+                      }}>
+                        Drop your video here
+                      </div>
+                      <div style={{ fontSize: 12, color: T.textDim }}>
+                        or click to browse · MP4 or MOV · up to 500 MB
+                      </div>
+                    </div>
+                    <div style={{
+                      padding:      '8px 18px',
+                      background:   T.goldDim,
+                      border:       `0.5px solid ${T.borderGold}`,
+                      borderRadius: 8,
+                      fontSize:     12,
+                      color:        T.gold,
+                      fontWeight:   600,
+                      letterSpacing:'0.04em',
+                    }}>
+                      Upload video
+                    </div>
+                  </>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/mov"
+                  style={{ display: 'none' }}
+                  disabled={uploadStatus === 'uploading'}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+                />
+              </label>
+
+              {/* Error message */}
+              {error && (
+                <div style={{ marginTop: 12, fontSize: 12, color: T.red, lineHeight: 1.6 }}>
+                  ⚠ {error}
                 </div>
               )}
             </div>
-
-            {/* Upload button */}
-            <button
-              className={`cv-btn ${state.file ? 'primary' : ''}`}
-              disabled={!state.file || state.status === 'uploading'}
-              onClick={() => handleUpload(region.id)}
-            >
-              {state.status === 'uploading'
-                ? `${state.progress}%`
-                : state.status === 'done'
-                  ? 'Replace'
-                  : 'Upload'}
-            </button>
-          </div>
-        );
-      })}
-
-      <div style={{ marginTop:32,padding:'20px 24px',background:'rgba(200,169,110,0.04)',border:'1px solid rgba(200,169,110,0.1)',borderRadius:10 }}>
-        <div style={{ fontSize:10,letterSpacing:'0.3em',textTransform:'uppercase',color:'rgba(200,169,110,0.6)',marginBottom:8 }}>
-          After uploading
+          )}
         </div>
-        <p style={{ fontSize:11,color:'rgba(255,255,255,0.3)',lineHeight:1.8,margin:0,fontWeight:300 }}>
-          Videos are served from Cloudflare R2 at full quality with global CDN. 
-          The cinematic screen reads from the <code style={{color:'rgba(200,169,110,0.7)'}}>cinematic_videos</code> Supabase table at runtime — 
-          no code changes needed after upload. Updates are live immediately.
-        </p>
+
+        {/* ── Right: spec panel ── */}
+        <div style={{
+          background:   T.surface,
+          border:       `0.5px solid ${T.border}`,
+          borderRadius: 14,
+          padding:      '28px 24px',
+        }}>
+          <div style={{
+            fontSize:      11,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase' as const,
+            color:         T.gold,
+            marginBottom:  20,
+            fontWeight:    500,
+          }}>
+            ✦ &nbsp;Video spec
+          </div>
+
+          <SpecRow label="Format"        value="MP4 or MOV"          />
+          <SpecRow label="Ideal length"  value="10 – 25 seconds"      />
+          <SpecRow label="Resolution"    value="1080p or 4K"          />
+          <SpecRow label="Aspect ratio"  value="16:9 landscape"       />
+          <SpecRow label="Audio"         value="Not required (muted)"  />
+          <SpecRow label="Playback speed"value="Auto 0.75× on screen" />
+          <SpecRow label="Max file size" value="500 MB"               />
+          <SpecRow label="Text overlays" value="None — they'll clash"  good={false} />
+          <SpecRow label="Hard cuts"     value="Avoid — slow works"    good={false} />
+
+          {/* Tip block */}
+          <div style={{
+            marginTop:  22,
+            padding:    '14px 16px',
+            background: T.goldDim,
+            border:     `0.5px solid ${T.borderGold}`,
+            borderRadius: 9,
+            fontSize:   12,
+            color:      T.textMid,
+            lineHeight: 1.65,
+          }}>
+            <strong style={{ color: T.gold, display: 'block', marginBottom: 6 }}>
+              What works
+            </strong>
+            Slow drone over savanna at golden hour. Elephant herd at a waterhole, mist rising. Mokoro gliding through reeds. Fire and stars. Close-up of leopard in a tree.
+            <br /><br />
+            <strong style={{ color: T.gold }}>What doesn't</strong>
+            <br />
+            Fast cuts, music videos, anything with a logo, anything already used on the landing page.
+          </div>
+
+          {/* Where it uploads to */}
+          <div style={{
+            marginTop:   20,
+            paddingTop:  18,
+            borderTop:   `0.5px solid ${T.border}`,
+          }}>
+            <div style={{ fontSize: 10, color: T.textDim, letterSpacing: '0.12em', textTransform: 'uppercase' as const, marginBottom: 8 }}>
+              Storage path
+            </div>
+            <div style={{
+              fontSize:   10,
+              color:      T.textDim,
+              fontFamily: '"Fira Code", "Courier New", monospace',
+              lineHeight: 1.6,
+              wordBreak:  'break-all' as const,
+            }}>
+              R2 → cinematic/journey-loading/{'{timestamp}'}.mp4
+              <br /><br />
+              Supabase → cinematic_videos<br />
+              region: "journey-loading"
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom: context note ── */}
+      <div style={{
+        marginTop:    52,
+        padding:      '24px 28px',
+        background:   T.surface,
+        border:       `0.5px solid ${T.border}`,
+        borderRadius: 12,
+        display:      'flex',
+        gap:          20,
+        alignItems:   'flex-start',
+      }}>
+        <div style={{
+          fontSize:     20,
+          flexShrink:   0,
+          marginTop:    2,
+        }}>
+          🎬
+        </div>
+        <div>
+          <div style={{ fontSize: 13, color: T.text, fontWeight: 600, marginBottom: 5 }}>
+            When does this play?
+          </div>
+          <div style={{ fontSize: 13, color: T.textMid, lineHeight: 1.7, maxWidth: 620 }}>
+            After the traveller clicks <strong style={{ color: T.text }}>Validate &amp; Pay</strong> on the
+            builder — before the checkout form loads. It runs for 13 seconds
+            while the platform validates their itinerary, prices all pillars, and
+            prepares the booking record. The video loops for the full duration.
+            If no video is uploaded, the screen runs on a dark background with
+            the lodge timeline and specialist notes only — nothing breaks.
+          </div>
+        </div>
       </div>
     </div>
   );
