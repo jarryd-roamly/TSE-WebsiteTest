@@ -165,19 +165,23 @@ export default function JourneyMiniSite({ journey, mode = 'quote', visitCount = 
         </div>
       </>}
 
+      <SectionTitle k="Day by day" t="Your itinerary" sub="In date order — confirmed properties and what your specialist is arranging." />
+      {j.segments.map((sg, i) => <Property key={sg.id} sg={sg} start={j.segments.slice(0, i).reduce((a, x) => a + x.nights, 0)} startISO={j.startISO} mode={mode} immersive={immersive} />)}
+
+
       <SectionTitle k="Getting you there" t="Flights & transfers" sub="Every leg, with the joins we’ve smoothed so nothing feels rushed." />
       <div style={{ display: 'grid', gap: 12 }}>{j.transfers.map((t, i) => <TransferBlock key={i} t={t} />)}<TransferBlock t={j.homeward} /></div>
-
-      <SectionTitle k="Day by day" t="Your itinerary" sub="Tap an activity, then a day, to plan your time. Your specialist arranges the rest." />
-      {j.segments.map((sg, i) => <Property key={sg.id} sg={sg} start={j.segments.slice(0, i).reduce((a, x) => a + x.nights, 0)} startISO={j.startISO} mode={mode} immersive={immersive} />)}
 
       <SectionTitle k="Your own pace" t="Add a private game vehicle" sub="Only at your game-viewing camps — choose it per camp." />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: 12 }}>
         {j.segments.map((sg) => { const on = !!veh[sg.id];
-          return sg.gameCamp && sg.vehPerDay
+          return sg.gameCamp
             ? <div key={sg.id} style={{ background: on ? C.goldDim : C.surface, border: `1px solid ${on ? C.borderGold : C.border}`, borderRadius: 12, padding: 15 }}>
                 <div style={{ fontFamily: F.d, fontSize: 17 }}>{sg.lodge}</div><div style={{ fontSize: 12, color: C.textMid, margin: '4px 0 8px' }}>{place(sg)} · {sg.nights} nts</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ color: C.goldLight, fontSize: 14 }}>{m(sg.vehPerDay)}/day · {m(sg.vehPerDay * sg.nights)}</span><Btn small kind={on ? 'dark' : 'ghost'} onClick={() => setVeh({ ...veh, [sg.id]: !on })}>{on ? '✓ Added' : 'Add'}</Btn></div></div>
+                {sg.vehPerDay
+                  ? <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ color: C.goldLight, fontSize: 14 }}>{m(sg.vehPerDay)}/day · {m(sg.vehPerDay * sg.nights)}</span><Btn small kind={on ? 'dark' : 'ghost'} onClick={() => setVeh({ ...veh, [sg.id]: !on })}>{on ? '✓ Added' : 'Add'}</Btn></div>
+                  : <div style={{ fontSize: 12, color: C.textMid }}>Private vehicle pricing confirmed by your specialist.</div>}
+              </div>
             : <div key={sg.id} style={{ background: C.bg2, border: `1px dashed ${C.border}`, borderRadius: 12, padding: 15, opacity: .6 }}><div style={{ fontFamily: F.d, fontSize: 17 }}>{sg.lodge}</div><div style={{ fontSize: 12, color: C.textDim, marginTop: 6 }}>Not applicable — no game drives.</div></div>; })}
       </div>
 
@@ -193,7 +197,7 @@ export default function JourneyMiniSite({ journey, mode = 'quote', visitCount = 
       <div style={{ textAlign: 'center', color: C.textDim, fontSize: 12, padding: '8px 0 40px' }}>thesafariedition.com/journey/{j.ref} · private link · The Travel Catalogue</div>
     </div>
 
-    <button onClick={() => setModal('chat')} style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 120, background: `linear-gradient(180deg,${C.goldLight},${C.gold})`, color: '#1a1306', border: 'none', borderRadius: 30, padding: '13px 20px', fontFamily: F.b, fontWeight: 500, fontSize: 14, cursor: 'pointer' }}>Ask {j.specialist.name.split(' ')[0]} ✦</button>
+    {/* Chat button removed — contact via specialist card WhatsApp */}
 
     {modal === 'chat' && <Drawer j={j} onClose={() => setModal(null)} />}
     {modal === 'print' && <ModalShell title="Simple itinerary" wide onClose={() => setModal(null)}><p style={{ color: C.textMid, fontSize: 13, marginTop: 0 }}>A plain travel document — print or save as PDF.</p><SimpleDoc j={j} /><div style={{ marginTop: 14 }}><Btn full onClick={() => window.print()}>⤓ Print / Save as PDF</Btn></div></ModalShell>}
@@ -241,7 +245,9 @@ function QuoteExcitement({ j, total, m, onChat }: any) {
       <div><div style={{ fontSize: 11, letterSpacing: '.12em', color: C.textMid }}>TO CONFIRM</div><div style={{ fontFamily: F.d, fontSize: 34, color: C.text }}>{m(deposit)}</div><div style={{ fontSize: 13, color: C.textMid }}>deposit · fully refundable with Cancel-for-any-Reason Cover</div></div>
       <div style={{ textAlign: 'right' }}><div style={{ fontSize: 12, color: C.gold }}>✦ Held for you</div><div style={{ fontSize: 13, color: C.textMid }}>Price &amp; rooms: <b style={{ color: C.text }}>{hold.d}d {hold.h}h</b></div><div style={{ fontSize: 13, color: C.amber }}>Charter seats: <b>{charter.h}h {charter.m}m</b></div></div>
     </div>
-    <div style={{ marginTop: 14 }}><Btn onClick={onChat}>Secure this journey — fully refundable →</Btn></div>
+    <div style={{ marginTop: 14 }}>
+      <Btn onClick={() => { window.location.href = `/checkout?id=${(j as any).itineraryId || ''}`; }}>Secure this journey — fully refundable →</Btn>
+    </div>
   </div>;
 }
 function PaymentPanel({ tt, bDue, m, onPay, onPrint, onCancel }: any) {
