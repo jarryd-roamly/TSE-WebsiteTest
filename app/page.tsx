@@ -2015,8 +2015,11 @@ function buildTransferOptions(
   const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string, fedAirDep?: string | null, minDep?: string): StructuredLeg => {
     const routeKey = `${carrierCode}-${originHub}-${destHub}`;
     const bag      = '20kg · X Class 32kg avail';
-    const sc       = pickBestFlight(routeKey, fedAirDep ?? null, bag, minDep)
-                     ?? (SCHED[routeKey] ? { ...SCHED[routeKey] } : null);
+    // When minDep is set (connection buffer enforced), do NOT fall back to raw SCHED.
+    // The fallback would return a flight that violates the buffer — exactly the bug
+    // that showed FN8802 12:45 after FedAir arrival 12:35 at MQP.
+    const scFiltered = pickBestFlight(routeKey, fedAirDep ?? null, bag, minDep);
+    const sc = scFiltered ?? (minDep ? null : (SCHED[routeKey] ? { ...SCHED[routeKey] } : null));
     const dur      = sc ? durStr(sc.dur) : '';
     return {
       kind: 'commercial',
@@ -2403,27 +2406,38 @@ function buildTransferOptions(
     const arrZar   = lastMileZar(arrRec, usdToZar, pax);
 
     const destName = toSlug.replace(/-/g,' ').replace(/\b\w/g, ch => ch.toUpperCase());
-    const mainOptions: TransferOption[] = carriersR.map((c, i) => {
+    const mainOptions: TransferOption[] = (carriersR.map((c, i) => {
       const fare  = Math.round((liveFare ?? fallback) * c.adjust);
       const total = exitZar + Math.round(fare * pax) + arrZar;
       const metaForThis = (liveMeta && (liveMeta.carrier === c.code)) ? liveMeta : null;
 
       const structured: StructuredLeg[] = [];
-      // Compute FedAir exit arrival at hub, then enforce 60-min buffer for onward commercial.
+
+      // ── Build exit leg first so we can extract its arrTime for connection buffer ──
+      // exitRec2.arrTime doesn't exist on LastMile; exitLeg() already does the
+      // LODGE_TO_AIRSTRIP + FEDAIR_BUSH lookup internally and puts arrTime on the leg.
       let interMinDep: string | undefined;
-      if (exitRec2?.mode === 'fedair') {
-        const airstrip = originLodge ? (LODGE_TO_AIRSTRIP[originLodge] ?? null) : null;
-        const bushKey  = airstrip ? `${airstrip}-${originHub}` : null;
-        const br2      = bushKey ? (FEDAIR_BUSH[bushKey] ?? null) : null;
-        const arrStr   = br2?.arr ?? exitRec2?.arrTime ?? null;
-        if (arrStr) {
-          const bufMin = CONNECTION_BUFFER[originHub] ?? 60;
-          const depMin = t2m(arrStr) + bufMin;
-          interMinDep = `${Math.floor(depMin/60).toString().padStart(2,'0')}:${(depMin%60).toString().padStart(2,'0')}`;
+      if (exitRec2) {
+        const ex = exitLeg(exitRec2, originHub, originLodge ?? undefined);
+        if (ex) {
+          structured.push(ex);
+          // ex.arrTime is the FedAir arrival at the hub (e.g. MQP 12:35)
+          // Enforce CONNECTION_BUFFER (60 min at MQP) before any onward commercial.
+          if (ex.arrTime && exitRec2.mode === 'fedair') {
+            const bufMin = CONNECTION_BUFFER[originHub] ?? 60;
+            const depMin = t2m(ex.arrTime) + bufMin;
+            interMinDep = `${Math.floor(depMin/60).toString().padStart(2,'0')}:${(depMin%60).toString().padStart(2,'0')}`;
+          }
         }
       }
-      if (exitRec2) { const ex = exitLeg(exitRec2, originHub, originLodge ?? undefined); if (ex) structured.push(ex); }
-      structured.push(commercialLeg(originHub, destHub, metaForThis, c.name, c.code, fedAirDepMain, interMinDep));
+      // Only add this carrier option if pickBestFlight can find a valid connection.
+      // When interMinDep filters out ALL flights (e.g. FN8802 12:45 < MQP 13:35),
+      // skip this carrier so the impossible connection never appears in the carousel.
+      const commLeg = commercialLeg(originHub, destHub, metaForThis, c.name, c.code, fedAirDepMain, interMinDep);
+      // commLeg.depTime is set only when pickBestFlight found a valid flight.
+      // If minDep was enforced and no valid flight found: drop this carrier option.
+      if (interMinDep && !commLeg.depTime) return null; // no valid connection — impossible route
+      structured.push(commLeg);
       buildArrivalLegs(arrRec, destHub, destLodge ?? undefined, fedAirDepMain).forEach(l => structured.push(l));
 
       const flightMin = liveMeta?.duration_min ?? SCHED[`${c.code}-${originHub}-${destHub}`]?.dur ?? commDurFallback[routeKey] ?? 120;
@@ -2450,7 +2464,7 @@ function buildTransferOptions(
         recommended: i === 0,
         structuredLegs: structured,
       };
-    });
+    }) as (TransferOption | null)[]).filter((x): x is TransferOption => x !== null);
 
     // ── Alternative Kruger hub options ────────────────────────────────────
     // When primary is MQP, also offer HDS and SZK (Airlink from CPT/JNB + FedAir to lodge).
@@ -5701,7 +5715,18 @@ const runBriefPlanner = (briefText: string) => {
       {screen==='journey-loading' && itinerary && (
         <JourneyLoadingScreen
           itinerary={itinerary}
-          cityStays={cityStays}
+          cityStays={cityStays.map((cs, i) => {
+            const city = itinerary.cities[i];
+            const slug = city ? (CITY_TO_SLUG[city.city?.toLowerCase().trim() ?? ''] ?? '') : '';
+            const pool = slug ? hotelsByMargin.filter(h => h.subRegion === slug) : hotelsByMargin;
+            const hotel = pool.find(h => String(h.id) === String(cs.hotelId)) ?? pool[0];
+            return {
+              city:       city?.city ?? '',
+              regionSlug: slug,
+              nights:     cs.nights,
+              hotel:      hotel ? { name: hotel.name ?? '', image: hotel.image ?? undefined } : undefined,
+            };
+          })}
           hotelsByMargin={hotelsByMargin}
           checkinDate={checkinDate}
           nights={nights}
