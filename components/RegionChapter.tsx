@@ -652,7 +652,7 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
   const [activeRoom, setActiveRoom] = useState(0);
   const [activeImg, setActiveImg]   = useState(0);
   const [addons, setAddons]         = useState<any[]>([]);
-  const [selectedAddons, setSelectedAddons] = useState<Set<string>>(new Set());
+  const [selectedAddons, setSelectedAddons] = useState(new Set() as Set<string>);
   const [factsheetOpen, setFactsheetOpen] = useState(false);
   const [reelPlaying, setReelPlaying]     = useState(false);
 
@@ -899,9 +899,9 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
 
           {/* ── Property add-ons: spa, experiences, private vehicle ── */}
           {addons.length > 0 && (() => {
-            const cats: Record<string,any[]> = {};
+            const cats: {[key: string]: any[]} = {};
             addons.forEach(a => { cats[a.category] = cats[a.category] ?? []; cats[a.category].push(a); });
-            const catLabels: Record<string,string> = {
+            const catLabels: {[k: string]: string} = {
               spa:'✦ Spa & Wellness', experience:'✦ Experiences', dining:'✦ Private Dining', vehicle:'✦ Private Vehicle',
             };
             return (
@@ -974,7 +974,7 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
         const propTips       = propKB.flatMap((e:any) => e.tips ?? []);
         const propNotes      = propKB.flatMap((e:any) => e.specialist_notes ? [e.specialist_notes] : []);
         // Build well-worded factsheet prose from KB data
-        const sections: Array<{title:string; body:string}> = [];
+        const sections: {title:string; body:string}[] = [];
 
         if (propHighlights.length > 0) {
           sections.push({
