@@ -219,9 +219,17 @@ export async function POST(req: NextRequest) {
         idempotency_key:       bookingRef,
         edition_id:            'safari',
         state:                 statusMap[action] || 'pending_payment',
+        title:                 itinerary.title || 'Safari Journey',
+        adults:                itinerary.adults || 2,
+        children_count:        0,
+        nights:                itinerary.nights || 1,
+        check_in:              itinerary.check_in || null,
+        check_out:             itinerary.check_out || null,
         total_display_zar:     totalZAR,
+        total_net_zar:         Math.round(totalZAR * 0.82),
         total_paid_zar:        0,
         outstanding_zar:       totalZAR,
+        budget_zar:            totalZAR,
         currency_paid:         'ZAR',
         deposit_pct:           deposit_pct,
         booked_at:             new Date().toISOString(),
@@ -236,7 +244,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (bErr) {
-      // Attempt a minimal insert if extended columns don't exist yet
+      // Fallback with only guaranteed columns
       const { data: bFallback, error: bFallbackErr } = await supabase
         .from('bookings')
         .insert({
@@ -245,10 +253,15 @@ export async function POST(req: NextRequest) {
           idempotency_key:   bookingRef,
           edition_id:        'safari',
           state:             statusMap[action] || 'pending_payment',
+          title:             itinerary.title || 'Safari Journey',
+          adults:            itinerary.adults || 2,
+          children_count:    0,
+          nights:            itinerary.nights || 1,
+          check_in:          itinerary.check_in || null,
+          check_out:         itinerary.check_out || null,
           total_display_zar: totalZAR,
-          total_paid_zar:    0,
-          outstanding_zar:   totalZAR,
-          currency_paid:     'ZAR',
+          total_net_zar:     Math.round(totalZAR * 0.82),
+          budget_zar:        totalZAR,
           booked_at:         new Date().toISOString(),
           lead_traveller_snapshot: {
             name:        traveller_name  || '',
