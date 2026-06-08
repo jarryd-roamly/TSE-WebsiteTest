@@ -30,7 +30,7 @@ export type Segment = {
 };
 
 export type Journey = {
-  ref: string; eyebrow: string; title: string; subtitle: string; route: string[];
+  ref: string; itineraryId?: string; eyebrow: string; title: string; subtitle: string; route: string[];
   nights: number; dates: string; departIn: number; startISO: string;
   travellers: string[]; pax: number; surname: string; email: string;
   price: Record<Currency, Money>;
@@ -168,6 +168,7 @@ function mapToJourney(booking: any, itinerary: any): Journey {
 
   return {
     ref:       booking.booking_reference || booking.idempotency_key || 'TSE-DEMO',
+    itineraryId: booking.itinerary_id || null,
     eyebrow:   'The Safari Edition · Bespoke Journey',
     title:     itinerary?.title || `${nights}-Night Safari`,
     subtitle:  route.join(' · '),
