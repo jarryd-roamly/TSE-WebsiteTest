@@ -87,7 +87,7 @@ const SEV: Record<string,{color:string;bg:string;icon:string}> = {
 
 // ── Fade-on-scroll hook ───────────────────────────────────────────────────────
 
-function useFade(threshold=0.08) {
+function useFade(threshold=0.05) {
   const ref = useRef<HTMLDivElement>(null);
   const [vis, setVis] = useState(false);
   useEffect(() => {
@@ -95,12 +95,59 @@ function useFade(threshold=0.08) {
     if (!el || typeof IntersectionObserver === 'undefined') { setVis(true); return; }
     const obs = new IntersectionObserver(
       ([e]) => { if (e.intersectionRatio >= threshold) setVis(true); },
-      { threshold:[0, threshold, 0.4] }
+      { threshold:[0, threshold, 0.25], rootMargin:'0px 0px -60px 0px' }
     );
     obs.observe(el);
     return () => obs.disconnect();
   }, [threshold]);
   return { ref, vis };
+}
+
+// ── Typewriter hook — streams text character-by-character when activated ─────
+// Used in LeftSidebar (left-first) and RightSidebar (delayed 450ms).
+// Each string in `texts` streams sequentially.
+function useTypewriter(
+  texts: string[],
+  active: boolean,
+  msPerChar = 26,
+  startDelayMs = 0
+): string[] {
+  const [displayed, setDisplayed] = useState<string[]>(texts.map(() => ''));
+  const cancelRef = useRef(false);
+
+  useEffect(() => {
+    if (!active) return;
+    cancelRef.current = false;
+
+    const run = async () => {
+      if (startDelayMs > 0) await new Promise(r => setTimeout(r, startDelayMs));
+      for (let i = 0; i < texts.length; i++) {
+        const text = texts[i];
+        for (let j = 1; j <= text.length; j++) {
+          if (cancelRef.current) return;
+          const char = j; const idx = i;
+          setDisplayed(prev => { const n = [...prev]; n[idx] = text.slice(0, char); return n; });
+          await new Promise(r => setTimeout(r, msPerChar));
+        }
+        if (i < texts.length - 1 && !cancelRef.current) {
+          await new Promise(r => setTimeout(r, 380));
+        }
+      }
+    };
+
+    run();
+    return () => { cancelRef.current = true; };
+  // Re-run when active changes OR when texts content changes (handles async KB load)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, texts.join('||')]);
+
+  // Reset displayed state when texts change so old streamed text doesn't linger
+  useEffect(() => {
+    setDisplayed(texts.map(() => ''));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [texts.join('||')]);
+
+  return displayed;
 }
 
 // ── Mobile hook ──────────────────────────────────────────────────────────────
@@ -122,6 +169,8 @@ function useMobile() {
 // ── Mobile CSS ────────────────────────────────────────────────────────────────
 
 const MOBILE_BCC_CSS = `
+  @keyframes kbCursor { 0%,100%{opacity:1} 50%{opacity:0} }
+
   /* ── Mobile BCC global ────────────────────────────────────────── */
   @media (max-width: 699px) {
     /* Bigger tap targets */
@@ -346,13 +395,15 @@ function LeftSidebar({ kbHighlights, skeletonFindings, chapterIndex, regionSlug 
 }) {
   const { ref, vis } = useFade();
   const warns = skeletonFindings.filter(f => f.severity==='warning' || f.severity==='recommendation');
+  // Stream each highlight text left-first (0ms delay)
+  const streamed = useTypewriter(kbHighlights.slice(0,2), vis, 24, 0);
 
   if (!kbHighlights.length && !warns.length) return <div ref={ref} />;
 
   return (
-    <div ref={ref} style={{
+    <div ref={ref} className="kb-col-left" style={{
       opacity: vis?1:0, transform: vis?'none':'translateY(18px)',
-      transition:'opacity 0.7s ease, transform 0.7s ease',
+      transition:'opacity 0.6s ease, transform 0.6s ease',
       position:'sticky', top:20,
     }}>
       {/* Chapter eyebrow */}
@@ -371,20 +422,25 @@ function LeftSidebar({ kbHighlights, skeletonFindings, chapterIndex, regionSlug 
         );
       })}
 
-      {/* KB highlights — "Did you know" */}
+      {/* KB highlights — typewriter reveal, left-first */}
       {kbHighlights.slice(0,2).map((h,i) => (
         <div key={i} style={{
           marginBottom:14,
           paddingBottom:14,
           borderBottom: i < Math.min(kbHighlights.length,2)-1 ? `0.5px solid ${T.border}` : 'none',
           opacity: vis ? 1 : 0,
-          transform: vis ? 'none' : 'translateY(12px)',
-          transition: `opacity 0.7s ease ${0.15 + i*0.18}s, transform 0.7s ease ${0.15 + i*0.18}s`,
+          transition: `opacity 0.5s ease ${i*0.2}s`,
         }}>
           <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.15em', textTransform:'uppercase', marginBottom:5 }}>
             ✦ Did you know
           </div>
-          <div style={{ fontSize:12, color:T.textMid, lineHeight:1.72, fontStyle:'italic' }}>{h}</div>
+          <div style={{ fontSize:12, color:T.textMid, lineHeight:1.72, fontStyle:'italic' }}>
+            {streamed[i] ?? ''}
+            {/* blinking cursor while streaming */}
+            {vis && streamed[i] !== undefined && streamed[i].length < h.length && (
+              <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+            )}
+          </div>
         </div>
       ))}
     </div>
@@ -399,43 +455,70 @@ function RightSidebar({ seasonalNote, kbTips, nights, checkinDate, regionLabel, 
 }) {
   const { ref, vis } = useFade();
   const month = checkinDate ? new Date(checkinDate).toLocaleString('en',{month:'long'}) : null;
+  // Right side streams 450ms after left (so left visibly starts first)
+  const rightTexts = [seasonalNote, specialistNote, ...kbTips.slice(0,2)].filter(Boolean) as string[];
+  const streamed = useTypewriter(rightTexts, vis, 24, 450);
   if (!seasonalNote && !kbTips.length && !specialistNote) return <div ref={ref} />;
 
   return (
-    <div ref={ref} style={{
+    <div ref={ref} className="kb-col-right" style={{
       opacity: vis?1:0, transform: vis?'none':'translateY(18px)',
-      transition:'opacity 0.7s ease 0.12s, transform 0.7s ease 0.12s',
+      transition:'opacity 0.6s ease 0.4s, transform 0.6s ease 0.4s',
       position:'sticky', top:20,
     }}>
-      {/* Seasonal context */}
-      {seasonalNote && month && (
-        <div style={{ marginBottom:16, padding:'10px 12px', background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:9 }}>
-          <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:5 }}>✦ {month} in {regionLabel}</div>
-          <div style={{ fontSize:12, color:T.textMid, lineHeight:1.7, fontStyle:'italic' }}>{seasonalNote}</div>
-        </div>
-      )}
+      {/* Seasonal context — typewriter reveal */}
+      {seasonalNote && month && (() => {
+        const s0 = streamed[0] ?? '';
+        return (
+          <div style={{ marginBottom:16, padding:'10px 12px', background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:9 }}>
+            <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:5 }}>✦ {month} in {regionLabel}</div>
+            <div style={{ fontSize:12, color:T.textMid, lineHeight:1.7, fontStyle:'italic' }}>
+              {s0}
+              {vis && s0.length < seasonalNote.length && (
+                <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
-      {/* Traveller-safe specialist context (NOT ops notes) */}
-      {specialistNote && (
-        <div style={{ marginBottom:16, borderLeft:`2px solid rgba(212,175,55,0.4)`, paddingLeft:10 }}>
-          <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4 }}>About this region</div>
-          <div style={{ fontSize:11, color:T.textMid, lineHeight:1.7 }}>{specialistNote}</div>
-        </div>
-      )}
+      {/* Specialist note */}
+      {specialistNote && (() => {
+        const sIdx = seasonalNote ? 1 : 0;
+        const s = streamed[sIdx] ?? '';
+        return (
+          <div style={{ marginBottom:16, borderLeft:`2px solid rgba(212,175,55,0.4)`, paddingLeft:10 }}>
+            <div style={{ fontSize:9, color:T.gold, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4 }}>About this region</div>
+            <div style={{ fontSize:11, color:T.textMid, lineHeight:1.7 }}>
+              {s}
+              {vis && s.length < specialistNote.length && (
+                <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
-      {/* KB tips */}
-      {kbTips.slice(0,2).map((tip,i) => (
-        <div key={i} style={{
-          fontSize:11, color:T.textMid, lineHeight:1.68,
-          padding:'5px 0',
-          borderBottom: i < Math.min(kbTips.length,2)-1 ? `0.5px solid ${T.border}` : 'none',
-          opacity: vis ? 1 : 0,
-          transform: vis ? 'none' : 'translateX(8px)',
-          transition: `opacity 0.65s ease ${0.2 + i*0.18}s, transform 0.65s ease ${0.2 + i*0.18}s`,
-        }}>
-          <span style={{ color:T.gold, marginRight:5 }}>›</span>{tip}
-        </div>
-      ))}
+      {/* KB tips — typewriter */}
+      {kbTips.slice(0,2).map((tip,i) => {
+        const offset = (seasonalNote ? 1 : 0) + (specialistNote ? 1 : 0);
+        const s = streamed[offset + i] ?? '';
+        return (
+          <div key={i} style={{
+            fontSize:11, color:T.textMid, lineHeight:1.68,
+            padding:'5px 0',
+            borderBottom: i < Math.min(kbTips.length,2)-1 ? `0.5px solid ${T.border}` : 'none',
+            opacity: vis ? 1 : 0,
+            transition: `opacity 0.5s ease ${0.3 + i*0.15}s`,
+          }}>
+            <span style={{ color:T.gold, marginRight:5 }}>›</span>
+            {s}
+            {vis && s.length < tip.length && (
+              <span style={{ display:'inline-block', width:1.5, height:'0.85em', background:T.gold, marginLeft:2, verticalAlign:'middle', animation:'kbCursor 0.85s step-end infinite' }} />
+            )}
+          </div>
+        );
+      })}
 
       {/* Nights context */}
       <div style={{ marginTop:16, fontSize:10, color:T.textDim, letterSpacing:'0.06em' }}>
@@ -564,10 +647,14 @@ export interface PropertyMiniSiteProps {
 }
 
 export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClose, onSelectRoom }: PropertyMiniSiteProps) {
-  const [rooms, setRooms]         = useState<any[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [rooms, setRooms]           = useState<any[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [activeRoom, setActiveRoom] = useState(0);
   const [activeImg, setActiveImg]   = useState(0);
+  const [addons, setAddons]         = useState<any[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<Set<string>>(new Set());
+  const [factsheetOpen, setFactsheetOpen] = useState(false);
+  const [reelPlaying, setReelPlaying]     = useState(false);
 
   // Lock body scroll while overlay is open
   useEffect(() => {
@@ -589,10 +676,18 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
       .then((rows:any[]) => {
         if (rows?.length > 0) {
           const baseRate = hotel?.displayRate || hotel?.netRate || 0;
-          setRooms(rows.map(r => {
+          const upgradesList = hotel?.upgrades?.rooms ?? [];
+        setRooms(rows.map((r,rowIdx) => {
             const cat = (r.category||'').toLowerCase();
-            const extra = cat==='premium' ? Math.round(baseRate*0.20)
-              : (cat==='villa'||cat==='exclusive-use') ? Math.round(baseRate*0.45) : 0;
+            // Use actual net_rate_zar from room_types table, or hotel.upgrades extra
+            const roomNetRate = r.net_rate_zar && r.net_rate_zar > 0 ? r.net_rate_zar : 0;
+            const upgradeEntry = upgradesList[rowIdx];
+            const extra = roomNetRate > 0
+              ? Math.max(0, roomNetRate - baseRate)
+              : upgradeEntry?.extra !== undefined
+              ? upgradeEntry.extra
+              : (cat==='premium' ? Math.round(baseRate*0.20)
+                : (cat==='villa'||cat==='exclusive-use') ? Math.round(baseRate*0.45) : 0);
             const imgs = (() => { try {
               const arr = Array.isArray(r.images) ? r.images : (r.images ? JSON.parse(r.images) : []);
               return arr.map((img:any)=>typeof img==='string'?img:img?.url).filter(Boolean);
@@ -605,6 +700,15 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  }, [supplierId, hotel?.id]);
+
+  // Fetch property add-ons (spa, experiences, private vehicle)
+  useEffect(() => {
+    const id = supplierId ?? hotel?.supplier_id ?? hotel?.id;
+    if (!id || !SB_URL) return;
+    fetch(`${SB_URL}/rest/v1/property_addons?supplier_id=eq.${id}&is_active=eq.true&select=id,name,category,description,price_per_person_zar,price_type,duration_minutes,notes&order=category.asc,name.asc`, {
+      headers:{ apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}` }
+    }).then(r => r.ok ? r.json() : []).then(setAddons).catch(() => {});
   }, [supplierId, hotel?.id]);
 
   // Traveller-safe KB only
@@ -630,14 +734,56 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
         display:'flex', flexDirection:'column', animation:'slideUp 0.32s ease',
       }}>
         {/* Header */}
-        <div style={{ flexShrink:0, padding:'14px 20px 12px', borderBottom:`0.5px solid ${T.border}`,
-          display:'flex', alignItems:'flex-start', gap:12 }}>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:9, color:T.gold, textTransform:'uppercase', letterSpacing:'0.15em', fontWeight:700, marginBottom:2 }}>✦ Property detail</div>
-            <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif", lineHeight:1.15 }}>{hotel?.name}</div>
-            <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{hotel?.destination} · ★ {hotel?.trustScore}/100{hotel?.malariaFree?' · ✦ Malaria-free':''}</div>
+        <div style={{ flexShrink:0, padding:'14px 20px 0', borderBottom:`0.5px solid ${T.border}` }}>
+          {/* Name row */}
+          <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom:10 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:9, color:T.gold, textTransform:'uppercase', letterSpacing:'0.15em', fontWeight:700, marginBottom:2 }}>✦ Property detail</div>
+              <div style={{ fontSize:17, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif", lineHeight:1.15 }}>{hotel?.name}</div>
+              <div style={{ fontSize:11, color:T.textDim, marginTop:2 }}>{hotel?.destination} · ★ {hotel?.trustScore}/100{hotel?.malariaFree?' · ✦ Malaria-free':''}</div>
+            </div>
+            <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:`0.5px solid ${T.border}`, color:T.textMid, width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:16, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>×</button>
           </div>
-          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:`0.5px solid ${T.border}`, color:T.textMid, width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:16, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>×</button>
+
+          {/* Social links + Factsheet button */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, paddingBottom:10 }}>
+            {/* Instagram */}
+            {hotel?.instagram_url && (
+              <a href={hotel.instagram_url} target="_blank" rel="noopener noreferrer"
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:8, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.textMid, textDecoration:'none', fontSize:13 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/></svg>
+              </a>
+            )}
+            {/* Facebook */}
+            {hotel?.facebook_url && (
+              <a href={hotel.facebook_url} target="_blank" rel="noopener noreferrer"
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:8, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.textMid, textDecoration:'none', fontSize:13 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+              </a>
+            )}
+            {/* YouTube */}
+            {hotel?.youtube_url && (
+              <a href={hotel.youtube_url} target="_blank" rel="noopener noreferrer"
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:8, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${T.border}`, color:T.textMid, textDecoration:'none', fontSize:13 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.41 19.6C5.12 20 12 20 12 20s6.88 0 8.59-.4a2.78 2.78 0 0 0 1.95-1.95A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/><polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#0f0f0f"/></svg>
+              </a>
+            )}
+            {/* If no social provided, show generic website link */}
+            {!hotel?.instagram_url && !hotel?.facebook_url && !hotel?.youtube_url && (
+              <div style={{ fontSize:10, color:T.textDim, fontStyle:'italic' }}>Social links — ask your specialist</div>
+            )}
+
+            {/* Spacer */}
+            <div style={{ flex:1 }} />
+
+            {/* Factsheet button */}
+            <button
+              onClick={() => setFactsheetOpen(true)}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 12px', background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, color:T.gold, fontSize:11, fontWeight:600, cursor:'pointer', letterSpacing:'0.04em', fontFamily:'inherit' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Factsheet
+            </button>
+          </div>
         </div>
 
         {/* Hero */}
@@ -711,14 +857,11 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
                         {cur.bed_type   && <span style={{ fontSize:10, color:T.textDim }}>{cur.bed_type}</span>}
                         {cur.view       && <span style={{ fontSize:10, color:T.textDim }}>{cur.view}</span>}
                       </div>
-                      {onSelectRoom && (
-                        <button onClick={()=>{onSelectRoom(cur.extra_zar,cur.name);onClose();}} style={{
-                          width:'100%', padding:'10px 0', borderRadius:8,
-                          border:`1.5px solid ${T.gold}`, background:T.goldDim,
-                          color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700,
-                        }}>
-                          Select {cur.name}{cur.extra_zar>0?' →':' — included'}
-                        </button>
+                      {/* Room selection now handled by confirm button below */}
+                      {cur.extra_zar > 0 && (
+                        <div style={{ fontSize:10, color:T.gold, background:T.goldDim, borderRadius:6, padding:'3px 10px', display:'inline-block' }}>
+                          +R {cur.extra_zar.toLocaleString()}/night supplement
+                        </div>
                       )}
                     </div>
                   </div>
@@ -753,8 +896,151 @@ export function PropertyMiniSite({ hotel, supplierId, kbEntries, includes, onClo
           {!highlights.length && !tips.length && !loading && (
             <div style={{ fontSize:12, color:T.textDim, fontStyle:'italic' }}>Your specialist will brief you on this property before travel.</div>
           )}
+
+          {/* ── Property add-ons: spa, experiences, private vehicle ── */}
+          {addons.length > 0 && (() => {
+            const cats: Record<string,any[]> = {};
+            addons.forEach(a => { cats[a.category] = cats[a.category] ?? []; cats[a.category].push(a); });
+            const catLabels: Record<string,string> = {
+              spa:'✦ Spa & Wellness', experience:'✦ Experiences', dining:'✦ Private Dining', vehicle:'✦ Private Vehicle',
+            };
+            return (
+              <div style={{ marginTop:20 }}>
+                <div style={{ fontSize:10, color:T.gold, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700, marginBottom:10 }}>Add to your stay</div>
+                {Object.entries(cats).map(([cat, items]) => (
+                  <div key={cat} style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:9, color:T.textDim, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:600, marginBottom:7 }}>{catLabels[cat] ?? cat}</div>
+                    {items.map((a:any) => {
+                      const isSel = selectedAddons.has(a.id);
+                      const priceLabel = a.price_type==='flat'
+                        ? `R ${a.price_per_person_zar.toLocaleString()} flat`
+                        : a.price_type==='per_couple'
+                        ? `R ${a.price_per_person_zar.toLocaleString()} / couple`
+                        : `R ${a.price_per_person_zar.toLocaleString()} / person`;
+                      return (
+                        <div key={a.id} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'9px 12px', background:isSel?T.goldDim:'rgba(255,255,255,0.03)', border:`0.5px solid ${isSel?T.borderGold:T.border}`, borderRadius:9, marginBottom:6, transition:'all 0.15s' }}>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ display:'flex', alignItems:'baseline', gap:7, flexWrap:'wrap' }}>
+                              <span style={{ fontSize:12, fontWeight:600, color:isSel?T.gold:T.text }}>{a.name}</span>
+                              {a.duration_minutes && <span style={{ fontSize:10, color:T.textDim }}>{a.duration_minutes} min</span>}
+                            </div>
+                            <div style={{ fontSize:11, color:T.textMid, lineHeight:1.6, marginTop:2 }}>{a.description}</div>
+                            {a.notes && <div style={{ fontSize:10, color:T.textDim, marginTop:3, fontStyle:'italic' }}>{a.notes}</div>}
+                          </div>
+                          <div style={{ flexShrink:0, textAlign:'right' }}>
+                            <div style={{ fontSize:11, fontWeight:700, color:isSel?T.gold:T.textMid, marginBottom:4 }}>{priceLabel}</div>
+                            <button
+                              onClick={() => setSelectedAddons(prev => {
+                                const next = new Set(prev);
+                                if (next.has(a.id)) next.delete(a.id); else next.add(a.id);
+                                return next;
+                              })}
+                              style={{ padding:'4px 10px', borderRadius:6, border:`1px solid ${isSel?T.gold:T.border}`, background:isSel?T.goldDim:'transparent', color:isSel?T.gold:T.textMid, fontSize:10, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                              {isSel ? '✓ Added' : '+ Add'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
+
+        {/* ── Confirm button with add-ons summary ── */}
+        {onSelectRoom && cur && (
+          <div style={{ flexShrink:0, padding:'12px 20px', borderTop:`0.5px solid ${T.border}`, background:'#0f0f0f' }}>
+            {selectedAddons.size > 0 && (
+              <div style={{ fontSize:10, color:T.gold, marginBottom:8, fontStyle:'italic' }}>
+                + {selectedAddons.size} add-on{selectedAddons.size>1?'s':''} selected — your specialist will confirm availability
+              </div>
+            )}
+            <button onClick={() => {
+              const addonNotes = addons.filter((a:any) => selectedAddons.has(a.id)).map((a:any) => a.name).join(', ');
+              onSelectRoom(cur.extra_zar, cur.name + (addonNotes ? ` · ${addonNotes}` : ''));
+              onClose();
+            }} style={{ width:'100%', padding:'11px 0', borderRadius:8, border:`1.5px solid ${T.gold}`, background:T.goldDim, color:T.gold, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700 }}>
+              Confirm {cur.name}{cur.extra_zar>0?' — upgrade applied':' — included'} →
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* ── Factsheet modal ── */}
+      {factsheetOpen && (() => {
+        const propHighlights = propKB.flatMap((e:any) => e.highlights ?? []);
+        const propTips       = propKB.flatMap((e:any) => e.tips ?? []);
+        const propNotes      = propKB.flatMap((e:any) => e.specialist_notes ? [e.specialist_notes] : []);
+        // Build well-worded factsheet prose from KB data
+        const sections: Array<{title:string; body:string}> = [];
+
+        if (propHighlights.length > 0) {
+          sections.push({
+            title: 'About this Property',
+            body: propHighlights.join(' ') || `${hotel?.name} is one of the most celebrated properties in ${hotel?.destination}. Known for its exceptional service, wildlife access, and sense of place, it has earned a trust score of ${hotel?.trustScore}/100 among specialists.`,
+          });
+        }
+
+        if (propTips.length > 0) {
+          sections.push({
+            title: 'Specialist Recommendations',
+            body: propTips.map((t:string, i:number) => `${i+1}. ${t}`).join('
+'),
+          });
+        }
+
+        sections.push({
+          title: 'Inclusions & Rate Basis',
+          body: includes.length > 0
+            ? `Your rate at ${hotel?.name} includes: ${includes.filter((k:string) => k !== 'accommodation').map((k:string) => k.replace(/_/g,' ')).join(', ')}.${hotel?.malariaFree ? ' This property is in a malaria-free zone — no prophylactics required.' : ' Note: this destination is in a malaria zone. Consult your doctor before travel.'}`
+            : `Room-only rate. All meals and activities charged separately. Your specialist will confirm current pricing.`,
+        });
+
+        if (rooms.length > 0) {
+          sections.push({
+            title: 'Room Categories',
+            body: rooms.map(r => `${r.name}${r.extra_zar > 0 ? ` (+R ${r.extra_zar.toLocaleString()}/night supplement)` : ''}: ${r.description || 'Details available from your specialist.'}`).join('
+
+'),
+          });
+        }
+
+        sections.push({
+          title: 'Location & Access',
+          body: `${hotel?.name} is located in ${hotel?.destination}. Access is typically by light aircraft to the nearest airstrip, followed by a short road transfer. Your Journey Specialist will confirm exact routing based on your travel dates and origin.`,
+        });
+
+        return (
+          <div style={{ position:'fixed', inset:0, zIndex:500, background:'rgba(0,0,0,0.9)', backdropFilter:'blur(12px)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+            onClick={e => { if (e.target===e.currentTarget) setFactsheetOpen(false); }}>
+            <div style={{ width:'100%', maxWidth:560, maxHeight:'85vh', background:'#0f0f0f', border:`0.5px solid ${T.borderGold}`, borderRadius:16, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+              {/* Factsheet header */}
+              <div style={{ flexShrink:0, padding:'16px 20px', borderBottom:`0.5px solid ${T.border}`, display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:9, color:T.gold, textTransform:'uppercase', letterSpacing:'0.15em', fontWeight:700, marginBottom:2 }}>✦ Property Factsheet</div>
+                  <div style={{ fontSize:15, fontWeight:700, color:T.text, fontFamily:"'Cormorant Garamond',serif" }}>{hotel?.name}</div>
+                </div>
+                <button onClick={() => setFactsheetOpen(false)} style={{ background:'rgba(255,255,255,0.07)', border:`0.5px solid ${T.border}`, color:T.textMid, width:30, height:30, borderRadius:'50%', cursor:'pointer', fontSize:16, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+              </div>
+              {/* Factsheet content */}
+              <div style={{ flex:1, overflowY:'auto', padding:'16px 20px 24px' }}>
+                {sections.map((s,i) => (
+                  <div key={i} style={{ marginBottom:20 }}>
+                    <div style={{ fontSize:10, color:T.gold, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:8, paddingBottom:5, borderBottom:`0.5px solid ${T.borderGold}` }}>{s.title}</div>
+                    <div style={{ fontSize:12, color:T.textMid, lineHeight:1.78, whiteSpace:'pre-line' }}>{s.body}</div>
+                  </div>
+                ))}
+                <div style={{ marginTop:24, padding:'10px 14px', background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:8, fontSize:11, color:T.textMid, lineHeight:1.65 }}>
+                  <strong style={{ color:T.gold, display:'block', marginBottom:4 }}>✦ Note from your Journey Specialist</strong>
+                  This factsheet is compiled from our Knowledge Base. Your specialist will provide a fully personalised briefing document before travel with current rates, availability, and any operational notes specific to your dates.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
