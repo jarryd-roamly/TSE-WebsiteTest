@@ -1251,30 +1251,42 @@ function NestedPropertyCarousel({
     if (card) card.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
     setActiveIdx(idx);
     setKbOpenId(null);
-    // AUTO-SELECT: the centred property is always the selected one
-    if (hotels[idx]) onSelectHotel(hotels[idx]);
-  }, [hotels, onSelectHotel]);
+    // AUTO-SELECT via ref — avoids stale closure and re-render loop
+    const h = hotelsRef.current[idx];
+    if (h) onSelectHotelRef.current(h);
+  }, []); // empty deps — uses refs
 
-  // [V6-4] Touch swipe also triggers auto-select
+  // [V6-4] Touch swipe auto-select — debounced to prevent scroll-loop crashes
+  // onSelectHotel stored in a ref so the scroll listener never needs to re-register
+  const onSelectHotelRef = useRef(onSelectHotel);
+  useEffect(() => { onSelectHotelRef.current = onSelectHotel; }, [onSelectHotel]);
+  const hotelsRef = useRef(hotels);
+  useEffect(() => { hotelsRef.current = hotels; }, [hotels]);
+
   useEffect(() => {
     const strip = stripRef.current; if (!strip) return;
+    let debounceTimer: ReturnType<typeof setTimeout>;
     const onScroll = () => {
-      const cards = Array.from(strip.querySelectorAll<HTMLElement>('[data-card]'));
-      const stripCenter = strip.scrollLeft + strip.clientWidth / 2;
-      let closest = 0; let minDist = Infinity;
-      cards.forEach((card, i) => {
-        const el = card as HTMLElement;
-        const cardCenter = el.offsetLeft + el.offsetWidth / 2;
-        const dist = Math.abs(stripCenter - cardCenter);
-        if (dist < minDist) { minDist = dist; closest = i; }
-      });
-      setActiveIdx(closest);
-      // Auto-select on touch swipe
-      if (hotels[closest]) onSelectHotel(hotels[closest]);
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const cards = Array.from(strip.querySelectorAll<HTMLElement>('[data-card]'));
+        const stripCenter = strip.scrollLeft + strip.clientWidth / 2;
+        let closest = 0; let minDist = Infinity;
+        cards.forEach((card, i) => {
+          const el = card as HTMLElement;
+          const cardCenter = el.offsetLeft + el.offsetWidth / 2;
+          const dist = Math.abs(stripCenter - cardCenter);
+          if (dist < minDist) { minDist = dist; closest = i; }
+        });
+        setActiveIdx(closest);
+        // Auto-select fires ONCE when scroll settles — not on every pixel
+        const h = hotelsRef.current[closest];
+        if (h) onSelectHotelRef.current(h);
+      }, 150);
     };
     strip.addEventListener('scroll', onScroll, { passive: true });
-    return () => strip.removeEventListener('scroll', onScroll);
-  }, [hotels, onSelectHotel]);
+    return () => { strip.removeEventListener('scroll', onScroll); clearTimeout(debounceTimer); };
+  }, []); // empty deps — refs keep values current without re-registering
 
   useEffect(() => {
     const idx = hotels.findIndex(h => String(h.id) === String(selectedHotelId));
