@@ -606,9 +606,17 @@ function getSlideKB(hotel: Hotel, slide: Slide, kbEntries: KBEntry[]): string | 
   return null;
 }
 
+// Countries whose lodge rates are stored in USD (not ZAR)
+const USD_RATE_COUNTRIES = new Set(['Botswana','Zimbabwe','Kenya','Uganda','Tanzania','Mozambique','Namibia','Zambia','Rwanda']);
+const USD_TO_ZAR_RATE = 18.62; // snapshot rate — swap to live XE later
+
 function mapSupplierRow(s: any, roomTypes: any[] = []): Hotel {
-  const netRate = Number(s.net_rate_per_night) || 25000;
-  const displayRate = Number(s.display_rate_per_night) || Math.round(netRate * 1.15);
+  const rawNet  = Number(s.net_rate_per_night)  || 0;
+  const rawDisp = Number(s.display_rate_per_night) || 0;
+  // Convert USD→ZAR for foreign lodge rates
+  const isUSD   = USD_RATE_COUNTRIES.has(s.country);
+  const netRate     = rawNet  > 0 ? (isUSD ? Math.round(rawNet  * USD_TO_ZAR_RATE) : rawNet)  : 25000;
+  const displayRate = rawDisp > 0 ? (isUSD ? Math.round(rawDisp * USD_TO_ZAR_RATE) : rawDisp) : Math.round(netRate * 1.15);
   let imageUrl = 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&q=80';
   let extraSlides: Slide[] = [];
   try {
@@ -3991,6 +3999,7 @@ useEffect(() => {
         const lodges = supplierRows.filter(r => r.country && r.name && r.supplier_type!=='operator' && !OPERATOR_NAMES.includes(r.name));
         if (lodges.length > 0) {
           setHotels(lodges.map(s => mapSupplierRow(s, roomTypeRows.filter((rt: any) => rt.supplier_id === s.id))));
+          // Note: USD→ZAR conversion handled inside mapSupplierRow using USD_RATE_COUNTRIES
         }
         setSuppliersLoaded(true);
       })
