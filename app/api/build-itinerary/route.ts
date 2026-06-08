@@ -345,6 +345,8 @@ function optimiseSelectionToBudget(
 
     for (let j = 0; j < Math.min(QUALITY_BAND, candidates.length); j++) {
       const prop = candidates[j];
+      // Skip KB-demoted properties (score < -50 means heavily demoted)
+      if ((prop.score ?? 0) < -50) continue;
       const cost = (prop.displayPricePerNight || 0) * nightsByCity[i];
       const newTotal = accCost + cost;
 
