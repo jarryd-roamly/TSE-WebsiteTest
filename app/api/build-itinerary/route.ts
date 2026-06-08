@@ -147,6 +147,7 @@ function scoreSupplier(
   themeTags:       string[],
   kbBySupplier:    Record<string, KBEntry[]>,
   marginRankMap:   Record<string, number>,  // supplierId → rank (1=best, higher=worse)
+  overrideEntries: KBEntry[] = [],
 ): any {
   const net  = Number(s.net_rate_per_night) || 25000;
   const disp = Number(s.display_rate_per_night) || Math.round(net * M.hotels);
@@ -190,7 +191,11 @@ function scoreSupplier(
   );
   if (demoted) score -= 20;
 
-  score = Math.min(100, Math.max(0, score));
+  // KB override demotion — 'end of carousel' guardrails push property to back
+  const kbDemotion = kbDemotionScore(s.id, s.name, overrideEntries);
+  score -= kbDemotion;
+
+  score = Math.min(100, Math.max(-500, score)); // allow negative for demoted props
 
   return {
     id:                   s.id,
@@ -239,12 +244,49 @@ function buildMarginRankMap(kbEntries: KBEntry[]): Record<string, number> {
 }
 
 function isBlockedByKB(supplierId: string, supplierName: string, overrideEntries: KBEntry[]): boolean {
-  return overrideEntries.some(e =>
-    (e.supplier_id === supplierId || e.supplier_name === supplierName) &&
-    e.claim_type === 'commercial' &&
-    e.guidance_importance === 3 &&
-    e.specialist_recs?.some(r => r.toLowerCase().includes('do not recommend'))
-  );
+  return overrideEntries.some(e => {
+    // Match by supplier_id, supplier name, or linked_name (covers entries created by name)
+    const nameMatch = supplierName && (
+      e.linked_name?.toLowerCase().includes(supplierName.toLowerCase()) ||
+      supplierName.toLowerCase().includes((e.linked_name || '').toLowerCase().split(' ')[0]) ||
+      e.supplier_id === supplierId
+    );
+    if (!nameMatch) return false;
+
+    // Check guardrails for block/avoid/end of carousel instructions
+    const guardrailBlock = e.guardrails?.some(g => {
+      const gl = g.toLowerCase();
+      return gl.includes('avoid') || gl.includes('do not') || gl.includes('block') ||
+             gl.includes('end of') || gl.includes('last') || gl.includes('exclude');
+    });
+    if (guardrailBlock) return true;
+
+    // Legacy: specialist_recs with 'do not recommend'
+    const specBlock = e.specialist_recs?.some(r => r.toLowerCase().includes('do not recommend'));
+    if (specBlock) return true;
+
+    return false;
+  });
+}
+
+// Returns a demotion score for properties mentioned in KB guardrails
+// Used to push properties to end of list rather than fully exclude them
+function kbDemotionScore(supplierId: string, supplierName: string, overrideEntries: KBEntry[]): number {
+  let demotion = 0;
+  overrideEntries.forEach(e => {
+    const nameMatch = supplierName && (
+      e.linked_name?.toLowerCase().includes(supplierName.toLowerCase()) ||
+      supplierName.toLowerCase().includes((e.linked_name || '').toLowerCase().split(' ')[0]) ||
+      e.supplier_id === supplierId
+    );
+    if (!nameMatch) return;
+    // "end of carousel" = heavy demotion but not exclusion
+    const endOfCarousel = e.guardrails?.some(g =>
+      g.toLowerCase().includes('end of') || g.toLowerCase().includes('last')
+    );
+    if (endOfCarousel) demotion += 200; // pushes to back of sorted list
+  });
+  return demotion;
 }
 
 function defaultCityForRegion(slug: string, nights: number): any {
@@ -433,7 +475,7 @@ export async function POST(req: NextRequest) {
       const pool = suppliers.filter((s: any) => s.region_slug === city.regionSlug);
       const eligiblePool = pool.filter((s: any) => !isBlockedByKB(s.id, s.name, overrideEntries));
       return eligiblePool
-        .map((s: any) => scoreSupplier(s, checkinDate, city.nights, themeTags, kbForSkeleton.bySupplier, marginRankMap))
+        .map((s: any) => scoreSupplier(s, checkinDate, city.nights, themeTags, kbForSkeleton.bySupplier, marginRankMap, overrideEntries))
         .sort((a: any, b: any) => b.score - a.score);
     });
 
