@@ -202,10 +202,10 @@ export async function POST(req: NextRequest) {
 
     const bookingRef = 'TSE-' + Math.random().toString(36).substring(2, 10).toUpperCase()
 
-    const stateMap: Record<string, string> = {
+    const statusMap: Record<string, string> = {
       deposit: 'pending_payment',
       hold:    'on_hold',
-      quote:   'quote',         // matches existing DB value
+      quote:   'quote',
     }
 
     // ── Save booking record ─────────────────────────────────────────────────
@@ -216,12 +216,13 @@ export async function POST(req: NextRequest) {
       .insert({
         itinerary_id,
         booking_reference:     bookingRef,
-        state:                 stateMap[action] || 'pending_payment',
+        state:                 statusMap[action] || 'pending_payment',
         total_display_zar:     totalZAR,
         total_paid_zar:        0,
         outstanding_zar:       totalZAR,
         currency_paid:         'ZAR',
         deposit_pct:           deposit_pct,
+        booked_at:             new Date().toISOString(),
         lead_traveller_snapshot: {
           name:        traveller_name  || '',
           email:       traveller_email,
@@ -239,11 +240,12 @@ export async function POST(req: NextRequest) {
         .insert({
           itinerary_id,
           booking_reference: bookingRef,
-          state:             stateMap[action] || 'pending_payment',
+          state:             statusMap[action] || 'pending_payment',
           total_display_zar: totalZAR,
           total_paid_zar:    0,
           outstanding_zar:   totalZAR,
           currency_paid:     'ZAR',
+          booked_at:         new Date().toISOString(),
           lead_traveller_snapshot: {
             name:        traveller_name  || '',
             email:       traveller_email,
