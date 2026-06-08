@@ -2220,6 +2220,12 @@ function buildTransferOptions(
   };
 
   // ── If there is a real commercial leg with a carrier choice → options axis = CARRIER ──
+  // fedAirDepMain: FedAir dep time at dest hub — hoisted here so both carrier-choice
+  // AND arrival-variant paths can use it without scope errors.
+  const fedAirDepMain = destLodge
+    ? (FEDAIR_BUSH[`${destHubR}-${LODGE_TO_AIRSTRIP[destLodge] ?? ''}`]?.dep ?? FEDAIR_GENERIC_DEP[destHubR] ?? null)
+    : (FEDAIR_GENERIC_DEP[destHubR] ?? null);
+
   if (needCommR && carriersR.length > 0) {
     const destHub  = destHubR;
     const routeKey = `${originHub}-${destHub}`;
@@ -2231,8 +2237,6 @@ function buildTransferOptions(
     const arrZar   = lastMileZar(arrRec, usdToZar, pax);
 
     const destName = toSlug.replace(/-/g,' ').replace(/\b\w/g, ch => ch.toUpperCase());
-    // Pick the best commercial flight based on FedAir departure time at destination hub
-    const fedAirDepMain = destLodge ? (FEDAIR_BUSH[`${destHub}-${LODGE_TO_AIRSTRIP[destLodge] ?? ''}`]?.dep ?? FEDAIR_GENERIC_DEP[destHub] ?? null) : (FEDAIR_GENERIC_DEP[destHub] ?? null);
     const mainOptions: TransferOption[] = carriersR.map((c, i) => {
       const fare  = Math.round((liveFare ?? fallback) * c.adjust);
       const total = exitZar + Math.round(fare * pax) + arrZar;
