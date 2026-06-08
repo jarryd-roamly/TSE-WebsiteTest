@@ -222,7 +222,6 @@ export async function POST(req: NextRequest) {
         outstanding_zar:       totalZAR,
         currency_paid:         'ZAR',
         deposit_pct:           deposit_pct,
-        booked_at:             new Date().toISOString(),
         lead_traveller_snapshot: {
           name:        traveller_name  || '',
           email:       traveller_email,
@@ -245,7 +244,6 @@ export async function POST(req: NextRequest) {
           total_paid_zar:    0,
           outstanding_zar:   totalZAR,
           currency_paid:     'ZAR',
-          booked_at:         new Date().toISOString(),
           lead_traveller_snapshot: {
             name:        traveller_name  || '',
             email:       traveller_email,
