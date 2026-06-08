@@ -3938,6 +3938,32 @@ const toggleTheme = (id: string) =>
   const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
   const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => ((b.displayRate||0)-(b.netRate||0)) - ((a.displayRate||0)-(a.netRate||0))), [hotels]);
+
+  // Re-check KB demotions when kbEntries loads from Supabase
+  // Fixes race condition: build-itinerary may run before kbEntries is populated
+  useEffect(() => {
+    const kbOvr = kbEntries.filter((e: any) => e.override_ai && e.active !== false);
+    if (!kbOvr.length || !cityStays.length || !itinerary?.cities) return;
+    const isDem = (hotel: any) => kbOvr.some((e: any) => {
+      const w = (e.linkedTo||e.linked_name||'').toLowerCase().split(' ').filter((x:string)=>x.length>3);
+      return w.some((x:string)=>(hotel.name||'').toLowerCase().includes(x)) &&
+        /avoid|do not|block|end of|last|exclude/i.test(Array.isArray(e.guardrails)?e.guardrails.join(' '):String(e.guardrails||''));
+    });
+    let changed = false;
+    const updated = cityStays.map((stay, i) => {
+      const city = itinerary.cities[i]; if (!city) return stay;
+      const slug = CITY_TO_SLUG[city.city?.toLowerCase().trim()??'']??'';
+      const pool = slug ? hotelsByMargin.filter(h=>h.subRegion===slug) : hotelsByMargin;
+      const current = pool.find(h=>String(h.id)===String(stay.hotelId));
+      if (!current || !isDem(current)) return stay;
+      const replacement = pool.find(h=>!isDem(h));
+      if (!replacement || replacement.id === current.id) return stay;
+      changed = true;
+      return { ...stay, hotelId: replacement.id };
+    });
+    if (changed) setCityStays(updated);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kbEntries]);
 // Cinematic videos per region — for the inspire-input right panel
   const [regionVideoMap, setRegionVideoMap] = useState<Record<string, string>>({});
   useEffect(() => {
