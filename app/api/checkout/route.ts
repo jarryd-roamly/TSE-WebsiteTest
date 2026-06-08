@@ -216,6 +216,8 @@ export async function POST(req: NextRequest) {
       .insert({
         itinerary_id,
         booking_reference:     bookingRef,
+        idempotency_key:       bookingRef,
+        edition_id:            'safari',
         state:                 statusMap[action] || 'pending_payment',
         total_display_zar:     totalZAR,
         total_paid_zar:        0,
@@ -240,6 +242,8 @@ export async function POST(req: NextRequest) {
         .insert({
           itinerary_id,
           booking_reference: bookingRef,
+          idempotency_key:   bookingRef,
+          edition_id:        'safari',
           state:             statusMap[action] || 'pending_payment',
           total_display_zar: totalZAR,
           total_paid_zar:    0,
