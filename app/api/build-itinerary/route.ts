@@ -336,7 +336,7 @@ function distributeNights(regions: string[], totalNights: number, suppliers: any
 
 export async function POST(req: NextRequest) {
   try {
-    const { checkinDate, nights, budget, regions, occasion, style, theme, adults = 2, children = 0, infants = 0, editionId = 'tse-safari-1', mode = 'full', briefStructured } = await req.json();
+    const { checkinDate, nights, budget, regions, occasion, style, theme, adults = 2, children = 0, infants = 0, editionId = 'safari', mode = 'full', briefStructured } = await req.json();
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
     const effectiveNights  = Math.max(1, Math.min(nights ?? 5, 21));
