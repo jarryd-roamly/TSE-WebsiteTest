@@ -1612,7 +1612,7 @@ function buildTransferOptions(
     return intlDepHHMM
   })()
 
-
+  const fmtT = (iso?: string) => {
     if (!iso) return '';
     try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
     catch { return ''; }
