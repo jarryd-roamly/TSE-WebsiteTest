@@ -168,30 +168,106 @@ function mapToJourney(booking: any, itinerary: any): Journey {
     .reduce((s, c) => s + (c.price_display_zar || 0), 0);
   const accZAR   = totalZAR - flyZAR;
 
-  // Build inter-region transfer notes between properties
-  const transferNotes = hotelComponents.length > 1
+  // ── Build real Leg objects from saved flight/transfer components ─────────
+  // This populates SimpleDoc's FLIGHTS & AIR table and the Minisite's logistics view.
+  function compToLeg(comp: any): Leg | null {
+    const isIntl    = comp.is_international
+    const isReturn  = comp.is_return
+    const airline   = comp.airline || comp.carrier_name || 'Airline'
+    const flightNo  = comp.flight_number || comp.fn || ''
+    const fromApt   = comp.from || comp.depApt || comp.from_region || ''
+    const toApt     = comp.to   || comp.arrApt || comp.to_region   || ''
+    const depDT     = comp.departure_datetime || (comp.departure_date ? `${comp.departure_date}T${comp.departure_time || '00:00'}:00` : '')
+    const arrDT     = comp.arrival_datetime   || ''
+    if (!fromApt || !toApt) return null
+    return {
+      kind:    isIntl ? 'longhaul' : 'air',
+      carrier: airline,
+      no:      flightNo,
+      depApt:  fromApt,
+      arrApt:  toApt,
+      dep:     depDT,
+      arr:     arrDT,
+      status:  'confirming' as LegStatus,
+    }
+  }
+
+  function compToTransferLeg(comp: any): Leg | null {
+    const from  = comp.from_label || comp.from_region || ''
+    const to    = comp.to_label   || comp.to_region   || ''
+    if (!from || !to) return null
+    return {
+      kind:    'road',
+      carrier: comp.provider || comp.name || 'Transfer',
+      no:      comp.duration || '',
+      depApt:  from,
+      arrApt:  to,
+      dep:     '',
+      arr:     '',
+      status:  'confirming' as LegStatus,
+    }
+  }
+
+  const flightComps    = components.filter(c => c.type === 'flight' || c.pillar === 'flight')
+  const outboundFlight = flightComps.find(c => c.is_outbound && c.is_international)
+  const returnFlight   = flightComps.find(c => c.is_return  && c.is_international)
+  const charterFlights = flightComps.filter(c => !c.is_international)
+  const transferComps  = components.filter(c => {
+    const t = (c.type || c.pillar || '').toLowerCase()
+    return (t.includes('transfer') || t === 'transport') && !t.includes('flight')
+  })
+
+  // Arrival transfer: outbound intl flight + first-mile transfer to lodge
+  const arrivalLegs: Leg[] = [
+    outboundFlight ? compToLeg(outboundFlight) : null,
+    ...transferComps.filter(t => t.is_arrival).map(compToTransferLeg),
+  ].filter(Boolean) as Leg[]
+
+  const arrivalTransfer: Transfer = {
+    tag:  checkIn ? `Arrival — ${formatDateRange(checkIn, checkIn)}` : 'Arrival',
+    legs: arrivalLegs,
+    notes: arrivalLegs.length > 0
+      ? []
+      : [{ good: true, text: 'Airport arrival transfer confirmed by your specialist within 2 hours.' }],
+  }
+
+  // Inter-region transfers: use real components where available, fallback to notes
+  const interRegionTransfers: Transfer[] = hotelComponents.length > 1
     ? hotelComponents.slice(0, -1).map((comp: any, i: number) => {
-        const from = comp.region_label || comp.name || 'Previous destination';
-        const to   = hotelComponents[i + 1]?.region_label || hotelComponents[i + 1]?.name || 'Next destination';
+        const from = comp.region_label || comp.name || 'Previous destination'
+        const to   = hotelComponents[i + 1]?.region_label || hotelComponents[i + 1]?.name || 'Next destination'
+        // Find charter flight between these regions
+        const charter = charterFlights[i] ? compToLeg(charterFlights[i]) : null
+        // Find inter-region transfer component
+        const xferComp = transferComps.find((t: any) =>
+          !t.is_arrival && !t.is_departure &&
+          ((t.from_region === comp.region_slug) || (t.from_label && t.from_label.toLowerCase().includes(from.toLowerCase())))
+        )
+        const xferLeg = xferComp ? compToTransferLeg(xferComp) : null
+        const legs: Leg[] = [charter, xferLeg].filter(Boolean) as Leg[]
         return {
           tag:   `${from} → ${to}`,
-          legs:  [],
-          notes: [{ good: true, text: `Your specialist will confirm all transfer and flight details for this leg within 2 hours of booking.` }],
-        };
+          legs,
+          notes: legs.length > 0
+            ? [{ good: true, text: xferComp?.description || xferComp?.provider || '' }].filter(n => n.text)
+            : [{ good: true, text: 'Transfer and charter details confirmed by your specialist.' }],
+        }
       })
-    : [];
+    : []
 
-  const arrivalTransfer = {
-    tag:   checkIn ? `Arrival — ${formatDateRange(checkIn, checkIn)}` : 'Arrival transfer',
-    legs:  [],
-    notes: [{ good: true, text: 'Airport arrival transfer confirmed by your specialist.' }],
-  };
+  // Homeward transfer: departure transfer + return flight
+  const homewardLegs: Leg[] = [
+    ...transferComps.filter(t => t.is_departure).map(compToTransferLeg),
+    returnFlight ? compToLeg(returnFlight) : null,
+  ].filter(Boolean) as Leg[]
 
-  const homewardTransfer = {
-    tag:   checkOut ? `Departure — ${formatDateRange(checkOut, checkOut)}` : 'Departure transfer',
-    legs:  [],
-    notes: [{ good: true, text: 'Departure transfer and final logistics confirmed by your specialist.' }],
-  };
+  const homewardTransfer: Transfer = {
+    tag:  checkOut ? `Departure — ${formatDateRange(checkOut, checkOut)}` : 'Departure',
+    legs: homewardLegs,
+    notes: homewardLegs.length > 0
+      ? []
+      : [{ good: true, text: 'Departure logistics confirmed by your specialist.' }],
+  }
 
   return {
     ref:       booking.booking_reference || booking.idempotency_key || 'TSE-DEMO',
@@ -234,7 +310,7 @@ function mapToJourney(booking: any, itinerary: any): Journey {
       years:    8,
     },
     segments,
-    transfers: [arrivalTransfer, ...transferNotes],
+    transfers: [arrivalTransfer, ...interRegionTransfers],
     homeward: homewardTransfer,
   };
 }
