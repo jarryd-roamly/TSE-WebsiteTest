@@ -111,7 +111,7 @@ type CityTransferOption = { id:string; icon:string; label:string; provider:strin
 const CITY_TRANSFERS: Record<string, CityTransferOption[]> = {
   // CPT: private transfer only. No helicopters (removed), no shared shuttles (not appropriate for luxury guests).
   'cape-town': [
-    { id:'private-car', icon:'🚗', label:'Private transfer', provider:'Private vehicle — door to door', duration:'30–45 min', estimatedCostZAR:850, note:'Driver meets you at arrivals with name board. Includes luggage handling and Cape Town welcome brief. R850 per transfer, per direction.', recommended:true },
+    { id:'private-car', icon:'🚗', label:'Private transfer', provider:'Private vehicle — door to door', duration:'30–45 min', estimatedCostZAR:850, note:'Driver meets you at arrivals with name board. Includes luggage handling and Cape Town welcome brief.', recommended:true },
   ],
   // VFA ARRIVAL: road transfer only. 20-30 min from VFA airport to any lodge in town.
   // NOTE: The departure options (VFA→JNB via Airlink/Fastjet) are handled by the
@@ -1595,9 +1595,24 @@ function buildTransferOptions(
   commercialFareZarByRoute?: Record<string, number>,
   commercialMetaByRoute?: Record<string, any>,
   originLodge?: string,
+  intlDepHHMM?: string,   // e.g. '13:09' — for departure gateway routes, pick best domestic leg
 ): TransferOption[] {
 
-  const fmtT = (iso?: string) => {
+  // For departure gateway routes (e.g. cape-town → gateway-jnb), compute
+  // the latest domestic departure that arrives at gateway with a 2h buffer
+  // before the international flight. 'minDep' is the MINIMUM departure time
+  // we'll accept — we want the LATEST flight before that threshold.
+  // This is different from arrival routes where we want earliest/reliable.
+  const intlDepBuffer: string | undefined = (() => {
+    if (!intlDepHHMM || !toSlug.startsWith('gateway-')) return undefined
+    const [hh, mm] = intlDepHHMM.split(':').map(Number)
+    if (isNaN(hh) || isNaN(mm)) return undefined
+    // 2h before intl departure = latest arrival at gateway. We pass this
+    // as a note so callers can pick the LATEST viable domestic frequency.
+    return intlDepHHMM
+  })()
+
+
     if (!iso) return '';
     try { return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
     catch { return ''; }
@@ -2047,14 +2062,48 @@ function buildTransferOptions(
   // When fedAirDep is provided, selects the LATEST viable flight (best experience).
   // Without fedAirDep, falls back to primary SCHED entry.
   // Duffel meta used ONLY for fare pricing upstream — NEVER shown on tile.
-  const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string, fedAirDep?: string | null, minDep?: string): StructuredLeg => {
+  const commercialLeg = (originHub: string, destHub: string, _meta: any, carrierName: string, carrierCode: string, fedAirDep?: string | null, minDep?: string, intlDepHHMM?: string): StructuredLeg => {
     const routeKey = `${carrierCode}-${originHub}-${destHub}`;
     const bag      = '20kg · X Class 32kg avail';
+
+    // For departure routes (lodge → intl gateway), pick the LATEST domestic flight
+    // that arrives with a 2h buffer before the international departure.
+    // e.g. intl departs 13:09 → must arrive JNB by 11:09 → CPT dep ≤ 09:04
+    // pickBestFlight already picks the LATEST viable when fedAirDep is set.
+    // We synthesise a fake fedAirDep for this purpose.
+    const effectiveFedAir = (() => {
+      if (intlDepHHMM && !fedAirDep) {
+        // Compute intl boarding deadline (2h before departure)
+        const [hh, mm] = intlDepHHMM.split(':').map(Number)
+        if (!isNaN(hh)) {
+          const deadlineMins = hh * 60 + mm - 120
+          const dh = Math.floor(deadlineMins / 60)
+          const dm = deadlineMins % 60
+          if (dh >= 0) {
+            // Return a "fake FedAir" time — pickBestFlight treats this as the connection deadline
+            const fakeTime = `${String(dh).padStart(2,'0')}:${String(dm).padStart(2,'0')}`
+            return fakeTime
+          }
+        }
+      }
+      return fedAirDep ?? null
+    })()
+
+    // Override CONNECTION_BUFFER for JNB intl departures: need 120 min, not 45
+    const origBuffer = (CONNECTION_BUFFER as any)['JNB']
+    if (intlDepHHMM && destHub === 'JNB') {
+      (CONNECTION_BUFFER as any)['JNB'] = 120
+    }
+
     // When minDep is set (connection buffer enforced), do NOT fall back to raw SCHED.
-    // The fallback would return a flight that violates the buffer — exactly the bug
-    // that showed FN8802 12:45 after FedAir arrival 12:35 at MQP.
-    const scFiltered = pickBestFlight(routeKey, fedAirDep ?? null, bag, minDep);
+    const scFiltered = pickBestFlight(routeKey, effectiveFedAir, bag, minDep);
     const sc = scFiltered ?? (minDep ? null : (SCHED[routeKey] ? { ...SCHED[routeKey] } : null));
+
+    // Restore CONNECTION_BUFFER after override
+    if (intlDepHHMM && destHub === 'JNB') {
+      (CONNECTION_BUFFER as any)['JNB'] = origBuffer
+    }
+
     const dur      = sc ? durStr(sc.dur) : '';
     return {
       kind: 'commercial',
@@ -2283,7 +2332,7 @@ function buildTransferOptions(
         }
       }
       if (exitRec) { const ex = exitLeg(exitRec, noFlight ? gw : originHub, originLodge ?? undefined); if (ex) structured.push(ex); }
-      if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code, null, exitArrAtHub)); // minDep guards against pre-FedAir-arrival departures
+      if (!noFlight) structured.push(commercialLeg(originHub, gw, metaForThis, c.name, c.code, null, exitArrAtHub, intlDepBuffer)); // intlDepBuffer picks latest viable domestic dep
 
       const exitMin   = exitRec?.durationMin ?? 0;
       const flightMin = noFlight ? 0 : (meta?.duration_min ?? flightMinFallback[originHub] ?? 120);
@@ -2978,14 +3027,15 @@ function JourneyCardBody({ legs, duration, aiNote, badges, optionCount, activeId
 function TransferCarousel({
   fromSlug, toSlug, fromLabel, toLabel,
   fmt, kbEntries, selectedTransferId, onSelect,
-  destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge
+  destLodge, pax, usdToZar, commercialFares, commercialMeta, originLodge, intlDepHHMM
 }: {
   fromSlug:string; toSlug:string; fromLabel:string; toLabel:string;
   fmt:(n:number)=>string; kbEntries:KBEntry[]; selectedTransferId:string|null;
   onSelect:(id:string)=>void; destLodge?:string; pax?:number; usdToZar?:number;
   commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; originLodge?:string;
+  intlDepHHMM?:string; // e.g. '13:09' — used to pick best domestic departure flight
 }) {
-  const options = useMemo(()=>buildTransferOptions(fromSlug,toSlug,destLodge,pax??2,usdToZar??18.62,commercialFares,commercialMeta,originLodge),[fromSlug,toSlug,destLodge,pax,usdToZar,commercialFares,commercialMeta,originLodge]);
+  const options = useMemo(()=>buildTransferOptions(fromSlug,toSlug,destLodge,pax??2,usdToZar??18.62,commercialFares,commercialMeta,originLodge,intlDepHHMM),[fromSlug,toSlug,destLodge,pax,usdToZar,commercialFares,commercialMeta,originLodge,intlDepHHMM]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [ready, setReady] = useState(false);
 
@@ -3145,12 +3195,12 @@ function DepartureCard({
   lastCity, lastSlug, includeIntlFlight, fmt, kbEntries,
   departureHubId, setDepartureHubId, flightSelected, departureGateway,
   originLodge, usdToZar, commercialFares, commercialMeta, pax,
-  selectedTransferId, onSelectTransfer,
+  selectedTransferId, onSelectTransfer, intlDepDatetime,
 }: {
   lastCity:any; lastSlug:string; includeIntlFlight:boolean; fmt:(n:number)=>string; kbEntries:KBEntry[];
   departureHubId:string; setDepartureHubId:(v:string)=>void; flightSelected?:boolean; departureGateway?:string;
   originLodge?:string; usdToZar?:number; commercialFares?:Record<string,number>; commercialMeta?:Record<string,any>; pax?:number;
-  selectedTransferId?:string|null; onSelectTransfer?:(id:string)=>void;
+  selectedTransferId?:string|null; onSelectTransfer?:(id:string)=>void; intlDepDatetime?:string;
 }) {
   const GATEWAY_LABEL: Record<string,string> = {
     JNB:'O.R. Tambo International (JNB)', CPT:'Cape Town International (CPT)',
@@ -3176,9 +3226,22 @@ function DepartureCard({
     : [{ code:'JNB', label:'O.R. Tambo International (JNB)', note:'Main hub — most international routes connect via JNB.' },
        { code:'CPT', label:'Cape Town International (CPT)', note:'Good if your itinerary ends in or near Cape Town.' }];
 
-  return (
-    <div style={{ marginBottom:24, background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
-      <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
+  // Compute optimal domestic departure deadline from international flight departure time.
+  // If intl departs at 13:09, we need to be at gateway by 11:09 (2h buffer).
+  // CPT→JNB takes ~2h05m, so latest CPT dep ≈ 09:00 for a 13:09 intl.
+  // Pass this as intlDepHHMM to TransferCarousel so buildTransferOptions can pick
+  // the latest viable domestic frequency — not just the earliest.
+  const intlDepHHMM: string = (() => {
+    if (!intlDepDatetime) return ''
+    try {
+      const dt = new Date(intlDepDatetime)
+      const h  = String(dt.getUTCHours()).padStart(2, '0')
+      const m  = String(dt.getUTCMinutes()).padStart(2, '0')
+      return `${h}:${m}`
+    } catch { return '' }
+  })()
+
+
 
       <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:6 }}>
         {resolvedGateway
@@ -3229,6 +3292,7 @@ function DepartureCard({
             commercialFares={commercialFares}
             commercialMeta={commercialMeta}
             originLodge={originLodge}
+            intlDepHHMM={intlDepHHMM}
           />
         </div>
       )}
@@ -5660,14 +5724,17 @@ const runBriefPlanner = (briefText: string) => {
               // Filter out consultant-coded language not appropriate for travellers.
               // Tips starting with "Lead with", "Route via", "For honeymooners:" etc.
               // should stay in the specialist KB, not surface to the traveller.
-              const SPECIALIST_PREFIXES = [
+              const SPECIALIST_BLOCK_PHRASES = [
                 'lead with','route via','for honeymooners','for guests with','for multi-family',
-                'our rates','DMC','override','book via','commission','margin',
-              ];
+                'our rates','dmc','override','book via','commission','margin','always offer',
+                'always upsell','never quote','recommend to guests','do not recommend',
+                'internal','incremental','upsell pitch','trade price','net rate',
+                'our rate is','below booking','specialist approval','trust score',
+              ]
               const kbTips: string[] = (Array.isArray(regionEntry?.tips) ? regionEntry.tips : [])
                 .filter((tip: string) => {
-                  const lower = tip.toLowerCase();
-                  return !SPECIALIST_PREFIXES.some(p => lower.startsWith(p));
+                  const lower = tip.toLowerCase()
+                  return !SPECIALIST_BLOCK_PHRASES.some(p => lower.includes(p)) && isGuestSafe(tip)
                 });
               const seasonalNote: string | undefined = (() => {
                 if (!checkinDate || !regionEntry?.seasonal_notes) return undefined;
@@ -5878,6 +5945,7 @@ const runBriefPlanner = (briefText: string) => {
                   pax={Math.max(adults + children, 1)}
                   selectedTransferId={selectedTransferIds[depKey] ?? null}
                   onSelectTransfer={id => setSelectedTransferIds(prev => ({ ...prev, [depKey]: id }))}
+                  intlDepDatetime={selectedFlightOffer?.slices?.[0]?.departure_datetime || ''}
                 />
               );
             })()}
