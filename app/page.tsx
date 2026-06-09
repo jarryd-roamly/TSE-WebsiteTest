@@ -3241,7 +3241,9 @@ function DepartureCard({
     } catch { return '' }
   })()
 
-
+  return (
+    <div style={{ marginBottom:24, background:'rgba(212,175,55,0.05)', border:`0.5px solid ${T.borderGold}`, borderRadius:12, padding:'16px 18px' }}>
+      <div style={{ fontSize:11, color:T.gold, textTransform:'uppercase' as const, letterSpacing:'0.1em', fontWeight:700, marginBottom:4 }}>✦ Departure from {lastCity.city}</div>
 
       <div style={{ fontSize:13, color:T.text, fontWeight:600, marginBottom:6 }}>
         {resolvedGateway
