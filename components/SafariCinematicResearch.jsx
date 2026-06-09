@@ -124,7 +124,7 @@ export default function SafariCinematicResearch({ answers = {}, aiReady = false,
     };
     load();
   }, []);
-  const { experience='returning', regions=[], nights=7, travellers='couple', budget='' } = answers;
+  const { experience='returning', regions=[], nights=7, travellers='couple', budget='', themes=[], occasion='', adults=2, children=0, infants=0, origin='', checkinDate='', flexMonth='' } = answers;
 
   const clips = (() => {
     // Resolve region IDs to slugs (page.tsx passes IDs, Supabase uses slugs)
@@ -273,9 +273,22 @@ useEffect(() => {
     'phinda':     'Phinda',
   };
 
+  // Theme labels for pills
+  const THEME_LABELS = {
+    honeymoon: 'Honeymoon', anniversary: 'Anniversary', family: 'Family',
+    adventure: 'Adventure', 'bucket-list': 'Bucket List', returning: 'Return Visit',
+  };
+  const themePills = (themes||[]).map(t => THEME_LABELS[t] || t).filter(Boolean);
+
+  // Don't show travellers pill if a theme already describes the group better
+  const themesCoverTravellers = themePills.some(t => 
+    ['Honeymoon','Anniversary','Family','Adventure','Bucket List'].includes(t)
+  );
   const pills = [
-    `${nights} nights`, travellers,
+    `${nights} nights`,
+    ...(themesCoverTravellers ? [] : [travellers]),
     ...(budget ? [budget] : []),
+    ...themePills,
     ...((regions||[]).filter(r => r !== 'inspire-me')
       .map(r => REGION_ID_LABELS[r] || r.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase()))),
   ].filter(Boolean);
