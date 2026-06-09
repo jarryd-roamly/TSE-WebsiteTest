@@ -3048,6 +3048,13 @@ function TransferCarousel({
     return ()=>clearTimeout(t);
   },[]);
 
+  // ── Hook #5 MUST be above any early return (hooks must always be called in same order) ──
+  // When options is empty this still runs (guarded by `if (ready && cur)` internally)
+  const cur = options[activeIdx] ?? options[0] ?? null;
+  useEffect(() => {
+    if (ready && cur) onSelect(cur.id);
+  }, [activeIdx, ready]); // eslint-disable-line
+
   if (!options.length) {
     const leg = getInternalLeg(fromSlug, toSlug);
     if (!leg) return null;
@@ -3065,7 +3072,7 @@ function TransferCarousel({
     );
   }
 
-  const cur = options[activeIdx] ?? options[0];
+  // cur is already declared above — safe because options.length > 0 here
 
   // Derive the correct routeKey from the provider string's airport codes
   // e.g. provider "FedAir ...  →  Airlink MQP→CPT  →  ..." → routeKey "MQP-CPT"
@@ -3078,11 +3085,6 @@ function TransferCarousel({
   })();
   const liveMeta = routeKey ? (commercialMeta??{})[routeKey] : undefined;
   const legs = buildTransferLegs(cur, liveMeta);
-
-  // FIX 6: auto-select the active option as user scrolls — updates grandTotal immediately
-  useEffect(() => {
-    if (ready && cur) onSelect(cur.id);
-  }, [activeIdx, ready]); // eslint-disable-line
 
   return (
     <div style={{ marginBottom:24 }}>
