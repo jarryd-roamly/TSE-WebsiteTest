@@ -4572,7 +4572,101 @@ const runBriefPlanner = (briefText: string) => {
         });
       });
 
-      const allComponents = [...components, ...transferComponents, ...activityComponents];
+      // ── International flight components (outbound + return) ───────────
+      const flightComponents: any[] = [];
+      if (includeIntlFlight && selectedFlightOffer) {
+        const _USD2 = CURRENCIES.find(cur => cur.code === 'USD')?.rate ?? 18.62;
+        const _intl2 = Math.round((selectedFlightOffer.display_price * (adults + children) + flightAncillaryTotal) * _USD2);
+        const outSlice = selectedFlightOffer.slices?.[0];
+        const retSlice = selectedFlightOffer.slices?.[1];
+        if (outSlice) {
+          const seg = outSlice.segments?.[0] ?? {};
+          flightComponents.push({
+            pillar: 'flight', type: 'flight', is_international: true, is_outbound: true,
+            name: `${intlOrigin} → ${flightArrivalGateway || 'Destination'}`,
+            airline: seg.carrier_name || seg.operating_carrier_name || '',
+            airline_logo: seg.carrier_logo || '',
+            from: intlOrigin, to: flightArrivalGateway || 'JNB',
+            departure_time: outSlice.departure_datetime ? outSlice.departure_datetime.substring(11, 16) : '',
+            arrival_time: outSlice.arrival_datetime   ? outSlice.arrival_datetime.substring(11, 16)   : '',
+            departure_date: outSlice.departure_datetime ? outSlice.departure_datetime.split('T')[0] : (safeCheckIn || ''),
+            stops: outSlice.stops ?? 0,
+            total_duration_minutes: selectedFlightOffer.total_duration_minutes ?? 0,
+            price_display_zar: _intl2,
+            price_display_usd: Math.round(_intl2 / _USD2),
+          });
+        }
+        if (retSlice) {
+          const seg2 = retSlice.segments?.[0] ?? {};
+          flightComponents.push({
+            pillar: 'flight', type: 'flight', is_international: true, is_return: true,
+            name: `${flightDepartureGateway || 'JNB'} → ${intlOrigin}`,
+            airline: seg2.carrier_name || seg2.operating_carrier_name || '',
+            airline_logo: seg2.carrier_logo || '',
+            from: flightDepartureGateway || 'JNB', to: intlOrigin,
+            departure_time: retSlice.departure_datetime ? retSlice.departure_datetime.substring(11, 16) : '',
+            arrival_time: retSlice.arrival_datetime   ? retSlice.arrival_datetime.substring(11, 16)   : '',
+            departure_date: retSlice.departure_datetime ? retSlice.departure_datetime.split('T')[0] : (safeCheckOut || ''),
+            stops: retSlice.stops ?? 0,
+          });
+        }
+      }
+
+      // ── First-mile: arrival transfer from gateway → first lodge ───────
+      const firstMileComponents: any[] = [];
+      if (itinerary.cities?.length > 0) {
+        const firstCity = itinerary.cities[0];
+        const firstSlug = CITY_TO_SLUG[firstCity.city?.toLowerCase().trim() ?? ''] ?? '';
+        const gateway   = flightArrivalGateway || 'JNB';
+        const legKey    = `${gateway}→${firstSlug}`;
+        const legData   = (GATEWAY_LEGS as any)[legKey];
+        if (legData) {
+          firstMileComponents.push({
+            pillar: 'transfer', type: 'transfer', is_arrival: true,
+            name: `${legData.fromLabel} → ${legData.toLabel}`,
+            from_label: legData.fromLabel, to_label: legData.toLabel,
+            from_region: gateway, to_region: firstSlug,
+            provider: legData.provider, duration: legData.duration,
+            description: legData.aiNote,
+            price_display_zar: legData.estimatedCostZAR,
+            is_confirmed: false,
+          });
+        }
+      }
+
+      // ── Last-mile: departure transfer from last lodge → gateway ───────
+      const lastMileComponents: any[] = [];
+      if (itinerary.cities?.length > 0) {
+        const lastCity = itinerary.cities[itinerary.cities.length - 1];
+        const lastSlug = CITY_TO_SLUG[lastCity.city?.toLowerCase().trim() ?? ''] ?? '';
+        const depGW    = flightDepartureGateway || flightArrivalGateway || 'JNB';
+        // Check reverse GATEWAY_LEGS for a matching departure key
+        const depKey    = `${lastSlug}→${depGW}`;
+        const depLegKey = `${depGW}→${lastSlug}`; // reverse lookup for label
+        const depLeg    = (GATEWAY_LEGS as any)[depLegKey];
+        if (depLeg) {
+          lastMileComponents.push({
+            pillar: 'transfer', type: 'transfer', is_departure: true,
+            name: `${depLeg.toLabel} → ${depLeg.fromLabel}`,
+            from_label: depLeg.toLabel, to_label: depLeg.fromLabel,
+            from_region: lastSlug, to_region: depGW,
+            provider: depLeg.provider, duration: depLeg.duration,
+            description: `Return: ${depLeg.aiNote}`,
+            price_display_zar: 0, // included in outbound calculation
+            is_confirmed: false,
+          });
+        }
+      }
+
+      const allComponents = [
+        ...flightComponents.filter(f => f.is_outbound),
+        ...firstMileComponents,
+        ...components,
+        ...transferComponents,
+        ...activityComponents,
+        ...lastMileComponents,
+        ...flightComponents.filter(f => f.is_return),
+      ];
 
       // Deposit = flights+transfers 100% + lodges 30% (per V7-5 spec)
       const _bd = costBreakdown;
