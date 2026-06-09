@@ -1298,8 +1298,9 @@ function NestedPropertyCarousel({
 
   useEffect(() => {
     const idx = hotels.findIndex(h => String(h.id) === String(selectedHotelId));
-    // Only scroll if selected hotel is in positions 1-2 (not demoted/end of list)
-    if (idx > 0 && idx <= 2) setTimeout(() => scrollToIdx(idx), 100);
+    // If selected hotel is at the end (demoted by KB), scroll to first instead
+    const isAtEnd = idx === hotels.length - 1 || idx >= hotels.length - 2;
+    if (idx > 0 && !isAtEnd) setTimeout(() => scrollToIdx(idx), 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -4806,7 +4807,7 @@ const runBriefPlanner = (briefText: string) => {
                 <div style={{ fontSize:10, color:T.textDim, letterSpacing:'0.16em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:12 }}>International flights</div>
                 <div style={{ display:'flex', flexDirection:'column' as const, gap:7 }}>
                   {[
-
+                    { val:'flexible' as const, title:'Source for me later', sub:'Your Journey Specialist finds the best fares once dates are confirmed' },
                     { val:'include'  as const, title:'Find & include now',  sub:"We'll search and add international flights to your package" },
                     { val:'own'      as const, title:"I've already booked", sub:'Share your arrival details so we can plan around your flights' },
                   ].map(opt => {
@@ -4969,7 +4970,11 @@ const runBriefPlanner = (briefText: string) => {
               </select>
             </div>
           )}
-
+          {flightIntent==='flexible' && (
+            <div style={{ marginTop:12, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:9, padding:'12px 16px', fontSize:13, color:T.textDim, lineHeight:1.7, fontWeight:200 }}>
+              Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
+            </div>
+          )}
         </div>
 
         <InputDivider />
@@ -5572,7 +5577,20 @@ const runBriefPlanner = (briefText: string) => {
               const regionFindings = skeletonFindings.filter((f:any) =>
                 f.severity !== 'confirmed'
               ).slice(0, 4);
-              const selectedHotel = safePool.find((h:any) => String(h.id) === String(currentStay.hotelId));
+              // If current selection is KB-demoted, use first non-demoted hotel instead
+              const _isDemotedHotel = (hotel: any) => {
+                const kbOvr = kbEntries.filter((e:any) => e.override_ai && e.active !== false);
+                return kbOvr.some((e:any) => {
+                  const w = (e.linkedTo||e.linked_name||'').toLowerCase().split(' ').filter((x:string)=>x.length>3);
+                  return w.some((x:string)=>(hotel.name||'').toLowerCase().includes(x)) &&
+                    /avoid|do not|block|end of|last|exclude/i.test(Array.isArray(e.guardrails)?e.guardrails.join(' '):String(e.guardrails||''));
+                });
+              };
+              const currentSelected = safePool.find((h:any) => String(h.id) === String(currentStay.hotelId));
+              const effectiveHotelId = (currentSelected && _isDemotedHotel(currentSelected))
+                ? (safePool.find((h:any) => !_isDemotedHotel(h))?.id ?? currentStay.hotelId)
+                : currentStay.hotelId;
+              const selectedHotel = safePool.find((h:any) => String(h.id) === String(effectiveHotelId));
               const selectedIncludes: string[] = (selectedHotel as any)?.rate_includes ?? [];
               const hotelMalariaFree = selectedHotel?.malariaFree ?? false;
               // Right sidebar: traveller-facing regional tip only (no specialist_recs)
@@ -5653,7 +5671,7 @@ const runBriefPlanner = (briefText: string) => {
                       setCityStays(prev => prev.map((s,i) => i===cityIdx ? { ...s, nights:Math.max(1, s.nights+delta) } : s));
                     }}
                     hotels={safePool}
-                    selectedHotelId={currentStay.hotelId}
+                    selectedHotelId={effectiveHotelId}
                     onSelectHotel={hotel => {
                       setCityStays(prev => { const next = [...prev]; next[cityIdx] = { ...currentStay, hotelId:hotel.id }; return next; });
                     }}
