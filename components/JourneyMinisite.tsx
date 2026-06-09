@@ -230,7 +230,6 @@ function Property({ sg, start, startISO, mode, immersive }: any) {
 
 function QuoteExcitement({ j, total, m, onChat }: any) {
   const hold = useCountdown(new Date(Date.now() + 6 * 864e5));
-  const charter = useCountdown(new Date(Date.now() + 24 * 36e5));
   const deposit = j.price.GBP.fly + Math.round((total - j.price.GBP.fly) * 0.3);
   return <div style={{ background: `linear-gradient(160deg,${C.surface},#211d12)`, border: `1px solid ${C.borderGold}`, borderRadius: 16, padding: 22, margin: '22px 0 0' }}>
     <div style={{ fontFamily: F.d, fontSize: 26, color: C.goldLight }}>This is the journey waiting for you</div>
@@ -241,7 +240,7 @@ function QuoteExcitement({ j, total, m, onChat }: any) {
     </div>
     <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, alignItems: 'flex-end' }}>
       <div><div style={{ fontSize: 11, letterSpacing: '.12em', color: C.textMid }}>TO CONFIRM</div><div style={{ fontFamily: F.d, fontSize: 34, color: C.text }}>{m(deposit)}</div><div style={{ fontSize: 13, color: C.textMid }}>deposit · fully refundable with Cancel-for-any-Reason Cover</div></div>
-      <div style={{ textAlign: 'right' }}><div style={{ fontSize: 12, color: C.gold }}>✦ Held for you</div><div style={{ fontSize: 13, color: C.textMid }}>Price &amp; rooms: <b style={{ color: C.text }}>{hold.d}d {hold.h}h</b></div><div style={{ fontSize: 13, color: C.amber }}>Charter seats: <b>{charter.h}h {charter.m}m</b></div></div>
+      <div style={{ textAlign: 'right' }}><div style={{ fontSize: 12, color: C.gold }}>✦ Held for you</div><div style={{ fontSize: 13, color: C.textMid }}>Price &amp; rooms: <b style={{ color: C.text }}>{hold.d}d {hold.h}h</b></div></div>
     </div>
     <div style={{ marginTop: 14 }}>
       <Btn onClick={() => { window.location.href = `/checkout?id=${(j as any).itineraryId || ''}`; }}>Secure this journey — fully refundable →</Btn>
