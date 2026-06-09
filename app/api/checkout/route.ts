@@ -36,8 +36,18 @@ function buildPayFastUrl(params: {
 }) {
   const merchantId  = process.env.PAYFAST_MERCHANT_ID  || '10000100'
   const merchantKey = process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a'
-  // PayFast sandbox test account passphrase is 'payfast' — set PAYFAST_PASSPHRASE in env for production
-  const passphrase  = process.env.PAYFAST_PASSPHRASE   ?? 'payfast'
+  // IMPORTANT: The standard PayFast sandbox test account (10000100 / 46f0cd694581a)
+  // has NO passphrase set by default. Using 'payfast' as a default causes a 400
+  // signature mismatch because PayFast computes the hash without any passphrase.
+  //
+  // Rules:
+  //   Sandbox (test account 10000100): PAYFAST_PASSPHRASE should NOT be set in env
+  //   Production: Set PAYFAST_PASSPHRASE=your_actual_passphrase in Vercel env vars
+  //   If you create a custom sandbox merchant account and add a passphrase there,
+  //   set PAYFAST_PASSPHRASE accordingly.
+  //
+  // Using || '' (not ??) so an explicitly empty env var also results in no passphrase.
+  const passphrase = process.env.PAYFAST_PASSPHRASE || ''
 
   // Sanitize item_name - PayFast only accepts ASCII characters
   const sanitizedItemName = params.itemName.replace(/[^\x00-\x7F]/g, '-').substring(0, 100)
@@ -75,6 +85,9 @@ function buildPayFastUrl(params: {
     : sigString
 
   const signature = crypto.createHash('md5').update(sigWithPassphrase).digest('hex')
+
+  // Debug log — visible in Vercel function logs for troubleshooting
+  console.log('[payfast] passphrase set:', !!passphrase, '| sig (first 8):', signature.slice(0, 8))
 
   const host = process.env.PAYFAST_LIVE === 'true'
     ? 'https://www.payfast.co.za/eng/process'
