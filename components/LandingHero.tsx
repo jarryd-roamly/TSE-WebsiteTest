@@ -903,7 +903,7 @@ export default function LandingHero({
                 return (
                   <div key={org.key} style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 6, opacity: org.note === 'Applying 2026' ? 0.5 : 0.85 }}>
                     {logoUrl
-                      ? <img src={logoUrl} alt={org.abbr} style={{ height: 40, maxWidth: 120, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: org.note === 'Applying 2026' ? 0.45 : 0.7 }} />
+                      ? <img src={logoUrl} alt={org.abbr} style={{ height: 40, maxWidth: 120, objectFit: 'contain', opacity: org.note === 'Applying 2026' ? 0.55 : 1 }} />
                       : <div style={{ fontFamily: "'Cormorant Garamond',serif", fontWeight: 400, fontSize: 15, color: 'rgba(200,169,110,0.8)', letterSpacing: '0.08em', height: 40, display: 'flex', alignItems: 'center' }}>{org.abbr}</div>
                     }
                     <div style={{ fontWeight: 300, fontSize: 8, letterSpacing: '0.18em', color: org.note === 'Applying 2026' ? 'rgba(167,139,250,0.6)' : 'rgba(74,222,128,0.55)', textTransform: 'uppercase' as const }}>{org.note === 'Applying 2026' ? '◌ ' : '✓ '}{org.note}</div>
