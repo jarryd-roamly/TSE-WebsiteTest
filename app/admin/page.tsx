@@ -517,8 +517,8 @@ function Bookings(){
           )
         })}
       </div>
+      {sendModal && <SendModal booking={sendModal} onClose={()=>setSendModal(null)} />}
     </div>
-    {sendModal && <SendModal booking={sendModal} onClose={()=>setSendModal(null)} />}
   )
 }
 
