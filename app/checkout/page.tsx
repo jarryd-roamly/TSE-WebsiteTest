@@ -410,49 +410,67 @@ function TransferCard({ comp }: { comp: any }) {
   const from = comp.from_label || comp.from_region || ''
   const to   = comp.to_label   || comp.to_region   || comp.destination || ''
   const [expanded, setExpanded] = useState(false)
-  // The description / aiNote often has the richest info
-  const detail = comp.description || comp.ai_note || comp.aiNote || ''
+  const detail = comp.ai_note || comp.description || comp.aiNote || ''
   const provider = comp.provider || ''
   const isArrival = comp.is_arrival
   const isDeparture = comp.is_departure
   const label = isArrival ? 'Arrival Transfer' : isDeparture ? 'Departure Transfer' : 'Transfer'
+  const legs: any[] = comp.legs || []
+  // Legs that represent actual flights (not road/info legs)
+  const flightLegs = legs.filter(l => l.kind === 'air' || l.kind === 'longhaul' || l.kind === 'bush' || l.kind === 'exit')
+  const hasLegs = flightLegs.length > 0
 
   return (
     <div style={{ padding: '0', margin: '4px 0', background: T.surface, border: `0.5px solid ${T.border}`, borderRadius: 10, borderLeft: `2px solid ${T.goldBorder}`, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 18px' }}>
         <div style={{ width: 38, height: 38, borderRadius: '50%', flexShrink: 0, background: isArrival ? 'rgba(74,222,128,0.08)' : isDeparture ? 'rgba(96,165,250,0.08)' : T.goldDim, border: `0.5px solid ${isArrival ? T.greenBorder : isDeparture ? 'rgba(96,165,250,0.3)' : T.goldBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-          {provider.toLowerCase().includes('air') || provider.toLowerCase().includes('fly') ? '🛩' : provider.toLowerCase().includes('boat') ? '⛵' : '🚐'}
+          {provider.toLowerCase().includes('air') || provider.toLowerCase().includes('fly') || hasLegs ? '✈' : provider.toLowerCase().includes('road') ? '🚗' : '🚐'}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 9, color: isArrival ? T.green : isDeparture ? T.blue : T.gold, letterSpacing: '0.28em', textTransform: 'uppercase' as const, marginBottom: 5 }}>{label}</div>
           {from && to && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 14, color: T.text, fontWeight: 500 }}>{from}</span>
               <span style={{ color: T.gold, fontSize: 14 }}>→</span>
               <span style={{ fontSize: 14, color: T.text, fontWeight: 500 }}>{to}</span>
             </div>
           )}
-          {/* Provider as styled detail */}
-          {provider && (
-            <div style={{ fontSize: 11, color: T.textDim, fontFamily: "'Jost', sans-serif", lineHeight: 1.55, marginBottom: detail ? 4 : 0 }}>
-              {provider}
+          {/* Render individual flight legs if saved from BCC selection */}
+          {hasLegs && (
+            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, marginBottom: 8 }}>
+              {flightLegs.map((leg: any, i: number) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, background: T.goldDim, border: `0.5px solid ${T.goldBorder}`, borderRadius: 7, padding: '8px 12px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.gold, fontFamily: 'monospace', minWidth: 28, textAlign: 'center' as const }}>{leg.badge || '✈'}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: T.text, fontWeight: 600 }}>{leg.name}</div>
+                    {leg.flightNum && <div style={{ fontSize: 10, color: T.textDim, fontFamily: 'monospace', marginTop: 1 }}>{leg.flightNum}</div>}
+                  </div>
+                  {(leg.from || leg.depTime) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <div style={{ textAlign: 'center' as const }}>
+                        <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 16, color: T.text, lineHeight: 1 }}>{leg.from}</div>
+                        {leg.depTime && <div style={{ fontSize: 11, color: T.gold, marginTop: 1 }}>{leg.depTime}</div>}
+                      </div>
+                      <span style={{ color: T.gold, fontSize: 12 }}>→</span>
+                      <div style={{ textAlign: 'center' as const }}>
+                        <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 16, color: T.text, lineHeight: 1 }}>{leg.to}</div>
+                        {leg.arrTime && <div style={{ fontSize: 11, color: T.gold, marginTop: 1 }}>{leg.arrTime}</div>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
-          {/* Collapsed detail: show a preview of the aiNote */}
-          {detail && !expanded && (
-            <div style={{ fontSize: 10, color: T.textDim, lineHeight: 1.5, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-              {detail.length > 80 ? detail.slice(0, 80) + '…' : detail}
-            </div>
+          {/* Show provider string if no structured legs (fallback) */}
+          {!hasLegs && provider && (
+            <div style={{ fontSize: 11, color: T.textDim, fontFamily: "'Jost', sans-serif", lineHeight: 1.55, marginBottom: detail ? 4 : 0 }}>{provider}</div>
           )}
-          {detail && expanded && (
-            <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.6, marginTop: 6, background: T.goldDim, border: `0.5px solid ${T.goldBorder}`, borderRadius: 6, padding: '8px 12px' }}>
+          {/* Detail / routing note — expanded by default for transfers */}
+          {detail && (
+            <div style={{ fontSize: 11, color: T.textMid, lineHeight: 1.6, marginTop: 4, background: T.goldDim, border: `0.5px solid ${T.goldBorder}`, borderRadius: 6, padding: '8px 12px' }}>
               {detail}
             </div>
-          )}
-          {detail && (
-            <button onClick={() => setExpanded(!expanded)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.gold, fontSize: 10, padding: '4px 0 0', letterSpacing: '0.08em', fontFamily: 'inherit' }}>
-              {expanded ? '▲ Less' : '▼ Full route details'}
-            </button>
           )}
         </div>
         <div style={{ textAlign: 'right' as const, flexShrink: 0, display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: 6 }}>
