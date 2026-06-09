@@ -4502,6 +4502,12 @@ const runBriefPlanner = (briefText: string) => {
           margin_pct:15, 
           inclusion_source:'contract' as const,
           hero_image_url: hotel.image || null,
+          images: [
+            hotel.image ? { url: hotel.image, label: 'Property' } : null,
+            ...((hotel as any)._images || [])
+              .filter((s: any) => s.type === 'image' && s.url && s.url !== hotel.image)
+              .map((s: any) => ({ url: s.url, label: s.label || s.roomType || null }))
+          ].filter(Boolean),
           trust_score: hotel.trustScore || null,
           malaria_free: hotel.malariaFree || false,
           inclusions: hotel.rate_includes || [],
@@ -5887,27 +5893,7 @@ const runBriefPlanner = (briefText: string) => {
         </div>
       )}
 
-{/* JOURNEY CONFIRMATION */}
-      {screen==='confirming' && itinerary && (
-        <JourneyConfirmation
-          itinerary={itinerary}
-          cityStays={cityStays}
-          hotelsByMargin={hotelsByMargin}
-          selectedTransferIds={selectedTransferIds}
-          selectedActivities={selectedActivities}
-          activities={activities}
-          checkinDate={checkinDate}
-          nights={nights}
-          adults={adults}
-          children={children}
-          grandTotal={grandTotal}
-          fmt={fmt}
-          currency={currency}
-          edition={edition}
-          onConfirm={doCheckout}
-          onBack={() => setScreen('builder')}
-        />
-      )}
+{/* JOURNEY CONFIRMATION — removed: JourneyLoadingScreen now calls doCheckout() directly */}
     
      {/* JOURNEY LOADING */}
       {screen==='journey-loading' && itinerary && (
@@ -5932,7 +5918,7 @@ const runBriefPlanner = (briefText: string) => {
           fmt={fmt}
           edition={edition}
           selectedRegions={selectedRegions}
-          onComplete={() => setScreen('confirming')}
+          onComplete={() => doCheckout()}
         />
       )}
              
