@@ -599,7 +599,18 @@ function LeftColumn({ components }: { components: any[] }) {
 function RightColumn({ components }: { components: any[] }) {
   const activities = components.filter(c => c.pillar === 'activity' || c.type === 'activity')
   const hotels     = components.filter(c => c.pillar === 'hotel' || c.type === 'accommodation')
-  // Collect inclusions from all hotels as experience highlights
+
+  // Group activities by region
+  const actsByRegion: Record<string, { regionLabel: string; acts: any[] }> = {}
+  activities.forEach(a => {
+    const key   = a.region_slug || a.region_label || 'other'
+    const label = a.region_label || a.region_slug || ''
+    if (!actsByRegion[key]) actsByRegion[key] = { regionLabel: label, acts: [] }
+    actsByRegion[key].acts.push(a)
+  })
+  const regionGroups = Object.values(actsByRegion)
+
+  // Collect inclusions from all hotels
   const allInclusions = [...new Set(
     hotels.flatMap(h => (h.inclusions || []) as string[])
   )].slice(0, 12)
@@ -610,18 +621,35 @@ function RightColumn({ components }: { components: any[] }) {
         Your Experiences
       </div>
 
-      {activities.length > 0 && (
-        <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: `0.5px solid ${T.border}` }}>
-          <div style={{ fontSize: 9, color: T.gold, letterSpacing: '0.2em', textTransform: 'uppercase' as const, marginBottom: 10 }}>Selected</div>
-          {activities.map((act, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 1.5, height: 12, background: T.gold, flexShrink: 0, marginTop: 3 }} />
-              <div>
-                <div style={{ fontSize: 12, color: T.text, lineHeight: 1.3 }}>{act.name}</div>
-                {act.region_label && <div style={{ fontSize: 10, color: T.textDim, marginTop: 2 }}>{act.region_label}</div>}
-              </div>
+      {regionGroups.length > 0 && (
+        <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: allInclusions.length > 0 ? `0.5px solid ${T.border}` : 'none' }}>
+          <div style={{ fontSize: 9, color: T.gold, letterSpacing: '0.2em', textTransform: 'uppercase' as const, marginBottom: 12 }}>Selected</div>
+
+          {regionGroups.map((group, gi) => (
+            <div key={gi} style={{ marginBottom: gi < regionGroups.length - 1 ? 16 : 0 }}>
+              {group.regionLabel && (
+                <div style={{ fontSize: 8, color: T.textDim, letterSpacing: '0.22em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+                  {group.regionLabel}
+                </div>
+              )}
+              {group.acts.map((act, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+                  <div style={{ width: 1.5, height: 12, background: T.gold, flexShrink: 0, marginTop: 3 }} />
+                  <div>
+                    <div style={{ fontSize: 12, color: T.text, lineHeight: 1.3 }}>{act.name}</div>
+                    {act.duration && <div style={{ fontSize: 9, color: T.textDim, marginTop: 2 }}>{act.duration}</div>}
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
+
+          {/* Specialist confirmation footnote */}
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: `0.5px solid ${T.border}` }}>
+            <div style={{ fontSize: 9, color: T.textDim, lineHeight: 1.6, fontStyle: 'italic' }}>
+              Your Journey Specialist will consult with you to firm up the best days for each activity — scheduling depends on lodge programme and availability.
+            </div>
+          </div>
         </div>
       )}
 
@@ -634,6 +662,12 @@ function RightColumn({ components }: { components: any[] }) {
               <div style={{ fontSize: 11, color: T.textMid }}>{formatInclusion(inc)}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {regionGroups.length === 0 && allInclusions.length === 0 && (
+        <div style={{ fontSize: 11, color: T.textDim, fontStyle: 'italic', lineHeight: 1.6 }}>
+          Activities and experiences will be confirmed by your Journey Specialist.
         </div>
       )}
     </div>
