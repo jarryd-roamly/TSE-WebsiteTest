@@ -82,7 +82,7 @@ export default function FlightSelector({
   // ── State ──
   const [city,      setCity]      = useState(originIata || '');
   // Sync city when originIata arrives after mount (e.g. from inspire flow)
-  useEffect(() => { if (originIata && !city) setCity(originIata); }, [originIata]);
+  useEffect(() => { if (originIata) setCity(originIata); }, [originIata]);
   const [depDate,   setDepDate]   = useState(travelDates?.start || '');
   const [cabin,     setCabin]     = useState('economy');
   const [offers,    setOffers]    = useState([]);
