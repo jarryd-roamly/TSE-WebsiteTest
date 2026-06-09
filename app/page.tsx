@@ -3938,32 +3938,6 @@ const toggleTheme = (id: string) =>
   const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
   const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => ((b.displayRate||0)-(b.netRate||0)) - ((a.displayRate||0)-(a.netRate||0))), [hotels]);
-
-  // Re-check KB demotions when kbEntries loads from Supabase
-  // Fixes race condition: build-itinerary may run before kbEntries is populated
-  useEffect(() => {
-    const kbOvr = kbEntries.filter((e: any) => e.override_ai && e.active !== false);
-    if (!kbOvr.length || !cityStays.length || !itinerary?.cities) return;
-    const isDem = (hotel: any) => kbOvr.some((e: any) => {
-      const w = (e.linkedTo||e.linked_name||'').toLowerCase().split(' ').filter((x:string)=>x.length>3);
-      return w.some((x:string)=>(hotel.name||'').toLowerCase().includes(x)) &&
-        /avoid|do not|block|end of|last|exclude/i.test(Array.isArray(e.guardrails)?e.guardrails.join(' '):String(e.guardrails||''));
-    });
-    let changed = false;
-    const updated = cityStays.map((stay, i) => {
-      const city = itinerary.cities[i]; if (!city) return stay;
-      const slug = CITY_TO_SLUG[city.city?.toLowerCase().trim()??'']??'';
-      const pool = slug ? hotelsByMargin.filter(h=>h.subRegion===slug) : hotelsByMargin;
-      const current = pool.find(h=>String(h.id)===String(stay.hotelId));
-      if (!current || !isDem(current)) return stay;
-      const replacement = pool.find(h=>!isDem(h));
-      if (!replacement || replacement.id === current.id) return stay;
-      changed = true;
-      return { ...stay, hotelId: replacement.id };
-    });
-    if (changed) setCityStays(updated);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kbEntries]);
 // Cinematic videos per region — for the inspire-input right panel
   const [regionVideoMap, setRegionVideoMap] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -4934,6 +4908,7 @@ const runBriefPlanner = (briefText: string) => {
             {([
               { val:'include'  as const, title:'Find flights for me',  sub:"We'll search and include your international flights in the package" },
               { val:'own'      as const, title:"I've already booked",   sub:'Share your arrival details so we can plan around your schedule' },
+              { val:'flexible' as const, title:'Dates still flexible', sub:'Your Journey Specialist will find the best fares once dates are confirmed' },
             ]).map(opt => {
               const isSel = flightIntent===opt.val;
               return (
@@ -4963,30 +4938,18 @@ const runBriefPlanner = (briefText: string) => {
             </div>
           )}
           {flightIntent==='own' && (
-            <div style={{ marginTop:14, paddingTop:16, borderTop:'0.5px solid rgba(255,255,255,0.06)', display:'flex', flexDirection:'column' as const, gap:16 }}>
-              <div>
-                <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:8 }}>Landing at</div>
-                <select value={origin} onChange={e=>{ setOrigin(e.target.value); setDepartureHubId(e.target.value); }} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.12)', color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
-                  {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:8 }}>Departing from</div>
-                <select value={departureHubId || origin} onChange={e=>setDepartureHubId(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.12)', color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
-                  {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
-                </select>
-                {(departureHubId && departureHubId !== origin) && (
-                  <div style={{ marginTop:6, fontSize:11, color:'rgba(212,175,55,0.6)', fontWeight:200 }}>
-                    ✦ Open-jaw itinerary — we'll route you accordingly
-                  </div>
-                )}
-              </div>
-              <div style={{ background:'rgba(212,175,55,0.06)', border:'0.5px solid rgba(212,175,55,0.2)', borderRadius:8, padding:'10px 14px', fontSize:12, color:'rgba(245,240,232,0.5)', lineHeight:1.6 }}>
-                ✦ All in-country transfers and logistics will be planned around your existing flights
-              </div>
+            <div style={{ marginTop:14, paddingTop:16, borderTop:'0.5px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize:11, color:T.textDim, textTransform:'uppercase' as const, letterSpacing:'0.18em', fontWeight:300, marginBottom:8 }}>Arriving into</div>
+              <select value={origin} onChange={e=>setOrigin(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.12)', color:T.text, borderRadius:8, padding:'12px 14px', fontSize:14, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
+                {REGIONAL_ORIGINS.map(o=><option key={o.code} value={o.code}>{o.flag} {o.label}</option>)}
+              </select>
             </div>
           )}
-
+          {flightIntent==='flexible' && (
+            <div style={{ marginTop:12, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:9, padding:'12px 16px', fontSize:13, color:T.textDim, lineHeight:1.7, fontWeight:200 }}>
+              Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
+            </div>
+          )}
         </div>
 
         <InputDivider />
@@ -5065,13 +5028,31 @@ const runBriefPlanner = (briefText: string) => {
             T={T}
           />
           {!checkinDate && (
-            <div style={{ marginTop:10, padding:'10px 14px', background:'rgba(248,113,113,0.06)', border:'0.5px solid rgba(248,113,113,0.2)', borderRadius:8, fontSize:12, color:'rgba(248,113,113,0.8)', fontWeight:300, lineHeight:1.55 }}>
-              ✦ Travel dates are required to confirm availability and pricing
+            <div style={{ marginTop:10, fontSize:11, color:'rgba(245,240,232,0.32)', fontWeight:200 }}>
+              Dates not required — your specialist can work with a flexible window
             </div>
           )}
         </div>
 
         <InputDivider />
+
+        {/* ── 6. TRIP LENGTH — hidden when dates calculate it automatically ── */}
+        {!checkinDate && (
+        <div style={{ marginBottom:44 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:18 }}>
+            <SectionLabel text="Trip length" sub="Or set arrival &amp; departure dates above" noMargin />
+            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:30, fontWeight:300, color:T.text }}>{nights} <span style={{ fontSize:15, color:T.textDim }}>nights</span></span>
+          </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' as const }}>
+            {[5,7,10,12,14,21].map(n => (
+              <button key={n} onClick={()=>setNights(n)}
+                style={{ padding:'11px 24px', borderRadius:8, border:`0.5px solid ${nights===n?T.gold:'rgba(255,255,255,0.18)'}`, background:nights===n?T.goldDim:'transparent', color:nights===n?T.gold:'rgba(245,240,232,0.75)', fontSize:14, fontWeight:300, cursor:'pointer', fontFamily:'inherit', letterSpacing:'0.04em', transition:'all 0.15s' }}>
+                {n}n
+              </button>
+            ))}
+          </div>
+        </div>
+        )}
 
         <InputDivider />
 
@@ -5187,11 +5168,8 @@ const runBriefPlanner = (briefText: string) => {
         <InputDivider />
 
         {/* ── BUILD BUTTON ───────────────────────────────────────────── */}
-        <button className="btn-gold" 
-          disabled={!checkinDate}
-          style={{ width:'100%', padding:'18px 24px', fontSize:15, letterSpacing:'0.1em', borderRadius:4, opacity: checkinDate ? 1 : 0.45, cursor: checkinDate ? 'pointer' : 'not-allowed' }} 
-          onClick={checkinDate ? runSocraticPlanner : undefined}>
-          {checkinDate ? '✦   Build My Itinerary' : '✦   Add travel dates to continue'}
+        <button className="btn-gold" style={{ width:'100%', padding:'18px 24px', fontSize:15, letterSpacing:'0.1em', borderRadius:4 }} onClick={runSocraticPlanner}>
+          ✦ &nbsp; Build My Itinerary
         </button>
         <p style={{ textAlign:'center' as const, fontSize:12, color:'rgba(245,240,232,0.2)', marginTop:12, letterSpacing:'0.08em', fontWeight:200 }}>
           Itinerary built in minutes · Fully priced · No commitment
@@ -5276,13 +5254,22 @@ const runBriefPlanner = (briefText: string) => {
       experience:   adults === 1 ? 'first' : 'returning',
       regions:      selectedRegions,
       nights,
-      travellers:   adults === 1 ? 'solo' : adults === 2 ? 'couple' : `group of ${adults}`,
+      travellers:   (() => {
+        if (children > 0 || infants > 0) return 'family';
+        if (selectedThemes.includes('honeymoon')) return 'honeymoon';
+        if (selectedThemes.includes('anniversary')) return 'anniversary';
+        if (adults === 1) return 'solo';
+        if (adults === 2) return 'couple';
+        return `group of ${adults}`;
+      })(),
       budget:       fmt(budget),
       budgetRaw:    budget,
       adults,
       children,
       infants,
       occasion:     selectedThemes[0] || '',
+      themes:       selectedThemes,
+      themeTags:    selectedThemes,
       origin:       needsIntlFlight ? intlOrigin : origin,
       checkinDate,
       flexMonth,
