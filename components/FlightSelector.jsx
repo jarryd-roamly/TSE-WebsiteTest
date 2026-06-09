@@ -19,15 +19,47 @@ import { useState, useEffect, useCallback } from 'react';
 
 // Departure cities travellers fly FROM (international origins)
 const ORIGIN_CITIES = [
-  { code: 'LHR', label: 'London Heathrow',  flag: '🇬🇧' },
-  { code: 'LGW', label: 'London Gatwick',   flag: '🇬🇧' },
-  { code: 'MAN', label: 'Manchester',       flag: '🇬🇧' },
-  { code: 'AMS', label: 'Amsterdam',        flag: '🇳🇱' },
-  { code: 'FRA', label: 'Frankfurt',        flag: '🇩🇪' },
-  { code: 'JFK', label: 'New York (JFK)',   flag: '🇺🇸' },
-  { code: 'LAX', label: 'Los Angeles',      flag: '🇺🇸' },
-  { code: 'DXB', label: 'Dubai',            flag: '🇦🇪' },
-  { code: 'SYD', label: 'Sydney',           flag: '🇦🇺' },
+  { code: 'LHR', label: 'London Heathrow',      flag: '🇬🇧' },
+  { code: 'LGW', label: 'London Gatwick',        flag: '🇬🇧' },
+  { code: 'MAN', label: 'Manchester',            flag: '🇬🇧' },
+  { code: 'EDI', label: 'Edinburgh',             flag: '🇬🇧' },
+  { code: 'AMS', label: 'Amsterdam',             flag: '🇳🇱' },
+  { code: 'FRA', label: 'Frankfurt',             flag: '🇩🇪' },
+  { code: 'MUC', label: 'Munich',                flag: '🇩🇪' },
+  { code: 'CDG', label: 'Paris Charles de Gaulle',flag: '🇫🇷' },
+  { code: 'ORY', label: 'Paris Orly',            flag: '🇫🇷' },
+  { code: 'MAD', label: 'Madrid',                flag: '🇪🇸' },
+  { code: 'BCN', label: 'Barcelona',             flag: '🇪🇸' },
+  { code: 'ZRH', label: 'Zurich',                flag: '🇨🇭' },
+  { code: 'GVA', label: 'Geneva',                flag: '🇨🇭' },
+  { code: 'FCO', label: 'Rome Fiumicino',        flag: '🇮🇹' },
+  { code: 'MXP', label: 'Milan Malpensa',        flag: '🇮🇹' },
+  { code: 'BRU', label: 'Brussels',              flag: '🇧🇪' },
+  { code: 'DUB', label: 'Dublin',                flag: '🇮🇪' },
+  { code: 'CPH', label: 'Copenhagen',            flag: '🇩🇰' },
+  { code: 'ARN', label: 'Stockholm Arlanda',     flag: '🇸🇪' },
+  { code: 'OSL', label: 'Oslo',                  flag: '🇳🇴' },
+  { code: 'HEL', label: 'Helsinki',              flag: '🇫🇮' },
+  { code: 'LIS', label: 'Lisbon',                flag: '🇵🇹' },
+  { code: 'ATH', label: 'Athens',                flag: '🇬🇷' },
+  { code: 'JFK', label: 'New York (JFK)',         flag: '🇺🇸' },
+  { code: 'EWR', label: 'New York (Newark)',      flag: '🇺🇸' },
+  { code: 'LAX', label: 'Los Angeles',           flag: '🇺🇸' },
+  { code: 'ORD', label: 'Chicago O\'Hare',       flag: '🇺🇸' },
+  { code: 'BOS', label: 'Boston',                flag: '🇺🇸' },
+  { code: 'MIA', label: 'Miami',                 flag: '🇺🇸' },
+  { code: 'IAD', label: 'Washington Dulles',     flag: '🇺🇸' },
+  { code: 'SFO', label: 'San Francisco',         flag: '🇺🇸' },
+  { code: 'YYZ', label: 'Toronto Pearson',       flag: '🇨🇦' },
+  { code: 'YVR', label: 'Vancouver',             flag: '🇨🇦' },
+  { code: 'DXB', label: 'Dubai',                 flag: '🇦🇪' },
+  { code: 'DOH', label: 'Doha',                  flag: '🇶🇦' },
+  { code: 'AUH', label: 'Abu Dhabi',             flag: '🇦🇪' },
+  { code: 'SYD', label: 'Sydney',                flag: '🇦🇺' },
+  { code: 'MEL', label: 'Melbourne',             flag: '🇦🇺' },
+  { code: 'SIN', label: 'Singapore',             flag: '🇸🇬' },
+  { code: 'HKG', label: 'Hong Kong',             flag: '🇭🇰' },
+  { code: 'NBO', label: 'Nairobi',               flag: '🇰🇪' },
 ];
 
 const TILE_META = {
@@ -229,6 +261,10 @@ export default function FlightSelector({
         <Field label="Departure city">
           <select value={city} onChange={e => setCity(e.target.value)} style={inputStyle(T)}>
             <option value="">Select your city…</option>
+            {/* Dynamically add the pre-populated city if it's not in our standard list */}
+            {city && !ORIGIN_CITIES.find(c => c.code === city) && (
+              <option value={city}>{city} (your departure city)</option>
+            )}
             {ORIGIN_CITIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.label}</option>)}
           </select>
         </Field>
