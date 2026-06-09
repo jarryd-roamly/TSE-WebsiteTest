@@ -146,40 +146,26 @@ async function sendQuoteEmail(params: {
     </html>
   `
 
-  // Try Brevo first (no domain verification needed, works with any email)
-  const BREVO_KEY = process.env.BREVO_API_KEY
-  if (BREVO_KEY) {
-    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': BREVO_KEY },
-      body: JSON.stringify({
-        sender:  { name: 'The Safari Edition', email: 'noreply@thesafariedition.com' },
-        to:      [{ email: params.email, name: params.name || 'Traveller' }],
-        subject: (params as any).isDeposit
-          ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
-          : `Your Safari Journey Quote · ${params.bookingRef}`,
-        htmlContent: html,
-      }),
-    })
-    if (!res.ok) console.error('[brevo error]', res.status, await res.text())
-    else console.log('[brevo] sent to', params.email)
-    return { ok: res.ok }
-  }
-
-  // Fallback: Resend
+  // ── Send via Resend (domain verified: thesafariedition.com) ──────────────
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_KEY}` },
     body: JSON.stringify({
-      from:    'The Safari Edition <onboarding@resend.dev>',
+      from:    'The Safari Edition <journeys@thesafariedition.com>',
       to:      params.email,
+      reply_to: 'journeys@thesafariedition.com',
       subject: (params as any).isDeposit
         ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
         : `Your Safari Journey Quote · ${params.bookingRef}`,
       html,
     }),
   })
-  if (!res.ok) console.error('[resend error]', res.status, await res.text())
+  if (!res.ok) {
+    const errText = await res.text().catch(() => 'unknown')
+    console.error('[resend error]', res.status, errText)
+  } else {
+    console.log('[resend] sent to', params.email)
+  }
   return { ok: res.ok }
 }
 
