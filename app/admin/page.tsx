@@ -359,6 +359,69 @@ function Dashboard({setActive,userName}:{setActive:(s:string)=>void,userName?:st
   )
 }
 
+
+function SendModal({ booking, onClose }: { booking: any; onClose: () => void }) {
+  const travEmail = booking?.lead_traveller_snapshot?.email || '';
+  const [emails, setEmails] = useState(travEmail);
+  const [note, setNote]     = useState('');
+  const [status, setStatus] = useState<'idle'|'sending'|'sent'|'error'>('idle');
+  const [errMsg, setErrMsg] = useState('');
+
+  const send = async () => {
+    const list = emails.split(/[\s,;]+/).map((e:string) => e.trim()).filter((e:string) => e.includes('@'));
+    if (!list.length) { setErrMsg('Enter at least one valid email address.'); return; }
+    setStatus('sending'); setErrMsg('');
+    try {
+      const res = await fetch('/api/send-share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_reference: booking.booking_reference, recipients: list, note, sender_name: 'The Safari Edition team' }),
+      });
+      const data = await res.json();
+      if (data.success) { setStatus('sent'); }
+      else { setStatus('error'); setErrMsg(data.error || 'Send failed — check email provider config.'); }
+    } catch (e: any) { setStatus('error'); setErrMsg(e.message); }
+  };
+
+  const inp = {width:'100%',padding:'10px 12px',background:T.bg,border:`0.5px solid ${T.border}`,borderRadius:8,color:T.text,fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box' as const};
+  const url = `${typeof window!=='undefined'?window.location.origin:''}/journey/${booking.booking_reference}?mode=confirmed`;
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:T.surface,border:`0.5px solid ${T.borderGold}`,borderRadius:16,padding:28,width:'100%',maxWidth:480}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+          <div style={{fontSize:16,fontWeight:700,color:T.gold}}>Send journey link</div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:T.textDim,cursor:'pointer',fontSize:18,padding:0}}>×</button>
+        </div>
+        <div style={{fontSize:12,color:T.textDim,marginBottom:20}}>{booking.booking_reference} · {booking.lead_traveller_snapshot?.name}</div>
+
+        <div style={{background:T.bg,borderRadius:8,padding:'9px 12px',marginBottom:18,fontSize:11,color:T.textDim,wordBreak:'break-all',fontFamily:'monospace'}}>{url}</div>
+
+        <div style={{marginBottom:12}}>
+          <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:5}}>Recipients</label>
+          <input value={emails} onChange={e=>{setEmails(e.target.value);setErrMsg('');setStatus('idle');}} placeholder="email@example.com, another@example.com" style={inp} />
+          <div style={{fontSize:10,color:T.textDim,marginTop:4}}>Separate multiple addresses with commas. Pre-filled with traveller email.</div>
+        </div>
+
+        <div style={{marginBottom:18}}>
+          <label style={{display:'block',fontSize:10,color:T.gold,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:5}}>Personal note (optional)</label>
+          <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Add context or a warm message..." rows={3} style={{...inp,resize:'vertical',lineHeight:1.5}} />
+        </div>
+
+        {errMsg && <div style={{background:'rgba(248,113,113,0.08)',border:'0.5px solid rgba(248,113,113,0.3)',borderRadius:8,padding:'9px 12px',marginBottom:14,fontSize:12,color:T.red}}>{errMsg}</div>}
+        {status==='sent' && <div style={{background:'rgba(74,222,128,0.08)',border:'0.5px solid rgba(74,222,128,0.3)',borderRadius:8,padding:'9px 12px',marginBottom:14,fontSize:12,color:T.green}}>✓ Sent to {emails}</div>}
+
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={status==='sent'?onClose:send} style={{flex:1,padding:'11px',background:status==='sent'?T.surface:`linear-gradient(135deg,${T.gold},#f0c040)`,border:status==='sent'?`0.5px solid ${T.border}`:'none',borderRadius:9,color:status==='sent'?T.text:'#0a0a0a',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+            {status==='sending'?'Sending...':status==='sent'?'Done':'Send →'}
+          </button>
+          {status!=='sent'&&<button onClick={onClose} style={{padding:'11px 18px',background:'transparent',border:`0.5px solid ${T.border}`,borderRadius:9,color:T.textDim,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Cancel</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Bookings(){
   const [bookings,setBookings]=useState<any[]>([])
   const [loading,setLoading]=useState(true)
@@ -367,6 +430,7 @@ function Bookings(){
   const [sortField,setSortField]=useState('booked_at')
   const [sortDir,setSortDir]=useState('desc')
   const [expanded,setExpanded]=useState<string|null>(null)
+  const [sendModal,setSendModal]=useState<any>(null)
   const SPECIALISTS=['Sarah Mitchell','James Okonkwo','Priya Naidoo','Tom van der Berg']
   useEffect(()=>{
     sb('bookings?select=id,booking_reference,status,total_display_zar,total_net_zar,total_paid_zar,booked_at,lead_traveller_snapshot,itinerary_id&order=created_at.desc')
@@ -440,8 +504,12 @@ function Bookings(){
                     <div style={{background:T.bg,borderRadius:9,padding:'10px 12px'}}><div style={{fontSize:10,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Balance due</div><div style={{fontSize:12,color:balance>0?T.text:T.green}}>{balance>0?fmt(balance):'Paid in full'}</div></div>
                     <div style={{background:'rgba(212,175,55,0.06)',border:`0.5px solid ${T.borderGold}`,borderRadius:9,padding:'10px 12px'}}><div style={{fontSize:10,color:T.textDim,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>Journey Specialist</div><div style={{fontSize:12,color:T.gold,fontWeight:600}}>{specialist}</div></div>
                   </div>
-                  <div style={{display:'flex',gap:8}}>
-                    <button style={{fontSize:11,color:T.gold,padding:'5px 12px',border:`0.5px solid ${T.borderGold}`,borderRadius:7,background:T.goldDim,cursor:'pointer',fontFamily:'inherit'}}>Send confirmation</button>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    <button onClick={()=>window.open(`/journey/${b.booking_reference}?mode=confirmed`,'_blank')} style={{fontSize:11,color:T.gold,padding:'5px 12px',border:`0.5px solid ${T.borderGold}`,borderRadius:7,background:T.goldDim,cursor:'pointer',fontFamily:'inherit'}}>✦ View minisite</button>
+                    <button onClick={()=>window.open(`/journey/${b.booking_reference}?view=ops`,'_blank')} style={{fontSize:11,color:T.amber,padding:'5px 12px',border:`0.5px solid rgba(251,191,36,0.3)`,borderRadius:7,background:'rgba(251,191,36,0.06)',cursor:'pointer',fontFamily:'inherit'}}>⚑ Ops brief</button>
+                    <button onClick={()=>window.open(`/journey/${b.booking_reference}?view=review`,'_blank')} style={{fontSize:11,color:T.blue,padding:'5px 12px',border:`0.5px solid rgba(96,165,250,0.3)`,borderRadius:7,background:'rgba(96,165,250,0.06)',cursor:'pointer',fontFamily:'inherit'}}>↗ Timeline</button>
+                    <button onClick={()=>window.open(`/admin/pricing-audit?ref=${b.booking_reference}`,'_blank')} style={{fontSize:11,color:T.green,padding:'5px 12px',border:`0.5px solid rgba(74,222,128,0.3)`,borderRadius:7,background:'rgba(74,222,128,0.06)',cursor:'pointer',fontFamily:'inherit'}}>$ Pricing audit</button>
+                    <button onClick={()=>setSendModal(b)} style={{fontSize:11,color:T.textDim,padding:'5px 12px',border:`0.5px solid ${T.border}`,borderRadius:7,background:'transparent',cursor:'pointer',fontFamily:'inherit'}}>Send confirmation</button>
                   </div>
                 </div>
               )}
@@ -450,6 +518,7 @@ function Bookings(){
         })}
       </div>
     </div>
+    {sendModal && <SendModal booking={sendModal} onClose={()=>setSendModal(null)} />}
   )
 }
 
