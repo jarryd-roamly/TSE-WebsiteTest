@@ -36,18 +36,8 @@ function buildPayFastUrl(params: {
 }) {
   const merchantId  = process.env.PAYFAST_MERCHANT_ID  || '10000100'
   const merchantKey = process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a'
-  // IMPORTANT: The standard PayFast sandbox test account (10000100 / 46f0cd694581a)
-  // has NO passphrase set by default. Using 'payfast' as a default causes a 400
-  // signature mismatch because PayFast computes the hash without any passphrase.
-  //
-  // Rules:
-  //   Sandbox (test account 10000100): PAYFAST_PASSPHRASE should NOT be set in env
-  //   Production: Set PAYFAST_PASSPHRASE=your_actual_passphrase in Vercel env vars
-  //   If you create a custom sandbox merchant account and add a passphrase there,
-  //   set PAYFAST_PASSPHRASE accordingly.
-  //
-  // Using || '' (not ??) so an explicitly empty env var also results in no passphrase.
-  const passphrase = process.env.PAYFAST_PASSPHRASE || ''
+  // PayFast sandbox test account passphrase is 'payfast' — set PAYFAST_PASSPHRASE in env for production
+  const passphrase  = process.env.PAYFAST_PASSPHRASE   ?? 'payfast'
 
   // Sanitize item_name - PayFast only accepts ASCII characters
   const sanitizedItemName = params.itemName.replace(/[^\x00-\x7F]/g, '-').substring(0, 100)
@@ -86,9 +76,6 @@ function buildPayFastUrl(params: {
 
   const signature = crypto.createHash('md5').update(sigWithPassphrase).digest('hex')
 
-  // Debug log — visible in Vercel function logs for troubleshooting
-  console.log('[payfast] passphrase set:', !!passphrase, '| sig (first 8):', signature.slice(0, 8))
-
   const host = process.env.PAYFAST_LIVE === 'true'
     ? 'https://www.payfast.co.za/eng/process'
     : 'https://sandbox.payfast.co.za/eng/process'
@@ -111,65 +98,188 @@ async function sendQuoteEmail(params: {
     return { ok: true, skipped: true }
   }
 
-  const nights = params.itinerary?.nights || 0
-  const title  = params.itinerary?.title  || 'Your Safari Journey'
+  const itin       = params.itinerary || {}
+  const nights     = itin.nights || 0
+  const title      = itin.title  || 'Your Safari Journey'
+  const occasion   = (itin.occasion || '').toLowerCase()
+  const themes: string[] = Array.isArray(itin.themes) ? itin.themes : []
+  const cities: any[] = Array.isArray(itin.cities) ? itin.cities : []
+  const route      = cities.map((c: any) => c.city || '').filter(Boolean)
+  const routeStr   = route.join(' · ') || (itin.routing || '').replace(/JNB →|→ JNB/g, '').trim()
+  const firstName  = (params.name || '').split(' ')[0] || 'Traveller'
+  const isDeposit  = (params as any).isDeposit
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head><meta charset="utf-8"></head>
-    <body style="background:#0a0a0a;color:#f5f0e8;font-family:Georgia,serif;margin:0;padding:0">
-      <div style="max-width:600px;margin:0 auto;padding:40px 24px">
-        <div style="color:#c8a96e;font-size:10px;letter-spacing:0.4em;text-transform:uppercase;margin-bottom:20px">
-          The Safari Edition
+  // Hero image: first hotel component image
+  const components: any[] = Array.isArray(itin.components) ? itin.components : []
+  const firstHotel = components.find((c: any) =>
+    c.pillar === 'hotel' || c.type === 'accommodation' || c.component_type === 'hotel'
+  )
+  const heroImg = firstHotel?.hero_image_url || firstHotel?.image || itin.hero_image_url || ''
+
+  // Exchange rate for GBP display (≈ same as app)
+  const GBP_RATE  = 0.042
+  const fmtZAR    = (n: number) => `R\u00a0${Math.round(n).toLocaleString('en-ZA')}`
+  const fmtGBP    = (n: number) => `£${Math.round(n * GBP_RATE).toLocaleString('en-GB')}`
+
+  // Emotive headline + sub copy matching minisite emoTive() logic
+  const emoHeadline = (() => {
+    if (occasion === 'honeymoon') return `${nights} nights. Wilderness, wonder, and each other.`
+    if (occasion === 'anniversary') return `Africa doesn't do ordinary. Neither should your anniversary.`
+    if (occasion === 'family')   return `The Africa your family will carry forever.`
+    if (occasion === 'birthday') return `A birthday worth every one of those years.`
+    if (nights >= 10)            return `${nights} nights. ${route.length} wildernesses. One sequence.`
+    return title
+  })()
+
+  const emoSub = (() => {
+    if (occasion === 'honeymoon')  return `${routeStr || title} — every detail arranged so you simply arrive, and wonder begins.`
+    if (occasion === 'anniversary') return `${routeStr || title} — a journey you'll still talk about in twenty years.`
+    if (occasion === 'family')     return `${routeStr || title} — these are the moments that become stories for life.`
+    const themeStr = themes.slice(0, 2).join(' · ')
+    return `${routeStr || title}${themeStr ? ` · ${themeStr}` : ''}. Specialist-curated. Fully arranged.`
+  })()
+
+  const occasionBadge = occasion === 'honeymoon' ? '✦ Your Honeymoon'
+    : occasion === 'anniversary' ? '✦ Your Anniversary Journey'
+    : occasion === 'family'      ? '✦ Your Family Safari'
+    : '✦ Your Safari Proposal'
+
+  const miniSiteUrl  = `${params.baseUrl}/journey/${params.bookingRef}`
+  const checkoutUrl  = `${params.baseUrl}/checkout?id=${itin.id}`
+
+  // Build the "hero" section — uses VML fallback for Outlook, CSS background for all others
+  const heroSection = heroImg
+    ? `<!--[if gte mso 9]><v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:420px;"><v:fill type="frame" src="${heroImg}" color="#0a0a0a" /><v:textbox style="mso-fit-shape-to-text:true" inset="0,0,0,0"><![endif]-->
+      <div style="background-image:url('${heroImg}');background-size:cover;background-position:center;min-height:380px;border-radius:14px 14px 0 0;position:relative;">
+      <!--[if gte mso 9]></v:textbox></v:rect><![endif]-->`
+    : `<div style="background:linear-gradient(135deg,#1a1206,#0a0a0a);min-height:280px;border-radius:14px 14px 0 0;position:relative;">`
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Georgia',serif;-webkit-font-smoothing:antialiased;">
+  <div style="max-width:600px;margin:0 auto;padding:24px 16px 48px;">
+
+    <!-- LOGO BAR -->
+    <div style="text-align:center;padding:16px 0 24px;">
+      <div style="color:rgba(200,169,110,0.6);font-size:9px;letter-spacing:0.5em;text-transform:uppercase;font-family:Helvetica,Arial,sans-serif;">
+        ✦ THE SAFARI EDITION ✦
+      </div>
+    </div>
+
+    <!-- HERO CARD -->
+    <div style="border-radius:16px;overflow:hidden;border:0.5px solid rgba(200,169,110,0.25);">
+
+      <!-- Hero image section -->
+      ${heroSection}
+      <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.45) 50%,rgba(0,0,0,0.15) 100%);border-radius:14px 14px 0 0;"></div>
+      <div style="position:relative;padding:48px 32px 36px;">
+        <!-- Occasion badge -->
+        <div style="display:inline-block;background:rgba(200,169,110,0.15);border:0.5px solid rgba(200,169,110,0.4);color:#d4af37;font-size:10px;letter-spacing:0.18em;text-transform:uppercase;padding:5px 14px;border-radius:20px;font-family:Helvetica,Arial,sans-serif;margin-bottom:18px;">
+          ${occasionBadge}
         </div>
-        <h1 style="font-size:32px;font-weight:300;margin:0 0 8px;color:#f5f0e8">
-          ${title}
+        <!-- Themes row -->
+        ${themes.length > 0 ? `<div style="margin-bottom:12px;">${themes.slice(0,3).map(th => `<span style="display:inline-block;background:rgba(255,255,255,0.08);border:0.5px solid rgba(255,255,255,0.12);color:rgba(245,240,232,0.55);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;padding:3px 10px;border-radius:20px;font-family:Helvetica,Arial,sans-serif;margin-right:6px;">${th}</span>`).join('')}</div>` : ''}
+        <!-- Route breadcrumb -->
+        ${routeStr ? `<div style="color:rgba(200,169,110,0.8);font-size:11px;letter-spacing:0.22em;text-transform:uppercase;font-family:Helvetica,Arial,sans-serif;margin-bottom:12px;">${routeStr}</div>` : ''}
+        <!-- Emotive headline -->
+        <h1 style="font-family:'Georgia',serif;font-size:32px;font-weight:400;color:#f5f0e8;margin:0 0 14px;line-height:1.1;">
+          ${emoHeadline}
         </h1>
-        <div style="color:rgba(245,240,232,0.5);font-size:13px;margin-bottom:32px">
-          ${nights > 0 ? `${nights} nights · ` : ''}Booking reference: <strong style="color:#c8a96e">${params.bookingRef}</strong>
-        </div>
-        <div style="background:#141414;border:1px solid rgba(200,169,110,0.2);border-radius:12px;padding:24px;margin-bottom:24px">
-          <div style="font-size:11px;color:rgba(200,169,110,0.7);letter-spacing:0.2em;text-transform:uppercase;margin-bottom:16px">
-            Payment Summary
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-            <span style="color:rgba(245,240,232,0.6)">Total journey value</span>
-            <span style="font-size:20px;color:#f5f0e8">R ${Math.round(params.totalZAR).toLocaleString()}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.07);padding-top:12px;margin-top:12px">
-            <span style="color:rgba(245,240,232,0.6)">Deposit to secure</span>
-            <span style="font-size:24px;color:#c8a96e">R ${Math.round(params.depositTotal).toLocaleString()}</span>
-          </div>
-        </div>
-        <p style="color:rgba(245,240,232,0.6);font-size:13px;line-height:1.7">
-          This quote is valid for 48 hours. Your Journey Specialist will be in touch within 2 hours 
-          to answer any questions and confirm availability.
+        <!-- Emotive sub -->
+        <p style="color:rgba(245,240,232,0.65);font-size:14px;line-height:1.7;margin:0 0 20px;font-family:Helvetica,Arial,sans-serif;">
+          ${emoSub}
         </p>
-        <a href="${params.baseUrl}/checkout?id=${params.itinerary?.id}" 
-           style="display:inline-block;padding:14px 28px;background:#c8a96e;color:#0a0a0a;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;margin-top:16px">
-          Confirm &amp; Pay Deposit →
-        </a>
-        <div style="margin-top:40px;padding-top:24px;border-top:1px solid rgba(255,255,255,0.07);font-size:11px;color:rgba(245,240,232,0.3);line-height:1.7">
-          The Safari Edition · journeys@thesafariedition.com<br>
-          ASATA registered · SSL secured
+        <!-- Meta -->
+        <div style="color:rgba(245,240,232,0.5);font-size:12px;font-family:Helvetica,Arial,sans-serif;line-height:1.6;">
+          ${firstName} &nbsp;|&nbsp; ${nights > 0 ? `${nights} nights` : ''} &nbsp;·&nbsp; Ref: <strong style="color:#d4af37;letter-spacing:0.05em;">${params.bookingRef}</strong>
         </div>
       </div>
-    </body>
-    </html>
-  `
+      </div><!-- end hero bg div -->
 
-  // ── Send via Resend (domain verified: thesafariedition.com) ──────────────
+      <!-- PAYMENT PANEL -->
+      <div style="background:#111111;border-top:0.5px solid rgba(200,169,110,0.18);padding:28px 32px;">
+        <div style="font-size:9px;color:rgba(200,169,110,0.55);letter-spacing:0.32em;text-transform:uppercase;font-family:Helvetica,Arial,sans-serif;margin-bottom:18px;">
+          Payment Summary
+        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+          <tr>
+            <td style="padding-bottom:10px;color:rgba(245,240,232,0.55);font-size:13px;font-family:Helvetica,Arial,sans-serif;">Total journey value</td>
+            <td style="padding-bottom:10px;text-align:right;font-family:'Georgia',serif;">
+              <span style="font-size:22px;color:#f5f0e8;">${fmtZAR(params.totalZAR)}</span>
+              <div style="font-size:11px;color:rgba(245,240,232,0.35);font-family:Helvetica,Arial,sans-serif;margin-top:2px;">≈ ${fmtGBP(params.totalZAR)}</div>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding:0;"><div style="height:0.5px;background:rgba(255,255,255,0.07);margin:4px 0 14px;"></div></td>
+          </tr>
+          <tr>
+            <td style="color:rgba(245,240,232,0.55);font-size:13px;font-family:Helvetica,Arial,sans-serif;">${isDeposit ? 'Deposit to pay now' : 'Deposit to secure'}</td>
+            <td style="text-align:right;font-family:'Georgia',serif;">
+              <span style="font-size:28px;color:#d4af37;">${fmtZAR(params.depositTotal)}</span>
+              <div style="font-size:11px;color:rgba(200,169,110,0.45);font-family:Helvetica,Arial,sans-serif;margin-top:2px;">≈ ${fmtGBP(params.depositTotal)} · held in trust</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- VALIDITY + BUTTONS -->
+      <div style="background:#0e0e0e;border-top:0.5px solid rgba(255,255,255,0.06);padding:24px 32px 28px;">
+        <p style="color:rgba(245,240,232,0.5);font-size:12px;line-height:1.7;margin:0 0 22px;font-family:Helvetica,Arial,sans-serif;">
+          ${isDeposit
+            ? `Your deposit secures every rate and holds all camps. A Journey Specialist will be in contact within 2 hours to confirm availability and next steps.`
+            : `This proposal is held for 48 hours. Your Journey Specialist will be in touch within 2 hours to answer any questions and confirm availability.`
+          }
+        </p>
+        <!-- Two CTA buttons side by side -->
+        <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+          <tr>
+            <td style="padding-right:10px;">
+              <a href="${miniSiteUrl}"
+                 style="display:inline-block;padding:14px 22px;background:linear-gradient(180deg,#e8c96e,#c8a96e);color:#1a1206;text-decoration:none;border-radius:9px;font-size:13px;font-weight:700;font-family:Helvetica,Arial,sans-serif;letter-spacing:0.02em;white-space:nowrap;">
+                ✦ Visit Trip Minisite
+              </a>
+            </td>
+            <td>
+              <a href="${checkoutUrl}"
+                 style="display:inline-block;padding:14px 22px;background:transparent;color:#d4af37;text-decoration:none;border-radius:9px;font-size:13px;font-weight:600;font-family:Helvetica,Arial,sans-serif;border:1px solid rgba(200,169,110,0.45);letter-spacing:0.02em;white-space:nowrap;">
+                Pay Deposit →
+              </a>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+    </div><!-- end hero card -->
+
+    <!-- FOOTER -->
+    <div style="margin-top:32px;padding-top:20px;border-top:0.5px solid rgba(255,255,255,0.06);text-align:center;">
+      <div style="font-size:10px;color:rgba(245,240,232,0.25);line-height:1.8;font-family:Helvetica,Arial,sans-serif;letter-spacing:0.06em;">
+        THE SAFARI EDITION &nbsp;·&nbsp; journeys@thesafariedition.com<br>
+        ASATA registered &nbsp;·&nbsp; SSL secured &nbsp;·&nbsp; Deposits held in client trust<br>
+        <span style="color:rgba(245,240,232,0.15);">thesafariedition.com</span>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>`
+
+  // ── Send via Resend ────────────────────────────────────────────────────────
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_KEY}` },
     body: JSON.stringify({
-      from:    'The Safari Edition <journeys@thesafariedition.com>',
-      to:      params.email,
+      from:     'The Safari Edition <journeys@thesafariedition.com>',
+      to:       params.email,
       reply_to: 'journeys@thesafariedition.com',
-      subject: (params as any).isDeposit
+      subject:  isDeposit
         ? `Booking Confirmed · ${params.bookingRef} · The Safari Edition`
-        : `Your Safari Journey Quote · ${params.bookingRef}`,
+        : `${emoHeadline} · ${params.bookingRef}`,
       html,
     }),
   })
