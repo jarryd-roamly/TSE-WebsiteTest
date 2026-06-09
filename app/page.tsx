@@ -2239,8 +2239,20 @@ function buildTransferOptions(
       const exitZarHub = lastMileZar(exitLmHub, usdToZar, pax);
       const totalHub   = exitZarHub + Math.round(fareHub * pax);
       const metaHub    = (hub === originHub) ? meta : null;
-      const commLeg    = commercialLeg(hub, 'CPT', metaHub, 'Airlink', '4Z', null); // CPT = no FedAir connection needed
+      // Build exit leg first — its arrTime drives the minimum departure for the JNB/hub→CPT flight.
+      // Without this, CASE 1 picks the earliest available flight (e.g. 07:30) regardless of
+      // when FedAir (Madikwe, Lowveld) actually arrives at the hub.
       const ex         = exitLeg(exitLmHub, hub, originLodge ?? undefined);
+      const interMinDepC1: string | undefined = ex?.arrTime && exitLmHub.mode === 'fedair'
+        ? (() => {
+            const bufMin = CONNECTION_BUFFER[hub] ?? 60;
+            const depMin = t2m(ex.arrTime) + bufMin;
+            return `${Math.floor(depMin/60).toString().padStart(2,'0')}:${(depMin%60).toString().padStart(2,'0')}`;
+          })()
+        : undefined;
+      const commLeg    = commercialLeg(hub, 'CPT', metaHub, 'Airlink', '4Z', null, interMinDepC1);
+      // If FedAir arrival enforced minDep but no viable CPT flight found, skip this option
+      if (interMinDepC1 && !commLeg.depTime) return null;
       const structured: StructuredLeg[] = [];
       if (ex) structured.push(ex);
       structured.push(commLeg);
@@ -2265,7 +2277,15 @@ function buildTransferOptions(
         recommended: i === 0,
         structuredLegs: structured,
       };
-    });
+    }).filter((x): x is TransferOption => x !== null);
+    // If interMinDep blocked all flights, fall back to INTERNAL_LEGS
+    if (!generatedC1.length) {
+      const fb = getInternalLeg(fromSlug, toSlug);
+      if (fb) return [{ id:'c1-fallback', mode:'combo' as TransferOption['mode'], icon:'\u2708',
+        label:fb.provider, provider:fb.provider, duration:fb.duration, estimatedCostZAR:fb.estimatedCostZAR,
+        badges:[{text:'\u2726 Specialist arranges',color:'rgba(212,175,55,0.9)'}],
+        aiNote:fb.aiNote, recommended:true, structuredLegs:[] }];
+    }
 
     // Road transfer between regions intentionally omitted — we do not offer
     // lodge-to-airport road drives as an inter-region option. Too slow, loses
@@ -2447,6 +2467,7 @@ function buildTransferOptions(
   const commDurFallback: Record<string, number> = {
     'CPT-MQP':160, 'CPT-HDS':160, 'CPT-SZK':165, 'CPT-MUB':150, 'CPT-VFA':180,
     'JNB-MQP':60,  'JNB-HDS':60,  'JNB-SZK':75,  'JNB-MUB':130, 'JNB-VFA':105,
+    'JNB-MDK':60,  // FedAir JNB→Madikwe 1h direct — prevents 2h fallback showing as "3h" total
     'MQP-VFA':110, 'MQP-CPT':160, 'HDS-CPT':160,  'MUB-CPT':150, 'MUB-JNB':130,
     'VFA-CPT':180, 'VFA-MQP':110, 'BBK-VFA':20,   'VFA-JNB':105,
   };
@@ -2463,6 +2484,28 @@ function buildTransferOptions(
   // Madikwe exits via JNB (FedAir arr 12:30) — 4Z302 JNB→MUB dep 10:55 always missed.
   // Force overnight even though the hub pair is JNB-MUB (not in VIA_JNB_REQUIRED set).
   const madikweToOkavango = fromSlug === 'madikwe' && toSlug === 'okavango-delta';
+  // VFA→Madikwe: VFA→JNB lands 14:00–15:00, FedAir JNB→Madikwe dep 13:00 — same-day impossible by air.
+  // Primary option: road transfer JNB→Madikwe (4.5–5.5h). Overnight air shown as alt.
+  const vfaToMadikwe = fromSlug === 'chobe-vic-falls' && toSlug === 'madikwe';
+  if (vfaToMadikwe) {
+    const roadFallback = getInternalLeg(fromSlug, toSlug);
+    return [{
+      id: 'road-jnb-madikwe',
+      mode: 'road' as TransferOption['mode'],
+      icon: '🚗',
+      label: 'Road transfer via JNB → Madikwe',
+      provider: 'VFA→JNB + road transfer JNB→Madikwe',
+      duration: '~6h door-to-door',
+      estimatedCostZAR: roadFallback?.estimatedCostZAR ?? 16000,
+      badges: [
+        { text: '✦ Recommended', color: 'rgba(212,175,55,0.9)' },
+        { text: '⚠ Same-day air not feasible', color: 'rgba(251,146,60,0.9)' },
+      ],
+      aiNote: 'VFA→JNB arrives 14:00–15:45. FedAir JNB→Madikwe departs 13:00 — connection impossible. Road transfer JNB→Madikwe (N14/N4 via Zeerust, 4.5–5.5h) is the reliable same-day option. Overnight JNB + next-morning FedAir is the alternative.',
+      recommended: true,
+      structuredLegs: [],
+    }];
+  }
   const routeRequiresJNB = VIA_JNB_REQUIRED.has(`${originHub}-${destHubR}`) || madikweToOkavango;
 
   if (routeRequiresJNB) {
@@ -2520,8 +2563,35 @@ function buildTransferOptions(
       // commLeg.depTime is set only when pickBestFlight found a valid flight.
       // If minDep was enforced and no valid flight found: drop this carrier option.
       if (interMinDep && !commLeg.depTime) return null; // no valid connection — impossible route
+
+      // ── ARRIVAL-SIDE CONNECTION GUARD ─────────────────────────────────────────
+      // When commercial flight arrives at destHub but FedAir to lodge already departed:
+      // e.g. FN8801 VFA→MQP arr 12:15 vs FedAir MQP→lodge dep 11:05 (morning shuttle missed).
+      // Note: 45 min buffer at MQP/HDS/SZK — charter terminal, no commercial check-in needed.
+      // FN8801 arr 12:15 + 45 = 13:00 → connects to afternoon shuttle at 13:00 ✓
+      // 4Z477  arr 15:40 + 45 = 16:25 → afternoon 13:00 shuttle already gone → blocked ✗
+      let fedAirDepForArrival = fedAirDepMain;
+      if (fedAirDepMain && commLeg.arrTime && arrRec.mode === 'fedair') {
+        const arrSideBuf = 45; // charter terminal: shorter buffer than commercial (CONNECTION_BUFFER uses 60 for exit-side)
+        if (t2m(commLeg.arrTime) + arrSideBuf > t2m(fedAirDepMain)) {
+          // Morning FedAir missed — try the afternoon Lowveld Shuttle.
+          // Times reflect actual FedAir schedule: JNB dep 13:00 → MQP arr ~14:00, then immediate lodge hop.
+          const FEDAIR_AFT_DEP: Record<string, string> = {
+            'MQP': '13:00', // FedAir afternoon Lowveld Shuttle from MQP: JNB 13:00 → MQP ~14:05 → lodge ~14:30
+            'HDS': '14:05', // Hoedspruit afternoon schedule matches MQP timing
+            'SZK': '14:10',
+          };
+          const aftDep = FEDAIR_AFT_DEP[destHub];
+          if (!aftDep || t2m(commLeg.arrTime) + arrSideBuf > t2m(aftDep)) {
+            // Arrival too late even for afternoon shuttle — impossible, drop this carrier option
+            return null;
+          }
+          fedAirDepForArrival = aftDep; // use afternoon FedAir time for arrival leg display
+        }
+      }
+
       structured.push(commLeg);
-      buildArrivalLegs(arrRec, destHub, destLodge ?? undefined, fedAirDepMain).forEach(l => structured.push(l));
+      buildArrivalLegs(arrRec, destHub, destLodge ?? undefined, fedAirDepForArrival).forEach(l => structured.push(l));
 
       const flightMin = liveMeta?.duration_min ?? SCHED[`${c.code}-${originHub}-${destHub}`]?.dur ?? commDurFallback[routeKey] ?? 120;
       const totalMin  = (exitRec2?.durationMin ?? 0) + flightMin + (arrRec.durationMin ?? 0);
@@ -3150,7 +3220,7 @@ function CityTransferStrip({ slug, destLabel, opts, selectedId, onSelect, fmt }:
     <div style={{ marginBottom:16 }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
         <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
-        <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>🚗 Airport transfer — {destLabel}</div>
+        <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>🚗 {slug === 'cape-town' ? 'Cape Town Airport → Hotel' : `Airport Transfer — ${destLabel}`}</div>
         <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
       </div>
       <div style={{ position:'relative', margin:'0 -4px' }}>
@@ -4610,6 +4680,7 @@ const runBriefPlanner = (briefText: string) => {
           type: 'transfer',
           name: chosen.label || `Transfer: ${city.city} → ${nextCity.city}`,
           description: chosen.description || chosen.aiNote || '',
+          ai_note: chosen.aiNote || '',
           from_region: fromSlug,
           to_region: toSlug,
           from_label: city.city,
@@ -4618,6 +4689,13 @@ const runBriefPlanner = (briefText: string) => {
           duration: chosen.duration || '',
           price_display_zar: chosen.estimatedCostZAR || 0,
           is_confirmed: false,
+          // Save key leg details so checkout page can show flight numbers, times, and carriers
+          legs: (chosen.structuredLegs ?? []).map((l: any) => ({
+            kind: l.kind, badge: l.badge, name: l.name,
+            from: l.from, to: l.to,
+            flightNum: l.flightNum, depTime: l.depTime, arrTime: l.arrTime,
+            detail: l.detail, note: l.note,
+          })),
         } as any);
       });
 
@@ -5872,25 +5950,39 @@ const runBriefPlanner = (briefText: string) => {
                     pax={Math.max(adults + children, 1)}
                   />
 
-                  {/* Cape Town DEPARTURE transfer: hotel → CPT airport for onward flight */}
-                  {slug === 'cape-town' && cityIdx < itinerary.cities.length - 1 && cityXferOpts.length > 0 && (
-                    <div style={{ marginTop: 16 }}>
-                      <BuildInstruction step={4} text={`Select your transfer from your ${destLabel} hotel back to Cape Town International Airport`} />
-                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
-                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
-                        <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>
-                          🚗 Hotel → Cape Town Airport
+                  {/* Cape Town hotel → CPT airport: shown for ALL CPT cities (intermediate + last = gateway departure) */}
+                  {slug === 'cape-town' && (() => {
+                    const isIntermediate = cityIdx < itinerary.cities.length - 1;
+                    const isLastWithDeparture = cityIdx === itinerary.cities.length - 1;
+                    if (!isIntermediate && !isLastWithDeparture) return null;
+                    return (
+                      <div style={{ marginTop: 16 }}>
+                        <BuildInstruction step={isIntermediate ? 4 : 3} text={isIntermediate ? `Select your transfer from your ${destLabel} hotel to Cape Town International Airport` : `Transfer from your Cape Town hotel to Cape Town International Airport`} />
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, padding:'0 2px' }}>
+                          <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+                          <div style={{ fontSize:11, color:T.green, fontWeight:600, letterSpacing:'0.08em', textTransform:'uppercase' as const, whiteSpace:'nowrap' as const }}>🚗 Hotel → Cape Town Airport</div>
+                          <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
                         </div>
-                        <div style={{ flex:1, height:1, background:'rgba(74,222,128,0.15)' }} />
+                        <div style={{ background:'rgba(8,7,12,0.96)', border:`1.5px solid rgba(74,222,128,0.35)`, borderRadius:10, padding:'14px 16px' }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                              <span style={{ fontSize:20 }}>🚗</span>
+                              <div>
+                                <div style={{ fontSize:13, fontWeight:700, color:T.green }}>Private transfer to CPT</div>
+                                <div style={{ fontSize:11, color:T.textDim, marginTop:1 }}>Hotel → Cape Town International</div>
+                              </div>
+                            </div>
+                            <div style={{ fontSize:10, color:T.green, background:'rgba(74,222,128,0.12)', border:'0.5px solid rgba(74,222,128,0.3)', borderRadius:20, padding:'2px 8px', fontWeight:700 }}>Selected</div>
+                          </div>
+                          <div style={{ fontSize:10, color:T.gold, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:20, padding:'2px 8px', fontWeight:700, display:'inline-block', marginBottom:8 }}>✦ Recommended</div>
+                          <div style={{ fontSize:12, color:T.textMid }}>30–45 min · door-to-door</div>
+                          <div style={{ fontSize:11, color:T.textDim, lineHeight:1.5, background:'rgba(74,222,128,0.04)', borderRadius:7, padding:'7px 10px', marginTop:8 }}>
+                            Driver meets at hotel with name board · luggage assistance · same provider as arrival · allow 2h before any departure flight.
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ background:'rgba(8,7,12,0.96)', border:`0.5px solid rgba(74,222,128,0.18)`, borderRadius:10, padding:'12px 14px' }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:T.text, fontFamily:"'Cormorant Garamond',serif", marginBottom:4 }}>Private transfer to CPT</div>
-                        <div style={{ fontSize:10, color:T.textMid }}>30–45 min · Hotel → Cape Town International</div>
-                        <div style={{ fontSize:9.5, color:T.textDim, marginTop:3 }}>Driver meets at hotel · luggage assistance · same provider as arrival transfer</div>
-                        <div style={{ marginTop:8, fontSize:9, color:T.textDim, letterSpacing:'0.05em' }}>Allow 2h before departure · confirm timing with specialist</div>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {cityIdx < itinerary.cities.length-1 && (() => {
                     const nextCity = itinerary.cities[cityIdx+1];
