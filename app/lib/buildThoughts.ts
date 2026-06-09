@@ -394,10 +394,13 @@ export function buildThoughts(ctx: ThoughtContext): string[] {
   // ── Multi-region logistics ────────────────────────────────────────────────
   out.push(...getLogisticsLines(slugs));
 
-  // ── Occasion / theme ─────────────────────────────────────────────────────
-  const occ = ctx.occasion?.toLowerCase().replace(' ', '-');
-  if (occ && occ !== 'none' && OCCASION_LINES[occ]) {
-    out.push(OCCASION_LINES[occ]);
+  // ── Occasion / themes — use all selected themes not just first ────────────
+  const allThemes = (ctx.themeTags || (ctx.occasion ? [ctx.occasion] : []));
+  for (const theme of allThemes) {
+    const key = theme.toLowerCase().replace(' ', '-');
+    if (key && key !== 'none' && OCCASION_LINES[key] && !out.includes(OCCASION_LINES[key])) {
+      out.push(OCCASION_LINES[key]);
+    }
   }
 
   // ── Style ─────────────────────────────────────────────────────────────────
