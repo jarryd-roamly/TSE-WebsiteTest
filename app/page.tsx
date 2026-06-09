@@ -5188,8 +5188,16 @@ const runBriefPlanner = (briefText: string) => {
         <InputDivider />
 
         {/* ── BUILD BUTTON ───────────────────────────────────────────── */}
-        <button className="btn-gold" style={{ width:'100%', padding:'18px 24px', fontSize:15, letterSpacing:'0.1em', borderRadius:4 }} onClick={runSocraticPlanner}>
-          ✦ &nbsp; Build My Itinerary
+        {!checkinDate && (
+          <div style={{ marginBottom:12, padding:'12px 16px', background:'rgba(248,113,113,0.07)', border:'0.5px solid rgba(248,113,113,0.25)', borderRadius:8, fontSize:12, color:'rgba(248,113,113,0.9)', fontWeight:300, textAlign:'center' as const }}>
+            ✦ Add travel dates above to continue
+          </div>
+        )}
+        <button className="btn-gold"
+          disabled={!checkinDate}
+          style={{ width:'100%', padding:'18px 24px', fontSize:15, letterSpacing:'0.1em', borderRadius:4, opacity: checkinDate ? 1 : 0.4, cursor: checkinDate ? 'pointer' : 'not-allowed' }}
+          onClick={checkinDate ? runSocraticPlanner : undefined}>
+          ✦ &nbsp; {checkinDate ? 'Build My Itinerary' : 'Add travel dates to continue'}
         </button>
         <p style={{ textAlign:'center' as const, fontSize:12, color:'rgba(245,240,232,0.2)', marginTop:12, letterSpacing:'0.08em', fontWeight:200 }}>
           Itinerary built in minutes · Fully priced · No commitment
