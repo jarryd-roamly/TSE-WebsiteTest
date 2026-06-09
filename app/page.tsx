@@ -1298,9 +1298,8 @@ function NestedPropertyCarousel({
 
   useEffect(() => {
     const idx = hotels.findIndex(h => String(h.id) === String(selectedHotelId));
-    // If selected hotel is at the end (demoted by KB), scroll to first instead
-    const isAtEnd = idx === hotels.length - 1 || idx >= hotels.length - 2;
-    if (idx > 0 && !isAtEnd) setTimeout(() => scrollToIdx(idx), 100);
+    // Only scroll if selected hotel is in positions 1-2 (not demoted/end of list)
+    if (idx > 0 && idx <= 2) setTimeout(() => scrollToIdx(idx), 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3938,6 +3937,31 @@ const toggleTheme = (id: string) =>
   const [activities,      setActivities]      = useState<Activity[]>(ACTIVITIES_FALLBACK);
   const [suppliersLoaded, setSuppliersLoaded] = useState(false);
   const hotelsByMargin = useMemo(() => [...hotels].sort((a,b) => ((b.displayRate||0)-(b.netRate||0)) - ((a.displayRate||0)-(a.netRate||0))), [hotels]);
+
+  // Re-check KB demotions when kbEntries loads from Supabase (fixes race condition)
+  useEffect(() => {
+    const kbOvr = kbEntries.filter((e: any) => e.override_ai && e.active !== false);
+    if (!kbOvr.length || !cityStays.length || !itinerary?.cities) return;
+    const isDem = (hotel: any) => kbOvr.some((e: any) => {
+      const w = (e.linkedTo||e.linked_name||'').toLowerCase().split(' ').filter((x:string)=>x.length>3);
+      return w.some((x:string)=>(hotel.name||'').toLowerCase().includes(x)) &&
+        /avoid|do not|block|end of|last|exclude/i.test(Array.isArray(e.guardrails)?e.guardrails.join(' '):String(e.guardrails||''));
+    });
+    let changed = false;
+    const updated = cityStays.map((stay: any, i: number) => {
+      const city = itinerary.cities[i]; if (!city) return stay;
+      const slug = CITY_TO_SLUG[city.city?.toLowerCase().trim()??'']??'';
+      const pool = slug ? hotelsByMargin.filter((h:any)=>h.subRegion===slug) : hotelsByMargin;
+      const current = pool.find((h:any)=>String(h.id)===String(stay.hotelId));
+      if (!current || !isDem(current)) return stay;
+      const replacement = pool.find((h:any)=>!isDem(h));
+      if (!replacement || replacement.id === current.id) return stay;
+      changed = true;
+      return { ...stay, hotelId: replacement.id };
+    });
+    if (changed) setCityStays(updated);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kbEntries]);
 // Cinematic videos per region — for the inspire-input right panel
   const [regionVideoMap, setRegionVideoMap] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -4782,7 +4806,7 @@ const runBriefPlanner = (briefText: string) => {
                 <div style={{ fontSize:10, color:T.textDim, letterSpacing:'0.16em', textTransform:'uppercase' as const, fontWeight:600, marginBottom:12 }}>International flights</div>
                 <div style={{ display:'flex', flexDirection:'column' as const, gap:7 }}>
                   {[
-                    { val:'flexible' as const, title:'Source for me later', sub:'Your Journey Specialist finds the best fares once dates are confirmed' },
+
                     { val:'include'  as const, title:'Find & include now',  sub:"We'll search and add international flights to your package" },
                     { val:'own'      as const, title:"I've already booked", sub:'Share your arrival details so we can plan around your flights' },
                   ].map(opt => {
@@ -4908,7 +4932,7 @@ const runBriefPlanner = (briefText: string) => {
             {([
               { val:'include'  as const, title:'Find flights for me',  sub:"We'll search and include your international flights in the package" },
               { val:'own'      as const, title:"I've already booked",   sub:'Share your arrival details so we can plan around your schedule' },
-              { val:'flexible' as const, title:'Dates still flexible', sub:'Your Journey Specialist will find the best fares once dates are confirmed' },
+
             ]).map(opt => {
               const isSel = flightIntent===opt.val;
               return (
@@ -4945,11 +4969,7 @@ const runBriefPlanner = (briefText: string) => {
               </select>
             </div>
           )}
-          {flightIntent==='flexible' && (
-            <div style={{ marginTop:12, background:T.goldDim, border:`0.5px solid ${T.borderGold}`, borderRadius:9, padding:'12px 16px', fontSize:13, color:T.textDim, lineHeight:1.7, fontWeight:200 }}>
-              Build your package now — your Journey Specialist will source the best international fares once your travel dates are confirmed.
-            </div>
-          )}
+
         </div>
 
         <InputDivider />
